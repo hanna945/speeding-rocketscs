@@ -1918,13 +1918,14 @@ function MetaAdsLedger() {
             <thead>
               <tr>
                 <th rowSpan={2} style={{ verticalAlign: "bottom" }}>產品代號</th>
-                <th colSpan={2} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🟩 後台實際業績</th>
+                <th colSpan={3} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🟩 後台實際業績</th>
                 <th colSpan={2} className="mal-ledger-group-meta mal-ledger-group-label-meta" style={{ textAlign: "center" }}>🟧 Meta 回報業績</th>
                 <th colSpan={2} className="mal-ledger-group-gap" style={{ textAlign: "center" }}>落差</th>
               </tr>
               <tr>
                 <th className="mal-ledger-group-backend">營收</th>
                 <th className="mal-ledger-group-backend">廣告費</th>
+                <th className="mal-ledger-group-backend">廣告費佔比</th>
                 <th className="mal-ledger-group-meta">營收</th>
                 <th className="mal-ledger-group-meta">廣告費</th>
                 <th className="mal-ledger-group-gap">營收落差%</th>
@@ -1941,6 +1942,7 @@ function MetaAdsLedger() {
                   </td>
                   <td className="mal-ledger-group-backend">{fmtMoney(r.backendRevenue, currencyCode)}</td>
                   <td className="mal-ledger-group-backend">{fmtMoney(r.backendSpend, currencyCode)}</td>
+                  <td className="mal-ledger-group-backend">{adPct(r.backendSpend, r.backendRevenue, adRatioThresholds[activeBrandId])}</td>
                   <td className="mal-ledger-group-meta">{fmtMoney(r.metaRevenue, currencyCode)}</td>
                   <td className="mal-ledger-group-meta">{fmtMoney(r.metaSpend, currencyCode)}</td>
                   <td className="mal-ledger-group-gap">{r.revGapPct !== null ? <DeltaBadge value={r.revGapPct} /> : "—"}</td>
@@ -1951,6 +1953,7 @@ function MetaAdsLedger() {
                 <td className="mal-row-month">合計</td>
                 <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(totalBackendRevenue, currencyCode)}</td>
                 <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(totalBackendSpend, currencyCode)}</td>
+                <td className="mal-ledger-group-backend mal-row-month">{adPct(totalBackendSpend, totalBackendRevenue, adRatioThresholds[activeBrandId])}</td>
                 <td className="mal-ledger-group-meta mal-row-month">{fmtMoney(totalMetaRevenue, currencyCode)}</td>
                 <td className="mal-ledger-group-meta mal-row-month">{fmtMoney(totalMetaSpend, currencyCode)}</td>
                 <td className="mal-ledger-group-gap mal-row-month">{totalRevGapPct !== null ? <DeltaBadge value={totalRevGapPct} /> : "—"}</td>
