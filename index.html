@@ -1,0 +1,3550 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>品牌成效分析</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" crossorigin="anonymous">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --paper: #FAF7F2;
+    --paper-raised: #FFFFFF;
+    --ink: #3C3733;
+    --ink-soft: #9C9186;
+    --rule: #EAE2D6;
+    --blue: #6E8577;
+    --green: #7C8B54;
+    --red: #A8607A;
+    --amber: #BFA054;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: 'Noto Sans TC', sans-serif; background: var(--paper); color: var(--ink);
+    padding: 32px 20px 64px;
+  }
+  .mal-shell { max-width: 920px; margin: 0 auto; }
+  .mal-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--rule); padding-bottom: 20px; margin-bottom: 28px; flex-wrap: wrap; }
+  .mal-title-block { display: flex; align-items: center; gap: 14px; }
+  .mal-stamp {
+    width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; font-size: 18px;
+    display: flex; align-items: center; justify-content: center; color: #fff;
+    background: #000; overflow: hidden;
+    box-shadow: 0 4px 14px rgba(60, 55, 51, 0.28);
+  }
+  .mal-stamp img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mal-title { font-family: 'Noto Serif KR', serif; font-weight: 600; font-size: 26px; margin: 0; letter-spacing: 0.02em; }
+  .mal-subtitle { font-size: 12.5px; color: var(--ink-soft); margin: 3px 0 0; letter-spacing: 0.01em; }
+  .mal-btn {
+    font-family: 'Noto Sans TC', sans-serif; font-weight: 600; font-size: 13px; border-radius: 10px; padding: 9px 16px;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rule);
+    background: var(--paper-raised); color: var(--ink); transition: all 0.15s ease; box-shadow: 0 1px 2px rgba(60,55,51,0.04);
+  }
+  .mal-btn:hover { background: #FBF9F5; border-color: var(--ink-soft); box-shadow: 0 3px 10px rgba(60,55,51,0.08); }
+  .mal-btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .mal-btn-primary:hover { background: #607A6C; border-color: #607A6C; box-shadow: 0 4px 14px rgba(110,133,119,0.28); }
+  .mal-btn-danger { background: transparent; border-color: var(--red); color: var(--red); }
+  .mal-btn-danger:hover { background: #F3E4E9; box-shadow: none; }
+  .mal-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+  .mal-notice { background: #EEF1E4; border: 1px solid #D8E0C8; color: #5C6B41; font-size: 13px; padding: 10px 16px; border-radius: 10px; margin-bottom: 16px; }
+  .mal-error { background: #F3E4E9; border: 1px solid #E3C3D0; color: #8B4A63; font-size: 13px; padding: 10px 16px; border-radius: 10px; margin-bottom: 16px; }
+  .mal-empty { border: 1.5px dashed var(--rule); border-radius: 16px; padding: 56px 24px; text-align: center; background: var(--paper-raised); }
+  .mal-empty p { color: var(--ink-soft); font-size: 14px; max-width: 440px; margin: 10px auto 20px; line-height: 1.6; }
+  .mal-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 20px; }
+  .mal-brand-switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .mal-brand-switch-label { font-size: 12.5px; color: var(--ink-soft); font-weight: 600; }
+  .mal-brand-chip {
+    font-size: 12.5px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--rule);
+    background: var(--paper-raised); color: var(--ink-soft); cursor: pointer; white-space: nowrap; transition: all 0.15s ease;
+  }
+  .mal-brand-chip:hover { border-color: var(--blue); color: var(--ink); }
+  .mal-brand-chip-active { border-color: var(--blue); color: var(--blue); background: #F1F4EF; font-weight: 600; }
+  .mal-viewmode-switch { display: flex; gap: 6px; margin-bottom: 18px; background: #F2EEE6; padding: 5px; border-radius: 14px; width: fit-content; }
+  .mal-viewmode-btn {
+    font-family: 'Noto Serif KR', serif; font-weight: 500; font-size: 13.5px; padding: 8px 18px;
+    border: none; border-radius: 10px; background: transparent; color: var(--ink-soft); cursor: pointer; transition: all 0.15s ease;
+  }
+  .mal-viewmode-btn-active { color: #fff; background: var(--blue); box-shadow: 0 2px 8px rgba(110,133,119,0.3); }
+  .mal-week-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 16px; padding: 20px 22px 8px; margin-bottom: 28px; box-shadow: 0 2px 10px rgba(60,55,51,0.04); }
+  .mal-week-title { margin-top: 0; border-bottom: 1px solid var(--rule); }
+  .mal-week-analysis { margin: 14px 0 16px; }
+  .mal-week-analysis-title { font-family: 'Noto Serif KR', serif; font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+  .mal-week-analysis ul { margin: 0; padding-left: 20px; }
+  .mal-week-analysis li { font-size: 13px; line-height: 1.7; color: var(--ink); margin-bottom: 4px; }
+  .mal-ledger-table th, .mal-ledger-table td { border-right: 1px solid var(--rule); }
+  .mal-ledger-table th:last-child, .mal-ledger-table td:last-child { border-right: none; }
+  .mal-ledger-group-backend { background: #EEF1E4; }
+  .mal-ledger-group-meta { background: #F7EFE0; }
+  .mal-ledger-group-gap { background: var(--paper-raised); }
+  .mal-ledger-group-label-backend { color: #5C6B41; }
+  .mal-ledger-group-label-meta { color: #8A6A2E; }
+  .mal-tab { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; padding: 7px 16px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-raised); color: var(--ink-soft); cursor: pointer; white-space: nowrap; transition: all 0.15s ease; }
+  .mal-tab-active { border-color: var(--blue); color: #fff; background: var(--blue); }
+  .mal-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 26px; }
+  .mal-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 16px; padding: 18px 20px; box-shadow: 0 2px 10px rgba(60,55,51,0.04); }
+  .mal-card-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .mal-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 23px; font-weight: 600; margin: 8px 0 9px; }
+  .mal-perf-card { display: block; width: 100%; text-align: left; font-family: inherit; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+  .mal-perf-card:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(60,55,51,0.09); }
+  .mal-perf-card:disabled { cursor: default; opacity: 0.5; }
+  .mal-perf-card-label { font-size: 15.5px; font-weight: 700; text-transform: none; letter-spacing: 0.01em; display: flex; align-items: center; gap: 6px; }
+  .mal-perf-card-hint { font-size: 11px; color: var(--ink-soft); font-weight: 400; margin-top: 6px; }
+  .mal-perf-section { scroll-margin-top: 16px; border: 1px solid var(--rule); border-radius: 14px; margin-bottom: 16px; overflow: hidden; }
+  .mal-perf-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; cursor: pointer; background: var(--paper-raised); border: none; width: 100%; text-align: left; font-family: inherit; }
+  .mal-perf-section-title { font-family: 'Noto Serif KR', serif; font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+  .mal-perf-section-chevron { font-size: 13px; transition: transform 0.15s ease; color: var(--ink-soft); }
+  .mal-perf-section-body { padding: 4px 18px 18px; }
+  .mal-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
+  .mal-delta-good { color: var(--green); }
+  .mal-delta-bad { color: var(--red); }
+  .mal-delta-flat { color: var(--ink-soft); }
+  .mal-section-title { font-family: 'Noto Serif KR', serif; font-weight: 600; font-size: 16px; margin: 32px 0 14px; padding-left: 12px; border-left: 3px solid var(--blue); border-bottom: none; line-height: 1.4; }
+  .mal-section-count { font-family: 'Noto Sans TC', sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-soft); margin-left: 8px; }
+  .mal-ad-header-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
+  .mal-ad-header-row .mal-section-title-flex { margin: 0; border-bottom: none; padding-bottom: 0; flex: 1; }
+  .mal-ad-header-row { border-bottom: none; padding-bottom: 6px; margin-bottom: 12px; }
+  .mal-ad-sort-select { padding: 7px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-raised); color: var(--ink); font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; }
+  .mal-chart-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 16px; padding: 20px 18px; margin-bottom: 22px; box-shadow: 0 2px 10px rgba(60,55,51,0.04); }
+  .mal-chart-legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-soft); margin-bottom: 10px; }
+  .mal-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .mal-chart-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+  .mal-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .mal-table th { text-align: right; font-weight: 600; color: var(--ink-soft); font-size: 11.5px; text-transform: uppercase; padding: 8px 10px; border-bottom: 2px solid var(--ink); }
+  .mal-table th:first-child, .mal-table td:first-child { text-align: left; }
+  .mal-table td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--rule); font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
+  .mal-table tr:hover td { background: #F7F2EA; }
+  .mal-row-month { font-family: 'Noto Sans TC', sans-serif; font-weight: 600; }
+  .mal-icon-btn { background: none; border: none; cursor: pointer; color: var(--ink-soft); padding: 4px; font-size: 14px; }
+  .mal-icon-btn:hover { color: var(--red); }
+  .mal-ad-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .mal-ad-row { display: flex; align-items: center; gap: 14px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 14px; padding: 12px 16px; transition: box-shadow 0.15s ease; }
+  .mal-ad-row:hover { box-shadow: 0 3px 12px rgba(60,55,51,0.06); }
+  .mal-thumb { width: 52px; height: 52px; object-fit: cover; border-radius: 10px; border: 1px solid var(--rule); flex-shrink: 0; background: #fff; }
+  .mal-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--ink-soft); background: #EDE7DC; font-size: 18px; }
+  .mal-ad-info { flex: 1; min-width: 0; }
+  .mal-ad-name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mal-ad-utm { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--blue); display: flex; align-items: center; gap: 4px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mal-ad-utm-empty { color: var(--ink-soft); font-style: italic; }
+  .mal-ad-fblink { font-family: 'Noto Sans TC', sans-serif; font-size: 11px; color: var(--blue); text-decoration: none; margin-top: 3px; display: inline-flex; align-items: center; gap: 3px; }
+  .mal-ad-fblink:hover { text-decoration: underline; }
+  .mal-status-badge { font-family: 'Noto Sans TC', sans-serif; font-size: 10.5px; font-weight: 600; margin-left: 8px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .mal-status-on { color: #5C6B41; background: #EEF1E4; }
+  .mal-status-off { color: var(--ink-soft); background: #EDE7DC; }
+  .mal-ad-row-inactive { opacity: 0.68; }
+  .mal-ad-startdate { font-family: 'Noto Sans TC', sans-serif; font-size: 11px; color: var(--ink-soft); margin-top: 3px; display: block; }
+  .mal-status-filter { display: flex; gap: 6px; margin-bottom: 16px; }
+  .mal-status-filter-btn {
+    font-family: 'Noto Sans TC', sans-serif; font-size: 12px; font-weight: 600; padding: 7px 15px;
+    border-radius: 999px; border: 1px solid var(--rule); background: var(--paper-raised);
+    color: var(--ink-soft); cursor: pointer; transition: all 0.15s ease;
+  }
+  .mal-status-filter-btn-active { border-color: var(--blue); color: #fff; background: var(--blue); }
+  .mal-ad-count { color: var(--ink-soft); font-style: italic; margin-left: 4px; }
+  .mal-ad-stats { display: flex; gap: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; flex-shrink: 0; }
+  .mal-ad-stats div { display: flex; flex-direction: column; align-items: flex-end; }
+  .mal-ad-stats span { font-family: 'Noto Sans TC', sans-serif; font-size: 10px; color: var(--ink-soft); text-transform: uppercase; }
+  .mal-toggle-ads { margin-bottom: 24px; font-size: 12.5px; padding: 7px 14px; }
+  .mal-modal-overlay { position: fixed; inset: 0; background: rgba(60,55,51,0.35); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; backdrop-filter: blur(2px); }
+  .mal-modal { background: #fff; border-radius: 20px; max-width: 560px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: 0 20px 60px rgba(60,55,51,0.2); }
+  .mal-modal h3 { font-family: 'Noto Serif KR', serif; font-size: 19px; margin: 0 0 4px; }
+  .mal-modal p.mal-modal-sub { color: var(--ink-soft); font-size: 13px; margin: 0 0 18px; }
+  .mal-modal-small { max-width: 380px; }
+  .mal-field { margin-bottom: 13px; }
+  .mal-field label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; }
+  .mal-field label .mal-req { color: var(--red); }
+  .mal-field select { width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 10px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); }
+  .mal-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  .mal-field-group-label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; margin-bottom: 10px; }
+  .mal-advanced-toggle { display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; color: var(--blue); font-size: 12.5px; font-weight: 600; padding: 8px 0; margin-top: 4px; }
+  .mal-advanced-fields { border-top: 1px dashed var(--rule); margin-top: 8px; padding-top: 14px; }
+  .mal-field-alt { background: #F3EEE5; border: 1px dashed var(--rule); border-radius: 10px; padding: 10px 12px; }
+  .mal-field-alt label { color: var(--ink-soft); font-weight: 500; }
+  .mal-preview-table { width: 100%; font-size: 11px; border-collapse: collapse; margin-bottom: 16px; max-height: 140px; overflow: auto; display: block; }
+  .mal-preview-table thead, .mal-preview-table tbody { display: table; width: 100%; }
+  @media (max-width: 640px) {
+    .mal-title { font-size: 22px; }
+    .mal-cards { grid-template-columns: repeat(2, 1fr); }
+    .mal-ad-row { flex-wrap: wrap; }
+    .mal-ad-stats { width: 100%; justify-content: space-between; gap: 8px; }
+  }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .mal-header-actions, .mal-print-btn, .mal-toggle-ads, .mal-icon-btn, .mal-tabs, .mal-brand-switch, .mal-viewmode-switch {
+      display: none !important;
+    }
+    .mal-modal-overlay { display: none !important; }
+    .mal-chart-box, .mal-card, .mal-ad-row {
+      break-inside: avoid; box-shadow: none !important;
+    }
+    .mal-perf-card-hint, .mal-perf-section-chevron { display: none !important; }
+    .mal-perf-card:hover { transform: none !important; }
+    .mal-perf-section-header { cursor: default; }
+    .mal-section-title { break-after: avoid; }
+    a[href]::after { content: none !important; }
+    .mal-shell { max-width: 100%; }
+  }
+
+  body.mal-exporting .mal-header-actions,
+  body.mal-exporting .mal-toggle-ads,
+  body.mal-exporting .mal-icon-btn,
+  body.mal-exporting .mal-tabs,
+  body.mal-exporting .mal-brand-switch,
+  body.mal-exporting .mal-viewmode-switch {
+    display: none !important;
+  }
+  body.mal-exporting .mal-scroll-wrap {
+    overflow: visible !important;
+  }
+  body.mal-exporting .mal-perf-card-hint,
+  body.mal-exporting .mal-perf-section-chevron {
+    display: none !important;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ---------- 共用儲存(Claude Artifact 的 window.storage):團隊資料共用,機密資料(API金鑰等)只留在自己瀏覽器 ----------
+// 如果不是在 Claude Artifact 環境打開(例如直接把檔案存到電腦、用瀏覽器開啟),window.storage 不存在,
+// 這時自動退回「本機儲存」模式,資料只存在自己瀏覽器,不會跨裝置同步——避免直接開檔案時整個當機。
+const HAS_SHARED_STORAGE = typeof window !== "undefined" && window.storage && typeof window.storage.get === "function";
+const LS_PREFIX = "ad-ledger::";
+const localOnlyStorage = {
+  async get(key) {
+    const v = localStorage.getItem(LS_PREFIX + key);
+    return v !== null ? { key, value: v } : null;
+  },
+  async set(key, value) {
+    localStorage.setItem(LS_PREFIX + key, value);
+    return { key, value };
+  },
+  async delete(key) {
+    localStorage.removeItem(LS_PREFIX + key);
+    return { key, deleted: true };
+  },
+  async list(prefix) {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(LS_PREFIX + prefix)) keys.push(k.slice(LS_PREFIX.length));
+    }
+    return { keys };
+  },
+};
+const STORAGE_PREFIX = "metaads-month:";
+const WEEK_STORAGE_PREFIX = "metaads-week:";
+const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
+// 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
+// Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
+const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds"]);
+const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX];
+function isSharedKey(key) {
+  if (SHARED_EXACT_KEYS.has(key)) return true;
+  return SHARED_PREFIXES.some((p) => key.startsWith(p));
+}
+
+// ---------- 團隊共用資料庫二號選擇:Cloudflare Pages Functions + KV ----------
+// 如果這個網站不是在 Claude Artifact 裡打開(window.storage 不存在),就改試著打 /api/kv 這個後端
+// (要搭配另外附上的 functions/api/kv 一起部署到 Cloudflare Pages 才會有作用)。
+// 團隊密碼只存在使用者自己瀏覽器的 localStorage,不會經過共用資料庫,純粹是拿來認證每個裝置能不能讀寫。
+const CLOUD_KV_BASE = "/api/kv";
+const TEAM_KEY_STORAGE_KEY = "ad-ledger-team-key";
+function getTeamKey() {
+  try { return localStorage.getItem(TEAM_KEY_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function setTeamKey(v) {
+  try {
+    if (v) localStorage.setItem(TEAM_KEY_STORAGE_KEY, v);
+    else localStorage.removeItem(TEAM_KEY_STORAGE_KEY);
+  } catch {}
+}
+function teamKeyHeaders() {
+  const k = getTeamKey();
+  return k ? { "X-Team-Key": k } : {};
+}
+// cloudStatus: "unknown"(還沒測)|"connected"(接得上)|"unauthorized"(接得上但密碼不對)|"unavailable"(沒有部署這個API,例如單純開檔案或還沒佈署Functions)
+let cloudStatusCache = "unknown";
+let credentialNameCache = ""; // 目前這組密碼對應的顯示名稱(依 Cloudflare 的 TEAM_CREDENTIALS 設定),沒有多身份設定時是空字串。
+async function probeCloud(force) {
+  if (cloudStatusCache !== "unknown" && !force) return cloudStatusCache;
+  try {
+    const res = await fetch(`${CLOUD_KV_BASE}/list?prefix=`, { headers: teamKeyHeaders() });
+    if (res.status === 401) cloudStatusCache = "unauthorized";
+    else if (res.ok) {
+      cloudStatusCache = "connected";
+      try {
+        const j = await res.json();
+        credentialNameCache = (j && j.credentialName) || "";
+      } catch { credentialNameCache = ""; }
+    }
+    else cloudStatusCache = "unavailable";
+  } catch {
+    cloudStatusCache = "unavailable";
+  }
+  return cloudStatusCache;
+}
+function getCredentialName() { return credentialNameCache; }
+const cloudStorage = {
+  async get(key) {
+    const res = await fetch(`${CLOUD_KV_BASE}/item/${encodeURIComponent(key)}`, { headers: teamKeyHeaders() });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error("cloud get failed: " + res.status);
+    return await res.json();
+  },
+  async set(key, value) {
+    const res = await fetch(`${CLOUD_KV_BASE}/item/${encodeURIComponent(key)}`, {
+      method: "PUT", headers: { ...teamKeyHeaders(), "Content-Type": "text/plain" }, body: value,
+    });
+    if (!res.ok) throw new Error("cloud set failed: " + res.status);
+    return await res.json();
+  },
+  async delete(key) {
+    const res = await fetch(`${CLOUD_KV_BASE}/item/${encodeURIComponent(key)}`, { method: "DELETE", headers: teamKeyHeaders() });
+    if (!res.ok) throw new Error("cloud delete failed: " + res.status);
+    return await res.json();
+  },
+  async list(prefix) {
+    const res = await fetch(`${CLOUD_KV_BASE}/list?prefix=${encodeURIComponent(prefix)}`, { headers: teamKeyHeaders() });
+    if (!res.ok) throw new Error("cloud list failed: " + res.status);
+    return await res.json();
+  },
+};
+
+const storage = {
+  async get(key) {
+    if (!isSharedKey(key)) return localOnlyStorage.get(key);
+    if (HAS_SHARED_STORAGE) {
+      try { return await window.storage.get(key, true); } catch { return null; }
+    }
+    if ((await probeCloud()) === "connected") {
+      try { return await cloudStorage.get(key); } catch { /* 掉線就退回本機,不讓畫面壞掉 */ }
+    }
+    return localOnlyStorage.get(key);
+  },
+  async set(key, value) {
+    if (!isSharedKey(key)) return localOnlyStorage.set(key, value);
+    if (HAS_SHARED_STORAGE) return await window.storage.set(key, value, true);
+    if ((await probeCloud()) === "connected") {
+      try { return await cloudStorage.set(key, value); } catch { /* 掉線就退回本機 */ }
+    }
+    return localOnlyStorage.set(key, value);
+  },
+  async delete(key) {
+    if (!isSharedKey(key)) return localOnlyStorage.delete(key);
+    if (HAS_SHARED_STORAGE) {
+      try { return await window.storage.delete(key, true); } catch { return null; }
+    }
+    if ((await probeCloud()) === "connected") {
+      try { return await cloudStorage.delete(key); } catch {}
+    }
+    return localOnlyStorage.delete(key);
+  },
+  async list(prefix) {
+    if (!isSharedKey(prefix)) return localOnlyStorage.list(prefix);
+    if (HAS_SHARED_STORAGE) {
+      try { const res = await window.storage.list(prefix, true); return res || { keys: [] }; } catch { return { keys: [] }; }
+    }
+    if ((await probeCloud()) === "connected") {
+      try { return await cloudStorage.list(prefix); } catch {}
+    }
+    return localOnlyStorage.list(prefix);
+  },
+};
+
+
+function monthKeyFor(brandId, mk) {
+  return STORAGE_PREFIX + (brandId ? brandId + "::" : "") + mk;
+}
+function weekKeyFor(brandId, weekStart) {
+  return WEEK_STORAGE_PREFIX + (brandId ? brandId + "::" : "") + weekStart;
+}
+// ---------- 後台「一頁式正確業績」(每日收益表匯入) ----------
+// 每個品牌、每個月存一筆,key 格式跟月報表/週報表一致,方便重複匯入時直接覆蓋更新。
+function ledgerKeyFor(brandId, monthKey) {
+  return LEDGER_STORAGE_PREFIX + (brandId ? brandId + "::" : "") + monthKey;
+}
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// 把 Meta 回傳的投放起始時間(ISO 字串,例如 "2026-07-16T00:00:00+0800")格式化成「7/16」這種簡短格式。
+// 直接用字串前面的年月日去解析,不透過 Date 物件轉時區,避免因為瀏覽器時區不同而讓日期跑掉一天。
+function fmtStartDate(isoString) {
+  if (!isoString) return "";
+  const match = String(isoString).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return "";
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  return `${month}/${day}`;
+}
+// utcOffsetHours 是廣告帳號自己的時區(相對 UTC 的小時數,例如台北是 8)。
+// Meta 後台顯示的「上週」是照廣告帳號本身設定的時區去算的,不是瀏覽器所在的時區——
+// 如果沒有帶入帳號時區,就照舊用瀏覽器當下的時區(維持原本行為,通常也不會有問題)。
+// weeksAgo:要抓「往前第幾個完整週」,1 = 上週(預設,跟原本行為一樣),2 = 上上週,以此類推,用來支援「自動回溯抓取過去幾週」。
+function getLastWeekRange(utcOffsetHours, weeksAgo = 1) {
+  const offsetMs = typeof utcOffsetHours === "number" ? utcOffsetHours * 3600000 : -new Date().getTimezoneOffset() * 60000;
+  const ref = new Date(Date.now() + offsetMs);
+  const day = ref.getUTCDay(); // 0 = Sun ... 6 = Sat
+  const diffToThisMonday = day === 0 ? 6 : day - 1;
+  const thisMonday = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate() - diffToThisMonday));
+  const targetMonday = new Date(thisMonday);
+  targetMonday.setUTCDate(thisMonday.getUTCDate() - 7 * weeksAgo);
+  const targetSunday = new Date(targetMonday);
+  targetSunday.setUTCDate(targetMonday.getUTCDate() + 6);
+  const fmtUtc = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  return { since: fmtUtc(targetMonday), until: fmtUtc(targetSunday), weekStart: fmtUtc(targetMonday) };
+}
+const LEGACY_DEFAULT_BRAND_IDS = [
+  "2157995930925784",
+  "436280797192761",
+  "2345685238995965",
+  "1818692121940743",
+  "1224745182484441",
+];
+// 注意:這幾個 action_type 在 Meta 回傳的同一筆資料裡經常是「同一筆購買的不同算法」而不是彼此獨立的訂單,
+// 例如 omni_purchase 本身就已經是跨管道去重後的購買數,如果再把 purchase / offsite_conversion.fb_pixel_purchase 等
+// 全部加總下去,同一筆訂單會被算好幾次,導致轉單數暴增、CPA 被嚴重低估(這正是造成 CPA 與廣告後台落差極大的原因)。
+// 修正做法:同一列資料只採用「優先順序最前面、且有出現」的那一種購買類型,不同類型之間不相加。
+// 順序依 Meta 官方建議的去重效果排列:omni_purchase(已跨管道去重,最準)優先,其餘為備援。
+const PURCHASE_ACTION_PRIORITY = [
+  "omni_purchase",
+  "purchase",
+  "offsite_conversion.fb_pixel_purchase",
+  "onsite_web_purchase",
+  "onsite_web_app_purchase",
+];
+
+function pickPurchaseValue(list) {
+  if (!list || !list.length) return 0;
+  for (const type of PURCHASE_ACTION_PRIORITY) {
+    const match = list.find((a) => a.action_type === type);
+    if (match) return parseFloat(match.value) || 0;
+  }
+  return 0;
+}
+
+// 組出直接跳轉到 Meta 廣告管理員、並選取這支(或這幾支合併的)廣告的連結。
+// 沒有帳號 ID 或沒有對應的廣告 ID 就不顯示連結。
+function fbAdsManagerLink(accountId, adIds) {
+  if (!accountId || !adIds || !adIds.length) return null;
+  return `https://business.facebook.com/adsmanager/manage/ads?act=${accountId}&selected_ad_ids=${adIds.join(",")}`;
+}
+
+// 依「投放中 / 已停止」篩選廣告清單。若資料沒有狀態資訊(active 是 undefined),
+// 選「全部」時一樣會顯示,但選「只看投放中」或「只看已停止」時會被排除,因為系統無法確認它屬於哪一種。
+// 列印或匯出 PDF 前,會先發送這個事件,通知所有「廣告成效分類」區塊全部展開——
+// 因為收合的區塊在收合狀態下完全沒有渲染 DOM,不這樣做的話,列印/PDF 會漏掉收合中的廣告明細。
+const PERF_EXPAND_ALL_EVENT = "mal:expand-all-perf";
+
+function filterAdsByStatus(ads, filter) {
+  if (filter === "active") return (ads || []).filter((a) => a.active === true);
+  if (filter === "inactive") return (ads || []).filter((a) => a.active === false);
+  return ads || [];
+}
+
+// 從「行銷活動名稱」(campaign,不是廣告名稱)最前面的括號解析出「產品代號」。
+// 依實際 Meta 後台命名慣例,產品代號放在行銷活動名稱最前面,例如「【RS】A+SC｜價值｜圖+影｜空間噴霧｜CPA」
+// 會解析成代號:RS;「【AP】A+SC｜價值｜業配｜圖文｜陳仙梅｜7/3」會解析成代號:AP。
+// 產品可能隨時新增,只要行銷活動的命名規則不變(代號一律放在活動名稱最前面的【】或[]裡),
+// 新代號就會自動被抓出來,不需要手動維護產品清單——如果活動名稱前面沒有括號代號,
+// 會被歸類為「無法辨識」,不會硬套錯誤的分類。
+function parseProductCode(campaignName) {
+  if (!campaignName) return null;
+  const m = campaignName.match(/^\s*[【\[]([^】\]]+)[】\]]/);
+  return m ? m[1].trim().toUpperCase() : null;
+}
+
+// 括號裡如果是「測試」性質的活動(不是真正的產品),不當成產品代號——避免混進業績比例分析裡。
+// 目前比對的關鍵字:test / 測試(不分大小寫),之後如果還有其他非產品用途的命名習慣,可以再加進這個清單。
+const NON_PRODUCT_CODE_PATTERN = /test|測試/i;
+
+// 依「產品代號」統計每個產品的營業額、廣告費、佔比與利潤,用來做業績比例分析(圓餅圖/表格)。
+// 代號清單完全從實際資料裡動態產生,不是寫死的列表——新產品只要照命名規則建立行銷活動,就會自動出現在這裡。
+// minSpend:花費低於這個門檻、又沒有轉單金額的廣告會被排除(避免資料量過大拖慢讀取),但會獨立計數方便對帳。
+function buildProductBreakdown(ads, minSpend) {
+  const byCode = {};
+  let unresolved = 0;
+  let excludedTestCount = 0;
+  let lowSpendCount = 0;
+  let lowSpendAmount = 0;
+  let totalRevenue = 0;
+  let totalSpend = 0;
+  (ads || []).forEach((ad) => {
+    if (ad.spend < minSpend && !(ad.revenue > 0)) {
+      lowSpendCount++;
+      lowSpendAmount += ad.spend;
+      return;
+    }
+    const code = parseProductCode(ad.campaign);
+    if (!code) { unresolved++; return; }
+    if (NON_PRODUCT_CODE_PATTERN.test(code)) { excludedTestCount++; return; }
+    if (!byCode[code]) byCode[code] = { spend: 0, conversions: 0, revenue: 0, count: 0 };
+    byCode[code].spend += ad.spend;
+    byCode[code].conversions += ad.conversions;
+    byCode[code].revenue += ad.revenue;
+    byCode[code].count += 1;
+    totalRevenue += ad.revenue;
+    totalSpend += ad.spend;
+  });
+  const rows = Object.entries(byCode)
+    .map(([code, v]) => ({
+      code, ...v,
+      profit: v.revenue - v.spend,
+      revenueShare: totalRevenue > 0 ? (v.revenue / totalRevenue) * 100 : 0,
+      spendShare: totalSpend > 0 ? (v.spend / totalSpend) * 100 : 0,
+      costRatio: v.revenue > 0 ? (v.spend / v.revenue) * 100 : null,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+  return { rows, unresolved, excludedTestCount, lowSpendCount, lowSpendAmount, totalRevenue, totalSpend };
+}
+
+// ---------- 後台「每日收益表」(.xlsx) 解析 ----------
+// 檔案格式(依使用者提供的範例表單):每個分頁是一個月(例如「7月」),
+// 第 1 列是各品牌/產品區塊的代號與名稱標題,第 2 列是每個區塊裡的欄位名稱(帳面營業額/平均客單價/廣告費/帳面利潤/稅後淨利),
+// 第 3 列開始每一列是一天的資料,直到出現「總結」列為止。
+// 每個產品區塊固定寬度 8 欄:[帳面營業額, 平均客單價, 廣告費, %, 帳面利潤, 稅後淨利, %, (空)]。
+// 這個寬度與偏移量是從範例表單直接反推出來的——如果之後表單欄位順序有調整,這裡也要跟著更新。
+const LEDGER_PRODUCT_BLOCK_WIDTH = 8;
+const LEDGER_PRODUCT_BLOCK_START_COL = 19; // 從 T 欄(0-indexed 19)開始才是「產品代號」區塊,前面 A-R 欄是總表與 FB 總花費
+const LEDGER_MONTH_SHEET_RE = /^(\d{1,2})\s*月/;
+
+function excelDateToISO(v) {
+  if (v instanceof Date) {
+    return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, "0")}-${String(v.getUTCDate()).padStart(2, "0")}`;
+  }
+  return null;
+}
+
+function toNum(v) {
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return isFinite(n) ? n : 0;
+}
+
+// 解析單一分頁(一個月份)成 { monthKey, days: [...], productCodes: [...] }。
+// year 由匯入時使用者指定(表單裡沒有年份資訊,只有分頁月份)。
+function parseLedgerSheet(matrix, year) {
+  if (!matrix || matrix.length < 3) return null;
+  const row1 = matrix[0] || [];
+  const row2 = matrix[1] || [];
+  const blocks = [];
+  for (let c = LEDGER_PRODUCT_BLOCK_START_COL; c < Math.max(row1.length, row2.length); c += 1) {
+    if ((row2[c] || "").toString().trim() === "帳面營業額") {
+      const code = (row1[c] || "").toString().trim().toUpperCase();
+      if (!code) continue;
+      blocks.push({
+        code,
+        name: (row1[c + 1] || "").toString().trim(),
+        colRevenue: c, colAov: c + 1, colSpend: c + 2, colProfit: c + 4, colNetProfit: c + 5,
+      });
+    }
+  }
+  const days = [];
+  let totalRow = null;
+  for (let r = 2; r < matrix.length; r++) {
+    const row = matrix[r] || [];
+    const dateCell = row[0];
+    if (dateCell instanceof Date) {
+      const iso = excelDateToISO(dateCell);
+      const overall = {
+        revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
+        netProfit: toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
+      };
+      const byCode = {};
+      blocks.forEach((b) => {
+        const revenue = toNum(row[b.colRevenue]);
+        const spend = toNum(row[b.colSpend]);
+        const aov = toNum(row[b.colAov]);
+        if (revenue === 0 && spend === 0) return; // 這天這個產品沒有資料,不建立空物件,避免污染平均值計算
+        byCode[b.code] = {
+          revenue, spend, aov,
+          profit: toNum(row[b.colProfit]),
+          netProfit: toNum(row[b.colNetProfit]),
+          orders: aov > 0 ? revenue / aov : null,
+        };
+      });
+      days.push({ date: iso, overall, byCode });
+    } else if (typeof dateCell === "string" && dateCell.trim() === "總結") {
+      const overall = {
+        revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
+        netProfit: toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
+      };
+      const byCode = {};
+      blocks.forEach((b) => {
+        byCode[b.code] = {
+          revenue: toNum(row[b.colRevenue]), spend: toNum(row[b.colSpend]),
+          profit: toNum(row[b.colProfit]), netProfit: toNum(row[b.colNetProfit]),
+        };
+      });
+      totalRow = { overall, byCode };
+      break; // 「總結」之後是代言費、預估獲利等其他彙總列,不屬於逐日資料,停止解析
+    }
+  }
+  if (!days.length) return null;
+  return { days, monthTotal: totalRow, productCodes: blocks.map((b) => b.code) };
+}
+
+// 解析整份工作簿(可能包含 12 個月分頁),回傳 { [monthKey]: monthObject }。
+function parseLedgerWorkbook(workbook, year) {
+  const result = {};
+  workbook.SheetNames.forEach((sheetName) => {
+    const m = sheetName.match(LEDGER_MONTH_SHEET_RE);
+    if (!m) return;
+    const monthNum = parseInt(m[1], 10);
+    if (!monthNum || monthNum < 1 || monthNum > 12) return;
+    const sheet = workbook.Sheets[sheetName];
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+    const parsed = parseLedgerSheet(matrix, year);
+    if (parsed) {
+      const monthKey = `${year}-${String(monthNum).padStart(2, "0")}`;
+      result[monthKey] = { monthKey, year, month: monthNum, ...parsed };
+    }
+  });
+  return result;
+}
+
+// 把後台每日資料彙總成指定期間(週或月,用 since ~ until 這種 ISO 日期字串)的總計,依產品代號分組。
+// ledgerByMonth: { [monthKey]: monthObject },會自動跨月份撈資料,所以週報表算到跨月份的那一週也沒問題。
+function aggregateLedgerRange(ledgerByMonth, sinceISO, untilISO) {
+  const matchedDays = [];
+  Object.values(ledgerByMonth || {}).forEach((mo) => {
+    (mo.days || []).forEach((d) => {
+      if (d.date && d.date >= sinceISO && d.date <= untilISO) matchedDays.push(d);
+    });
+  });
+  if (!matchedDays.length) return null;
+  const overall = { revenue: 0, adSpend: 0, profit: 0, netProfit: 0 };
+  const byCode = {};
+  matchedDays.forEach((d) => {
+    overall.revenue += d.overall.revenue || 0;
+    overall.adSpend += d.overall.adSpend || 0;
+    overall.profit += d.overall.profit || 0;
+    overall.netProfit += d.overall.netProfit || 0;
+    Object.entries(d.byCode || {}).forEach(([code, v]) => {
+      if (!byCode[code]) byCode[code] = { revenue: 0, spend: 0, profit: 0, netProfit: 0, orderEst: 0, hasOrderEst: true };
+      byCode[code].revenue += v.revenue || 0;
+      byCode[code].spend += v.spend || 0;
+      byCode[code].profit += v.profit || 0;
+      byCode[code].netProfit += v.netProfit || 0;
+      if (v.orders !== null && v.orders !== undefined) byCode[code].orderEst += v.orders;
+      else byCode[code].hasOrderEst = false;
+    });
+  });
+  Object.values(byCode).forEach((v) => { v.aov = v.hasOrderEst && v.orderEst > 0 ? v.revenue / v.orderEst : null; });
+  const hasAnyData = overall.revenue > 0 || overall.adSpend > 0 || Object.values(byCode).some((v) => v.revenue > 0 || v.spend > 0);
+  if (!hasAnyData) return null;
+  return { overall, byCode, dayCount: matchedDays.length, sinceISO, untilISO };
+}
+
+// 從網址參數(url_tags / UTM 字串)裡取出「=」後面的那串值,用來判斷是不是同一個素材。
+// 例如 "utm_medium=SR_FB_0309-CPA" -> "SR_FB_0309-CPA"。
+// 如果同時有多組參數(用 & 分隔),只取第一組的值——因為廣告主通常只在其中一個參數放素材代碼。
+function extractUtmValue(raw) {
+  if (!raw) return "";
+  const first = raw.split("&")[0] || raw;
+  const eqIdx = first.indexOf("=");
+  const value = eqIdx >= 0 ? first.slice(eqIdx + 1) : first;
+  let decoded = value;
+  try { decoded = decodeURIComponent(value); } catch { /* 保留原始值 */ }
+  return decoded.trim();
+}
+function monthLabel(key) {
+  const [y, m] = key.split("-");
+  return `${y}/${m}`;
+}
+function monthDateRange(monthKey) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const since = `${monthKey}-01`;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const until = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+  return { since, until };
+}
+// 用 UTC 運算來加減天數,避免瀏覽器時區造成日期字串位移。
+function addDaysISO(iso, days) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+function fmtInt(n) { return Math.round(n).toLocaleString("zh-TW"); }
+function fmtMoney(n, currency) {
+  try {
+    return new Intl.NumberFormat("zh-TW", { style: "currency", currency: currency || "TWD", maximumFractionDigits: 0 }).format(n);
+  } catch { return `${currency || ""} ${fmtInt(n)}`; }
+}
+function deriveMetrics(agg) {
+  const cpa = agg.conversions > 0 ? agg.spend / agg.conversions : null;
+  const roas = agg.spend > 0 && agg.revenue > 0 ? agg.revenue / agg.spend : null;
+  return { ...agg, cpa, roas };
+}
+function pctChange(curr, prev) {
+  if (prev === null || prev === undefined || prev === 0) return null;
+  if (curr === null || curr === undefined) return null;
+  return ((curr - prev) / prev) * 100;
+}
+
+function DeltaBadge({ value, invert = false }) {
+  if (value === null || value === undefined || !isFinite(value)) {
+    return <span className="mal-delta mal-delta-flat">—</span>;
+  }
+  const good = invert ? value < 0 : value > 0;
+  const flat = Math.abs(value) < 0.05;
+  const arrow = flat ? "→" : value > 0 ? "▲" : "▼";
+  const cls = flat ? "mal-delta-flat" : good ? "mal-delta-good" : "mal-delta-bad";
+  return <span className={`mal-delta ${cls}`}>{arrow} {Math.abs(value).toFixed(1)}%</span>;
+}
+
+function AdThumb({ src, alt }) {
+  const [errored, setErrored] = useState(false);
+  if (!src || errored) return <div className="mal-thumb mal-thumb-fallback">🖼</div>;
+  return <img src={src} alt={alt || "廣告預覽"} className="mal-thumb" onError={() => setErrored(true)} />;
+}
+
+// 統一顯示「投放中 / 已停止」狀態,若沒有這個資訊(active 是 undefined),就完全不顯示,
+// 不要憑空猜測狀態、更不會把不同狀態的廣告數字混在一起顯示。
+function ActiveBadge({ active }) {
+  if (typeof active !== "boolean") return null;
+  if (active) {
+    return <span className="mal-status-badge mal-status-on">● 投放中</span>;
+  }
+  return <span className="mal-status-badge mal-status-off">■ 已停止</span>;
+}
+
+function StatusFilterButtons({ value, onChange }) {
+  const options = [
+    { key: "all", label: "全部" },
+    { key: "active", label: "● 只看投放中" },
+    { key: "inactive", label: "■ 只看已停止" },
+  ];
+  return (
+    <div className="mal-status-filter">
+      {options.map((opt) => (
+        <button
+          key={opt.key}
+          type="button"
+          className={`mal-status-filter-btn ${value === opt.key ? "mal-status-filter-btn-active" : ""}`}
+          onClick={() => onChange(opt.key)}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------- lightweight dependency-free charts ----------
+
+function SimpleBarChart({ data, seriesA, seriesB, colorA, colorB, labelA, labelB, fmtA, fmtB }) {
+  const w = 640, h = 200, padL = 6, padR = 6, padT = 10, padB = 26;
+  const n = data.length;
+  const groupW = (w - padL - padR) / n;
+  const barW = Math.min(22, groupW * 0.28);
+  const maxA = Math.max(1, ...data.map((d) => d[seriesA]));
+  const maxB = Math.max(1, ...data.map((d) => d[seriesB]));
+  return (
+    <div>
+      <div className="mal-chart-legend">
+        <span><i className="mal-chart-dot" style={{ background: colorA }}></i>{labelA}</span>
+        <span><i className="mal-chart-dot" style={{ background: colorB }}></i>{labelB}</span>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="200">
+        <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#EAE2D6" />
+        {data.map((d, i) => {
+          const cx = padL + groupW * i + groupW / 2;
+          const barH_A = ((h - padT - padB) * d[seriesA]) / maxA;
+          const barH_B = ((h - padT - padB) * d[seriesB]) / maxB;
+          return (
+            <g key={i}>
+              <rect x={cx - barW - 2} y={h - padB - barH_A} width={barW} height={barH_A} fill={colorA} rx="2">
+                <title>{d.month}: {fmtA(d[seriesA])}</title>
+              </rect>
+              <rect x={cx + 2} y={h - padB - barH_B} width={barW} height={barH_B} fill={colorB} rx="2">
+                <title>{d.month}: {fmtB(d[seriesB])}</title>
+              </rect>
+              <text x={cx} y={h - 8} textAnchor="middle" fontSize="11" fontFamily="IBM Plex Mono, monospace" fill="#9C9186">{d.month}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function SimpleLineChart({ data, seriesA, seriesB, colorA, colorB, labelA, labelB, fmtA, fmtB }) {
+  const w = 640, h = 200, padL = 6, padR = 6, padT = 14, padB = 26;
+  const n = data.length;
+  const stepX = n > 1 ? (w - padL - padR) / (n - 1) : 0;
+  const valsA = data.map((d) => d[seriesA]).filter((v) => v !== null && v !== undefined);
+  const valsB = data.map((d) => d[seriesB]).filter((v) => v !== null && v !== undefined);
+  const maxA = Math.max(1, ...valsA), minA = Math.min(0, ...valsA);
+  const maxB = Math.max(1, ...valsB), minB = Math.min(0, ...valsB);
+  const yA = (v) => h - padB - ((v - minA) / (maxA - minA || 1)) * (h - padT - padB);
+  const yB = (v) => h - padB - ((v - minB) / (maxB - minB || 1)) * (h - padT - padB);
+  const pathFor = (key, yf) => {
+    let d = "";
+    data.forEach((pt, i) => {
+      const v = pt[key];
+      if (v === null || v === undefined) return;
+      const x = padL + stepX * i;
+      d += (d ? " L " : "M ") + x + " " + yf(v);
+    });
+    return d;
+  };
+  return (
+    <div>
+      <div className="mal-chart-legend">
+        <span><i className="mal-chart-dot" style={{ background: colorA }}></i>{labelA}</span>
+        <span><i className="mal-chart-dot" style={{ background: colorB }}></i>{labelB}</span>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="200">
+        <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#EAE2D6" />
+        <path d={pathFor(seriesA, yA)} fill="none" stroke={colorA} strokeWidth="2.5" />
+        <path d={pathFor(seriesB, yB)} fill="none" stroke={colorB} strokeWidth="2.5" />
+        {data.map((pt, i) => {
+          const x = padL + stepX * i;
+          return (
+            <g key={i}>
+              {pt[seriesA] !== null && pt[seriesA] !== undefined && (
+                <circle cx={x} cy={yA(pt[seriesA])} r="3.2" fill={colorA}><title>{pt.month} {labelA}: {fmtA(pt[seriesA])}</title></circle>
+              )}
+              {pt[seriesB] !== null && pt[seriesB] !== undefined && (
+                <circle cx={x} cy={yB(pt[seriesB])} r="3.2" fill={colorB}><title>{pt.month} {labelB}: {fmtB(pt[seriesB])}</title></circle>
+              )}
+              <text x={x} y={h - 8} textAnchor="middle" fontSize="11" fontFamily="IBM Plex Mono, monospace" fill="#9C9186">{pt.month}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// 精選 24 色的色盤,色調跟整體「復古紙本」風格一致(用完才會開始用下面的演算法備援色)。
+const DONUT_PALETTE = [
+  "#6E8577", "#A8607A", "#BFA054", "#7C8B54", "#8E9AAF", "#C97B63",
+  "#5B7F95", "#9B7EDE", "#D98B5F", "#4F8A7B", "#B85C7A", "#7D9471",
+  "#8C6E4F", "#5E7A8C", "#A67B9E", "#7B9A6B", "#C08552", "#647A9E",
+  "#9E7B6E", "#6B9A8C", "#B88CA6", "#8A9E5B", "#A65B6E", "#5B8AA6",
+];
+
+// 產品代號的數量沒有上限,色盤用完之後,用 HSL 色相環演算法自動生成新顏色(黃金角度旋轉,確保彼此夠好分辨),
+// 而不是讓顏色從頭循環重複——避免產品一多,兩個不同代號被畫成同一個顏色而看不出差異。
+function colorForIndex(i) {
+  if (i < DONUT_PALETTE.length) return DONUT_PALETTE[i];
+  const hue = (i * 137.508) % 360; // 黃金角度,讓色相盡量分散
+  return `hsl(${hue.toFixed(0)}, 46%, 48%)`;
+}
+
+function DonutChart({ data, size = 176, thickness = 30 }) {
+  const total = data.reduce((s, d) => s + Math.max(0, d.value), 0);
+  const r = size / 2;
+  const rInner = r - thickness;
+  const toXY = (deg, radius) => {
+    const rad = ((deg - 90) * Math.PI) / 180;
+    return [r + radius * Math.cos(rad), r + radius * Math.sin(rad)];
+  };
+  function arcPath(startDeg, sweepDeg) {
+    if (sweepDeg <= 0) return "";
+    const endDeg = Math.min(startDeg + sweepDeg, startDeg + 359.999);
+    const large = sweepDeg > 180 ? 1 : 0;
+    const [x1, y1] = toXY(startDeg, r);
+    const [x2, y2] = toXY(endDeg, r);
+    const [x3, y3] = toXY(endDeg, rInner);
+    const [x4, y4] = toXY(startDeg, rInner);
+    return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} L ${x3} ${y3} A ${rInner} ${rInner} 0 ${large} 0 ${x4} ${y4} Z`;
+  }
+  let angle = 0;
+  const arcs = data.map((d) => {
+    const value = Math.max(0, d.value);
+    const frac = total > 0 ? value / total : 0;
+    const start = angle;
+    const sweep = frac * 360;
+    angle += sweep;
+    return { ...d, start, sweep, frac };
+  });
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+      {arcs.filter((a) => a.sweep > 0).map((a, i) => (
+        <path key={i} d={arcPath(a.start, a.sweep)} fill={a.color}>
+          <title>{a.label}：{(a.frac * 100).toFixed(1)}%</title>
+        </path>
+      ))}
+      <circle cx={r} cy={r} r={rInner - 1} fill="var(--paper-raised)" />
+    </svg>
+  );
+}
+
+// ---------- main app ----------
+
+function MetaAdsLedger() {
+  const [months, setMonths] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [focusMonth, setFocusMonth] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [showAllAds, setShowAllAds] = useState(false);
+  const [adSortMode, setAdSortMode] = useState("spend");
+  const [adStatusFilter, setAdStatusFilter] = useState("all"); // "all" | "active" | "inactive" —— 篩選要看投放中還是已停止的廣告
+  const [showApiPanel, setShowApiPanel] = useState(false);
+  // 全域節流用:記錄「最後一次真正打到 Meta Graph API」的時間戳。
+  // 不管是週報表、月報表、批次、自動同步或縮圖抓取,只要是打 Meta 的請求都共用同一個時間戳,
+  // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS——即使使用者手動連續按「抓上週」再按「抓月報表」也一樣受限,
+  // 不再只靠批次迴圈裡的 4 秒 delay(那個只保護「同一輪批次抓取」,不會保護「先抓周報表、再手動切去抓月報表」這種跨動作的情境)。
+  const lastApiCallRef = useRef(0);
+  const [apiMode, setApiMode] = useState("full"); // "full" | "multi" | "week" | "recentWeeks"
+  const [recentWeeksCount, setRecentWeeksCount] = useState(4);
+  const [apiToken, setApiToken] = useState("");
+  const [apiAccountId, setApiAccountId] = useState("");
+  const [brands, setBrands] = useState([]);
+  const [activeBrandId, setActiveBrandId] = useState("");
+  const [cpaThresholds, setCpaThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「CPA 過高」標準
+  const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
+  const [batchProgress, setBatchProgress] = useState(null);
+  const [weekInfo, setWeekInfo] = useState(getLastWeekRange());
+  const [weekLoading, setWeekLoading] = useState(false);
+  const [viewMode, setViewMode] = useState("month");
+  const [weeksData, setWeeksData] = useState({});
+  const [focusWeek, setFocusWeek] = useState(null);
+  const [batchGranularity, setBatchGranularity] = useState("month");
+  const [apiMonth, setApiMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [apiLoading, setApiLoading] = useState(false);
+  const [apiError, setApiError] = useState(null);
+  const [apiNotice, setApiNotice] = useState(null);
+  const [pdfExporting, setPdfExporting] = useState(false);
+  const [rememberToken, setRememberToken] = useState(false);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [autoSyncStatus, setAutoSyncStatus] = useState(null);
+  const [ledgerByMonth, setLedgerByMonth] = useState({});
+  const [showLedgerModal, setShowLedgerModal] = useState(false);
+  const [ledgerYear, setLedgerYear] = useState(new Date().getFullYear());
+  const [ledgerImportLoading, setLedgerImportLoading] = useState(false);
+  const [ledgerImportError, setLedgerImportError] = useState(null);
+  const [ledgerImportNotice, setLedgerImportNotice] = useState(null);
+  const [dailyMonth, setDailyMonth] = useState(null);
+  const [dailySubMode, setDailySubMode] = useState("single"); // "single"(選一天) | "matrix"(矩陣總覽)
+  const [focusDay, setFocusDay] = useState(null);
+  const [sheetIdInput, setSheetIdInput] = useState("");
+  const [sheetSyncLoading, setSheetSyncLoading] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState(HAS_SHARED_STORAGE ? "artifact" : "unknown");
+  const [credentialName, setCredentialName] = useState("");
+  const [showTeamKeyModal, setShowTeamKeyModal] = useState(false);
+  const [teamKeyInput, setTeamKeyInput] = useState(getTeamKey());
+  const autoSyncRanRef = useRef(false);
+
+  useEffect(() => {
+    async function loadInitialConfig() {
+      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes] = await Promise.all([
+        storage.get("meta-api-account-id").catch(() => null),
+        storage.get("meta-api-brands").catch(() => null),
+        storage.get("meta-api-remember-token").catch(() => null),
+        storage.get("meta-api-autosync").catch(() => null),
+        storage.get("meta-api-cpa-thresholds").catch(() => null),
+      ]);
+
+      if (accountIdRes && accountIdRes.value) setApiAccountId(accountIdRes.value);
+
+      if (cpaRes && cpaRes.value) {
+        try { setCpaThresholds(JSON.parse(cpaRes.value)); } catch { /* ignore malformed data */ }
+      }
+
+      let cleanedBrandsForAutoSelect = [];
+      if (brandsRes && brandsRes.value) {
+        try {
+          const parsed = JSON.parse(brandsRes.value);
+          const cleaned = parsed.filter((b) => !LEGACY_DEFAULT_BRAND_IDS.includes(b.id));
+          cleanedBrandsForAutoSelect = cleaned;
+          setBrands(cleaned);
+          if (cleaned.length !== parsed.length) {
+            storage.set("meta-api-brands", JSON.stringify(cleaned)).catch(() => {});
+          }
+          // 已經拿掉「預設帳本」,不能再讓品牌是空白——沒有選取品牌的話就自動選第一個。
+          if (cleaned.length > 0) setActiveBrandId((prev) => prev || cleaned[0].id);
+        } catch { /* ignore malformed data */ }
+      }
+
+      const remembered = rememberRes && rememberRes.value === "1";
+      let loadedToken = "";
+      if (remembered) {
+        setRememberToken(true);
+        const tRes = await storage.get("meta-api-token").catch(() => null);
+        if (tRes && tRes.value) loadedToken = tRes.value;
+        if (loadedToken) setApiToken(loadedToken);
+      }
+
+      const autoSyncOn = autoSyncRes && autoSyncRes.value === "1";
+      if (autoSyncOn) setAutoSyncEnabled(true);
+
+      // 所有設定都載入完成後,才決定要不要自動同步——避免品牌清單/權杖還沒載完就搶跑,
+      // 這裡直接用剛讀到的資料(而不是 apiAccountId/brands 這兩個 state),因為 setState 不會馬上生效。
+      if (autoSyncOn && loadedToken.trim() && !autoSyncRanRef.current) {
+        autoSyncRanRef.current = true;
+        const loadedBrands = brandsRes && brandsRes.value ? (() => {
+          try { return JSON.parse(brandsRes.value).filter((b) => !LEGACY_DEFAULT_BRAND_IDS.includes(b.id)); } catch { return []; }
+        })() : [];
+        const loadedAccountId = (accountIdRes && accountIdRes.value) || "";
+        runAutoSyncWith(loadedToken, loadedBrands, loadedAccountId);
+      }
+    }
+    loadInitialConfig();
+  }, []);
+  useEffect(() => { loadAll(activeBrandId); }, [activeBrandId]);
+  useEffect(() => { setWeekInfo(getLastWeekRange()); loadAllWeeks(activeBrandId); }, [activeBrandId]);
+  useEffect(() => { loadLedger(activeBrandId); }, [activeBrandId]);
+  useEffect(() => {
+    if (HAS_SHARED_STORAGE) return; // Claude Artifact 已經有共用儲存,不需要再測 Cloudflare API
+    probeCloud(true).then((status) => {
+      setCloudStatus(status);
+      if (status === "connected") {
+        setCredentialName(getCredentialName());
+        triggerAutoAccountSync();
+      }
+    });
+  }, []);
+
+  // 連線成功後背景觸發一次「登入後自動同步」(/api/sheets/auto):
+  // 後端會自己判斷今天有沒有同步過、要不要真的去打 Google API,這裡不用先判斷,呼叫了也不會浪費額度。
+  // 純背景動作,失敗就算了(例如還沒設定 Google 服務帳號金鑰),不影響畫面其他功能。
+  async function triggerAutoAccountSync() {
+    try {
+      const res = await fetch("/api/sheets/auto", { headers: teamKeyHeaders() });
+      if (!res.ok) return;
+      const j = await res.json();
+      if (j.synced && j.synced.length) {
+        setNotice(`已自動同步 ${j.synced.length} 個品牌的每日營收(Google 試算表)。`);
+        if (activeBrandId && j.synced.includes(activeBrandId)) loadLedger(activeBrandId);
+      }
+    } catch { /* 背景動作,失敗不影響主要畫面 */ }
+  }
+
+  async function saveTeamKey() {
+    setTeamKey(teamKeyInput.trim());
+    const status = await probeCloud(true);
+    setCloudStatus(status);
+    if (status === "connected") {
+      setCredentialName(getCredentialName());
+      triggerAutoAccountSync();
+      setShowTeamKeyModal(false);
+    }
+  }
+  useEffect(() => { setShowAllAds(false); }, [focusMonth]);
+  useEffect(() => {
+    // 打開「匯入後台每日收益表」視窗時,如果這個品牌之前同步過 Google 試算表,自動帶回上次用過的 ID,不用每次重貼。
+    if (!showLedgerModal || !activeBrandId) return;
+    fetch(`/api/sheets/sync?accountId=${encodeURIComponent(activeBrandId)}`, { headers: teamKeyHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j && j.sheetId) setSheetIdInput(j.sheetId); })
+      .catch(() => {});
+  }, [showLedgerModal, activeBrandId]);
+  useEffect(() => {
+    if (rememberToken && apiToken.trim()) {
+      storage.set("meta-api-token", apiToken.trim()).catch(() => {});
+    }
+  }, [apiToken, rememberToken]);
+
+  async function loadAllWeeks(brandId) {
+    try {
+      const listRes = await storage.list(WEEK_STORAGE_PREFIX);
+      const keys = ((listRes && listRes.keys) || []).filter((k) => {
+        const rest = k.slice(WEEK_STORAGE_PREFIX.length);
+        return brandId ? rest.startsWith(brandId + "::") : !rest.includes("::");
+      });
+      const entries = {};
+      for (const k of keys) {
+        const res = await storage.get(k);
+        if (res && res.value) {
+          const rest = k.slice(WEEK_STORAGE_PREFIX.length);
+          const wk = brandId ? rest.slice((brandId + "::").length) : rest;
+          entries[wk] = JSON.parse(res.value);
+        }
+      }
+      setWeeksData(entries);
+      const sorted = Object.keys(entries).sort();
+      setFocusWeek(sorted.length ? sorted[sorted.length - 1] : null);
+    } catch {
+      setWeeksData({});
+      setFocusWeek(null);
+    }
+  }
+
+  async function loadLedger(brandId) {
+    try {
+      const listRes = await storage.list(LEDGER_STORAGE_PREFIX);
+      const keys = ((listRes && listRes.keys) || []).filter((k) => {
+        const rest = k.slice(LEDGER_STORAGE_PREFIX.length);
+        return brandId ? rest.startsWith(brandId + "::") : !rest.includes("::");
+      });
+      const entries = {};
+      for (const k of keys) {
+        const res = await storage.get(k);
+        if (res && res.value) {
+          const rest = k.slice(LEDGER_STORAGE_PREFIX.length);
+          const mk = brandId ? rest.slice((brandId + "::").length) : rest;
+          entries[mk] = JSON.parse(res.value);
+        }
+      }
+      setLedgerByMonth(entries);
+    } catch {
+      setLedgerByMonth({});
+    }
+  }
+
+  async function importLedgerFile(file) {
+    setLedgerImportLoading(true); setLedgerImportError(null); setLedgerImportNotice(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const workbook = XLSX.read(buf, { type: "array", cellDates: true });
+      const parsedByMonth = parseLedgerWorkbook(workbook, Number(ledgerYear));
+      const monthKeys = Object.keys(parsedByMonth);
+      if (!monthKeys.length) {
+        setLedgerImportError("在這份檔案裡沒有找到看得懂的月份分頁(分頁名稱需要是「1月」~「12月」這種格式),請確認檔案格式是否跟範例表單一致。");
+        return;
+      }
+      for (const mk of monthKeys) {
+        await storage.set(ledgerKeyFor(activeBrandId, mk), JSON.stringify(parsedByMonth[mk]));
+      }
+      await loadLedger(activeBrandId);
+      setLedgerImportNotice(`已匯入 ${monthKeys.map((mk) => monthLabel(mk)).join("、")} 的後台每日收益表,週報表/月報表會自動比對。`);
+      setShowLedgerModal(false);
+    } catch (e) {
+      setLedgerImportError("讀取檔案時發生問題,請確認上傳的是 .xlsx 檔,且格式跟範例表單一致。");
+    } finally {
+      setLedgerImportLoading(false);
+    }
+  }
+
+  // 從 Google 試算表直接同步後台每日收益表(方式B:試算表保持完全私密,只分享給一個服務帳號),
+  // 取代手動下載 xlsx 再上傳的步驟。伺服器端(/api/sheets/sync)會用服務帳號金鑰讀「1月」~「12月」
+  // 這些分頁,轉成跟 xlsx 匯入完全同一套格式後直接存進帳本,前端這裡只需要打一次 API。
+  async function syncFromGoogleSheet() {
+    if (!activeBrandId) {
+      setLedgerImportError("請先在上方選擇或建立一個品牌(廣告帳號),系統才知道要把同步回來的資料存到哪一本帳。");
+      return;
+    }
+    const sheetId = sheetIdInput.trim();
+    setSheetSyncLoading(true); setLedgerImportError(null); setLedgerImportNotice(null);
+    try {
+      const res = await fetch(`/api/sheets/sync`, {
+        method: "POST",
+        headers: { ...teamKeyHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: activeBrandId, sheetId, year: Number(ledgerYear) }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      await loadLedger(activeBrandId);
+      const monthsLabel = (json.importedMonths || []).map((mk) => monthLabel(mk)).join("、");
+      setLedgerImportNotice(
+        `已從 Google 試算表同步 ${monthsLabel} 的後台每日收益表。` +
+        (json.errors && json.errors.length ? ` (部分分頁略過:${json.errors.join(";")})` : "")
+      );
+    } catch (e) {
+      setLedgerImportError("同步失敗:" + e.message + "——請確認這份試算表已經分享給服務帳號的 email(檢視者權限即可),且 ID 沒有貼錯。");
+    } finally {
+      setSheetSyncLoading(false);
+    }
+  }
+
+  async function loadAll(brandId) {
+    setLoading(true); setError(null);
+    try {
+      const listRes = await storage.list(STORAGE_PREFIX);
+      const keys = ((listRes && listRes.keys) || []).filter((k) => {
+        const rest = k.slice(STORAGE_PREFIX.length);
+        return brandId ? rest.startsWith(brandId + "::") : !rest.includes("::");
+      });
+      const entries = {};
+      for (const k of keys) {
+        const res = await storage.get(k);
+        if (res && res.value) {
+          const rest = k.slice(STORAGE_PREFIX.length);
+          const mk = brandId ? rest.slice((brandId + "::").length) : rest;
+          entries[mk] = JSON.parse(res.value);
+        }
+      }
+      setMonths(entries);
+      const sorted = Object.keys(entries).sort();
+      setFocusMonth(sorted.length ? sorted[sorted.length - 1] : null);
+    } catch (e) {
+      setError("讀取先前資料時發生問題,先從空白帳本開始。");
+    } finally { setLoading(false); }
+  }
+
+  async function deleteMonth(mk) {
+    try {
+      await storage.delete(monthKeyFor(activeBrandId, mk));
+      const updated = { ...months }; delete updated[mk];
+      setMonths(updated);
+      const sorted = Object.keys(updated).sort();
+      if (focusMonth === mk) setFocusMonth(sorted.length ? sorted[sorted.length - 1] : null);
+    } catch { setError("刪除失敗,請再試一次。"); }
+    setConfirmDelete(null);
+  }
+
+  function handlePrintClick() {
+    // 跟匯出 PDF 一樣,列印前先展開所有收合中的「廣告成效分類」區塊,避免收合的內容沒有印出來。
+    window.dispatchEvent(new Event(PERF_EXPAND_ALL_EVENT));
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  }
+
+  async function exportPDF() {
+    if (!window.html2canvas || !window.jspdf) {
+      setError("PDF 匯出工具還沒載入完成,請確認網路連線後再試一次。");
+      return;
+    }
+    setPdfExporting(true);
+    setError(null);
+    // 先展開所有收合中的「廣告成效分類」區塊,不然收合的內容不會被截進 PDF 裡。
+    window.dispatchEvent(new Event(PERF_EXPAND_ALL_EVENT));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    document.body.classList.add("mal-exporting");
+    try {
+      const target = document.querySelector(".mal-shell");
+      const canvas = await window.html2canvas(target, { scale: 2, backgroundColor: "#FAF7F2", useCORS: true });
+      if (!canvas || !canvas.width || !canvas.height) {
+        throw new Error("畫面擷取結果是空的(可能是字型或圖片跨網域限制導致),請重新整理頁面、等待字型與圖片都載入完成後再試一次。");
+      }
+      const { jsPDF } = window.jspdf;
+
+      // Build a single page sized to the full content's aspect ratio, so nothing
+      // gets sliced mid-row/mid-card the way fixed-height A4 pagination would.
+      const pageWidthPt = 800;
+      const pageHeightPt = (canvas.height * pageWidthPt) / canvas.width;
+      const pdf = new jsPDF({
+        orientation: pageHeightPt > pageWidthPt ? "p" : "l",
+        unit: "pt",
+        format: [pageWidthPt, pageHeightPt],
+      });
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      pdf.addImage(imgData, "JPEG", 0, 0, pageWidthPt, pageHeightPt);
+
+      const label =
+        viewMode === "week"
+          ? focusWeek
+            ? `週報-${weekLabel(focusWeek).replace("~", "至")}`
+            : "全部週份"
+          : focusMonth
+          ? monthLabel(focusMonth).replace("/", "-")
+          : "全部月份";
+      pdf.save(`品牌成效分析-${label}.pdf`);
+    } catch (e) {
+      setError("匯出 PDF 失敗:" + e.message);
+    } finally {
+      document.body.classList.remove("mal-exporting");
+      setPdfExporting(false);
+    }
+  }
+
+  async function resetAll() {
+    try {
+      for (const mk of Object.keys(months)) await storage.delete(monthKeyFor(activeBrandId, mk));
+      setMonths({}); setFocusMonth(null);
+    } catch { setError("重置失敗,請再試一次。"); }
+    setConfirmReset(false);
+  }
+
+  // 每個品牌各自的「CPA 過高」標準是各品牌獨立設定、互不影響,存起來之後下次打開網頁還會記得,
+  // 也隨時可以重新設定或修改。輸入空白表示清除這個品牌的標準(改回「尚未設定」,不會顯示過高警示)。
+  // 已經拿掉「預設帳本」,所以只要抓到資料,就一定要掛在一個看得到的品牌底下——
+  // 如果這個帳號 ID 還沒存成常用品牌,就先用帳號 ID 當名稱自動建立一個(之後可以用「存為常用」改成正式名稱)。
+  async function ensureBrandRegistered(cleanId) {
+    const matched = brands.find((b) => b.id === cleanId);
+    if (matched) return matched.id;
+    const autoBrand = { name: cleanId, id: cleanId };
+    const updated = [...brands, autoBrand];
+    setBrands(updated);
+    await storage.set("meta-api-brands", JSON.stringify(updated)).catch(() => {});
+    return cleanId;
+  }
+
+  function editCpaThreshold(brandId) {
+    const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
+    const current = cpaThresholds[brandId];
+    const input = window.prompt(
+      `設定「${brandName}」的 CPA 過高標準——每筆訂單成本(CPA)超過這個金額,系統會標示為「CPA 過高」。\n留空白可以清除這個品牌的標準。`,
+      current != null ? String(current) : ""
+    );
+    if (input === null) return; // 使用者按取消
+    const trimmed = input.trim();
+    const updated = { ...cpaThresholds };
+    if (!trimmed) {
+      delete updated[brandId];
+    } else {
+      const num = parseFloat(trimmed);
+      if (isNaN(num) || num <= 0) {
+        setApiError("CPA 標準請輸入一個大於 0 的數字。");
+        return;
+      }
+      updated[brandId] = num;
+    }
+    setCpaThresholds(updated);
+    storage.set("meta-api-cpa-thresholds", JSON.stringify(updated)).catch(() => {});
+  }
+
+  async function saveCurrentAsBrand() {
+    if (!apiAccountId.trim()) {
+      setApiError("請先填廣告帳號 ID,才能存成常用品牌。");
+      return;
+    }
+    const name = window.prompt("幫這個廣告帳號取個品牌名稱:");
+    if (!name || !name.trim()) return;
+    const cleanId = apiAccountId.trim().replace(/^act_/, "");
+    const updated = [...brands.filter((b) => b.name !== name.trim()), { name: name.trim(), id: cleanId }];
+    setBrands(updated);
+    try {
+      await storage.set("meta-api-brands", JSON.stringify(updated));
+      // 同時記住這個帳號 ID 是「目前使用中」的,下次打開網頁時才會自動帶入,
+      // 不用等到真的按下抓取資料才會被記住。
+      await storage.set("meta-api-account-id", cleanId).catch(() => {});
+      setApiNotice(`已將「${name.trim()}」存為常用品牌。`);
+      setTimeout(() => setApiNotice(null), 4000);
+    } catch {
+      setApiError("儲存常用品牌失敗,請再試一次。");
+    }
+  }
+
+  function selectBrand(name) {
+    const found = brands.find((b) => b.name === name);
+    if (found) {
+      setApiAccountId(found.id);
+      // 選了常用品牌後也立刻記住,這樣下次打開網頁會直接帶入這個品牌的帳號 ID。
+      storage.set("meta-api-account-id", found.id).catch(() => {});
+    }
+  }
+
+  async function deleteBrand(name) {
+    const updated = brands.filter((b) => b.name !== name);
+    setBrands(updated);
+    try {
+      await storage.set("meta-api-brands", JSON.stringify(updated));
+    } catch {
+      setApiError("刪除常用品牌失敗,請再試一次。");
+    }
+  }
+
+  async function fetchOneBrandMonth(token, accountId, month) {
+    const [y, m] = month.split("-").map(Number);
+    const since = `${month}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const until = `${month}-${String(lastDay).padStart(2, "0")}`;
+    return fetchInsightsForRange(token, accountId, since, until);
+  }
+
+  const MIN_FETCH_SPEND = 500;
+  const MIN_API_GAP_MS = 1200; // 任兩次 Meta Graph API 請求之間的最小間隔(毫秒)
+
+  // 所有打 Meta Graph API 的地方都要改叫這個,不要直接用 fetch()。
+  // 它會確保「這一次要打的請求」跟「上一次真正打出去的請求」之間至少間隔 MIN_API_GAP_MS,
+  // 不管上一次請求是來自周報表、月報表、批次、自動同步、或縮圖抓取,全部共用同一個計時器,
+  // 所以就算使用者用兩個不同按鈕(先抓上週、再抓月報表)手動連續觸發,也一樣會被這裡擋下來排隊等待。
+  async function throttledFetch(url, context) {
+    const now = Date.now();
+    const wait = lastApiCallRef.current + MIN_API_GAP_MS - now;
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastApiCallRef.current = Date.now();
+    try {
+      return await fetch(url);
+    } catch (e) {
+      throw new Error(`${context || "呼叫 Meta API"}時網路請求失敗:${e.message}`);
+    }
+  }
+
+  async function parseApiResponse(res, context) {
+    let json;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`${context}回傳的內容無法解析(可能是網路中斷或 Meta 伺服器異常)。`);
+    }
+    if (!res.ok || json.error) {
+      const code = json.error && json.error.code;
+      const sub = json.error && json.error.error_subcode;
+      const msg = (json.error && json.error.message) || `HTTP ${res.status}`;
+      const err = new Error(`${context}失敗(錯誤代碼 ${code || res.status}${sub ? "/" + sub : ""}):${msg}`);
+      err.code = code;
+      err.subcode = sub;
+      throw err;
+    }
+    return json;
+  }
+
+  // 統一包裝「打 API + 解析回應」,遇到 Meta 那邊回傳的暫時性錯誤時,自動等一下重試,不用使用者手動再按一次。
+  // 錯誤代碼 1(含各種 subcode,例如 1/99)跟 2 都是 Meta 官方文件裡列為「建議直接重試」的暫時性錯誤,
+  // 跟權杖/帳號 ID/權限完全無關,常見原因是短時間內打太多次 API(不管是你自己、同事,或自動同步同時在跑)。
+  async function fetchGraphApi(url, context, retriesLeft = 2) {
+    const res = await throttledFetch(url, context);
+    try {
+      return await parseApiResponse(res, context);
+    } catch (e) {
+      if ((e.code === 1 || e.code === 2) && retriesLeft > 0) {
+        const waitMs = retriesLeft === 2 ? 3000 : 6000; // 重試間隔逐次拉長,給 Meta 那邊更多喘息時間
+        await new Promise((r) => setTimeout(r, waitMs));
+        return fetchGraphApi(url, context, retriesLeft - 1);
+      }
+      throw e;
+    }
+  }
+
+  // 查廣告帳號自己的時區(跟 UTC 差幾小時),讓「上週一~週日」的日期範圍照這個帳號自己的時區去算,
+  // 而不是照瀏覽器所在的時區——不然帳號時區跟瀏覽器不同的話,算出來的週報表區間會跟 Meta 後台的「上週」對不起來,
+  // 花費、轉單數、CPA、ROAS 就會整批兜不起來(尤其是靠近週一/週日交界的那幾筆資料)。
+  // 抓不到時區也不讓它卡住整個流程,直接退回用瀏覽器時區。
+  async function fetchAccountUtcOffset(token, accountId) {
+    try {
+      const json = await fetchGraphApi(
+        `https://graph.facebook.com/v19.0/act_${accountId}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(token)}`,
+        "讀取帳號時區"
+      );
+      return typeof json.timezone_offset_hours_utc === "number" ? json.timezone_offset_hours_utc : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function apiErrorHint(e) {
+    const msg = (e && e.message) || "";
+    if (e && (e.code === 1 || e.code === 2)) {
+      return (
+        "。這不是你的權杖或帳號 ID 設定錯誤——Meta 官方把這種錯誤歸類為「暫時性問題,建議直接重試」," +
+        "常見原因是短時間內對同一個廣告帳號打太多次 API(可能是你自己連續按了好幾次、同事剛好也在同時間抓同一個品牌、" +
+        "或自動同步跟手動抓取撞在一起),系統已經自動重試過,如果還是失敗,等 1~2 分鐘再試一次通常就會恢復。"
+      );
+    }
+    if (/too many calls/i.test(msg) || /80004/.test(msg) || /error_subcode 2446079/i.test(msg)) {
+      return "。這是 Meta 廣告帳號的呼叫頻率限制,不是設定錯誤——通常等 5~15 分鐘再試一次就會恢復,批次抓多個品牌時建議一次不要抓太多個。";
+    }
+    return "。請確認權杖沒過期、廣告帳號 ID 正確,且已授權 ads_read 權限。";
+  }
+
+  // relaxThreshold=true(目前只有「上週報表」會用到):篩選階段不會排除掉「目前還在投放中」的廣告,
+  // 就算這支廣告這段期間花費還沒到 500,只要現在仍在投放,一樣會保留下來,方便看到剛起步/學習中的廣告。
+  // 月報表(fetchOneBrandMonth)沒有帶這個參數,維持原本花費 ≥ 500 才留下的嚴格門檻。
+  async function fetchInsightsForRange(token, accountId, since, until, relaxThreshold = false) {
+    const encToken = encodeURIComponent(token);
+    const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
+
+    // 0) account currency
+    let currency = "TWD";
+    try {
+      const curJson = await fetchGraphApi(`https://graph.facebook.com/v19.0/act_${accountId}?fields=currency&access_token=${encToken}`, "讀取帳號幣別");
+      if (curJson.currency) currency = curJson.currency;
+    } catch { /* fall back to TWD, this call isn't critical */ }
+
+    // 1) per-ad performance for the month
+    // 關鍵參數 use_account_attribution_setting=true:讓這次 API 呼叫套用「這個廣告帳號自己在 Meta 後台設定的歸因窗口」,
+    // 而不是 API 預設的歸因窗口。如果沒有這個參數,API 預設的歸因窗口通常比後台顯示用的寬(例如把 7 天內的點擊、
+    // 甚至瀏覽後很久才發生的購買都算進來),會導致轉單數比 Meta 後台顯示的「結果」多出好幾倍,CPA 被嚴重低估、
+    // ROAS 被嚴重高估——這正是造成轉單數跟後台數字差非常多倍的根本原因,不是重複計算的問題。
+    let insightsUrl =
+      `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
+      `&fields=ad_id,ad_name,spend,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
+    let rows = [];
+    let page = 0;
+    while (insightsUrl && page < 20) {
+      const json = await fetchGraphApi(insightsUrl, "讀取成效資料");
+      rows = rows.concat(json.data || []);
+      insightsUrl = json.paging && json.paging.next ? json.paging.next : null;
+      page++;
+    }
+
+    if (!rows.length) {
+      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [] };
+    }
+
+    // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
+    // 這一步要放在篩選門檻「之前」,因為 relaxThreshold 模式需要用投放狀態來決定要不要放行低花費的廣告。
+    // 只查「這段期間真的有花費紀錄」的廣告 ID,不要掃整個帳號的歷史廣告,避免觸發 Meta 帳號層級的頻率限制。
+    const periodAdIds = [...new Set(rows.map((r) => r.ad_id).filter(Boolean))];
+    let thumbMap = {};
+    let utmMap = {};
+    let statusMap = {};
+    let campaignMap = {};
+    let startDateMap = {};
+    const ID_CHUNK_SIZE = 50;
+    for (let i = 0; i < periodAdIds.length; i += ID_CHUNK_SIZE) {
+      const chunk = periodAdIds.slice(i, i + ID_CHUNK_SIZE);
+      const filtering = encodeURIComponent(JSON.stringify([{ field: "id", operator: "IN", value: chunk }]));
+      let adsUrl =
+        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{name},adset{start_time},creative{thumbnail_url,image_url,url_tags}` +
+        `&filtering=${filtering}&limit=500&access_token=${encToken}`;
+      let page2 = 0;
+      while (adsUrl && page2 < 5) {
+        const json = await fetchGraphApi(adsUrl, "讀取廣告清單");
+        (json.data || []).forEach((ad) => {
+          const thumb = ad.creative && (ad.creative.thumbnail_url || ad.creative.image_url);
+          if (thumb) thumbMap[ad.id] = thumb;
+          // 有些廣告(例如動態素材/型錄類廣告)的追蹤參數是設在「創意」層級,不是廣告本身,
+          // 所以廣告本身的 url_tags 抓不到值時,再退回去看創意底下的 url_tags。
+          const tags = ad.url_tags || (ad.creative && ad.creative.url_tags) || "";
+          if (tags) utmMap[ad.id] = extractUtmValue(tags);
+          statusMap[ad.id] = ad.effective_status || "UNKNOWN";
+          if (ad.campaign && ad.campaign.name) campaignMap[ad.id] = ad.campaign.name;
+          // 投放起始時間:優先用廣告組合(adset)排定的開始時間,最貼近實際開始投放的日期;
+          // 抓不到的話(例如舊資料、權限限制)退回用廣告本身的建立時間,當作大概的參考。
+          const startRaw = (ad.adset && ad.adset.start_time) || ad.created_time || "";
+          if (startRaw) startDateMap[ad.id] = startRaw;
+        });
+        adsUrl = json.paging && json.paging.next ? json.paging.next : null;
+        page2++;
+      }
+    }
+
+    // 3) 先用「完整、未篩選」的資料算總計——這樣廣告費/轉單數/轉單金額才會跟 Meta 後台的帳號總覽數字完全一致。
+    // 後台的總計是把該期間「所有」廣告都算進去,不會因為某支廣告花費很小就不計入;
+    // 如果只加總「花費 ≥ 500」的廣告,總計就會比後台實際數字少,CPA/ROAS 也會跟著失真。
+    let totalSpend = 0, totalConv = 0, totalRev = 0;
+    rows.forEach((row) => {
+      totalSpend += parseFloat(row.spend) || 0;
+      totalConv += pickPurchaseValue(row.actions);
+      totalRev += pickPurchaseValue(row.action_values);
+    });
+
+    // 花費門檻只用來決定「廣告明細列表」要不要顯示這支廣告(避免清單被大量花費很少的測試廣告洗版),
+    // 不會再影響上面的總計數字。
+    const detailRows = rows.filter((row) => {
+      const spend = parseFloat(row.spend) || 0;
+      if (spend >= MIN_FETCH_SPEND) return true;
+      if (relaxThreshold && statusMap[row.ad_id] === "ACTIVE") return true;
+      return false;
+    });
+
+    // 4) aggregate, merging ads that share the same UTM tag —— 但「投放中」跟「已停止」的廣告絕對不會合併在一起,
+    // 即使 UTM 追蹤代碼相同,只要目前的投放狀態不一樣,就會拆成不同的兩列,避免誤把已經停掉的舊數字跟現在還在跑的混在一起看。
+    const grouped = {};
+    detailRows.forEach((row) => {
+      const spend = parseFloat(row.spend) || 0;
+      const conversions = pickPurchaseValue(row.actions);
+      const revenue = pickPurchaseValue(row.action_values);
+
+      const adName = row.ad_name || "(未命名廣告)";
+      const utm = utmMap[row.ad_id] || "";
+      const isActive = statusMap[row.ad_id] === "ACTIVE";
+      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::" + (isActive ? "on" : "off");
+      if (!grouped[groupKey]) {
+        grouped[groupKey] = { utm, names: new Set(), image: "", spend: 0, conversions: 0, revenue: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null };
+      }
+      const g = grouped[groupKey];
+      g.names.add(adName);
+      g.spend += spend; g.conversions += conversions; g.revenue += revenue;
+      if (!g.image && thumbMap[row.ad_id]) g.image = thumbMap[row.ad_id];
+      if (campaignMap[row.ad_id]) g.campaigns.add(campaignMap[row.ad_id]);
+      if (row.ad_id) g.adIds.add(row.ad_id);
+      // 如果這個群組是合併了好幾支廣告(同一個 UTM 追蹤代碼),投放起始時間取「最早」的那個,
+      // 代表這個素材/追蹤代碼最初是什麼時候開始投放的。
+      const rowStart = startDateMap[row.ad_id];
+      if (rowStart && (!g.startDate || rowStart < g.startDate)) g.startDate = rowStart;
+    });
+
+    const ads = Object.values(grouped)
+      .map((g) => {
+        const nameList = [...g.names];
+        const adCount = nameList.length || 1;
+        const name =
+          nameList.length === 0
+            ? g.utm || "未命名廣告"
+            : nameList.length === 1
+            ? nameList[0]
+            : `${nameList[0]} 等 ${nameList.length} 支廣告`;
+        const campaignList = [...g.campaigns];
+        const campaign = campaignList.length ? campaignList.join(" / ") : "(未分類活動)";
+        return {
+          name, utm: g.utm, image: g.image, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
+          adCount, rawNames: nameList, active: g.active, campaign, adIds: [...g.adIds], startDate: g.startDate,
+        };
+      })
+      .sort((a, b) => b.spend - a.spend);
+
+    return { spend: totalSpend, conversions: totalConv, revenue: totalRev, campaigns: 0, currency, accountId, ads };
+  }
+
+  async function fetchLastWeekData() {
+    if (!apiToken.trim() || !apiAccountId.trim()) {
+      setApiError("請填入存取權杖跟廣告帳號 ID。");
+      return;
+    }
+    setApiError(null);
+    setApiNotice(null);
+    setWeekLoading(true);
+    try {
+      const cleanId = apiAccountId.trim().replace(/^act_/, "");
+      const tzOffset = await fetchAccountUtcOffset(apiToken.trim(), cleanId);
+      const info = getLastWeekRange(tzOffset);
+      const record = await fetchInsightsForRange(apiToken.trim(), cleanId, info.since, info.until, true);
+      const brandIdToUse = await ensureBrandRegistered(cleanId);
+      await storage.set(weekKeyFor(brandIdToUse, info.weekStart), JSON.stringify(record));
+      setActiveBrandId(brandIdToUse);
+      setWeekInfo(info);
+      await loadAllWeeks(brandIdToUse);
+      setFocusWeek(info.weekStart);
+      setViewMode("week");
+      setApiNotice(`已抓到上週(${info.since} ~ ${info.until})的資料,共 ${record.ads.length} 支廣告。`);
+      setShowApiPanel(false);
+    } catch (e) {
+      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
+    } finally {
+      setWeekLoading(false);
+    }
+  }
+
+  // 自動回溯抓取過去 N 週(週一~週日),依序一週一週抓、中間間隔 4 秒避免觸發 Meta 頻率限制。
+  // 每一週都是獨立呼叫 fetchInsightsForRange,所以就算某一週失敗,也不會影響其他週的結果。
+  async function fetchRecentWeeksFromApi(weeksCount) {
+    if (!apiToken.trim() || !apiAccountId.trim()) {
+      setApiError("請填入存取權杖跟廣告帳號 ID。");
+      return;
+    }
+    setApiError(null);
+    setApiNotice(null);
+    setWeekLoading(true);
+    setShowApiPanel(false);
+    try {
+      const cleanId = apiAccountId.trim().replace(/^act_/, "");
+      const brandIdToUse = await ensureBrandRegistered(cleanId);
+      const tzOffset = await fetchAccountUtcOffset(apiToken.trim(), cleanId);
+
+      const progress = [];
+      for (let w = 1; w <= weeksCount; w++) {
+        const info = getLastWeekRange(tzOffset, w);
+        progress.push({ id: "w" + w, name: `${info.since} ~ ${info.until}`, status: "pending", message: "" });
+      }
+      setBatchProgress(progress);
+
+      let lastInfo = null, successCount = 0, errorCount = 0;
+      for (let w = 1; w <= weeksCount; w++) {
+        setBatchProgress((prev) => prev.map((p, idx) => (idx === w - 1 ? { ...p, status: "running" } : p)));
+        try {
+          const info = getLastWeekRange(tzOffset, w);
+          const record = await fetchInsightsForRange(apiToken.trim(), cleanId, info.since, info.until, true);
+          await storage.set(weekKeyFor(brandIdToUse, info.weekStart), JSON.stringify(record));
+          lastInfo = info;
+          successCount++;
+          setBatchProgress((prev) =>
+            prev.map((p, idx) => (idx === w - 1 ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
+          );
+        } catch (e) {
+          errorCount++;
+          setBatchProgress((prev) => prev.map((p, idx) => (idx === w - 1 ? { ...p, status: "error", message: e.message } : p)));
+        }
+        if (w < weeksCount) await new Promise((r) => setTimeout(r, 4000));
+      }
+
+      setActiveBrandId(brandIdToUse);
+      if (lastInfo) setWeekInfo(lastInfo);
+      await loadAllWeeks(brandIdToUse);
+      setViewMode("week");
+      setApiNotice(`已抓取過去 ${weeksCount} 週的資料:成功 ${successCount} 週${errorCount > 0 ? `,失敗 ${errorCount} 週(可以之後單獨用「上週報表」模式補抓)` : ""}。`);
+    } catch (e) {
+      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
+    } finally {
+      setWeekLoading(false);
+    }
+  }
+
+  function computeWeekAnalysis(record) {
+    if (!record) return [];
+    const insights = [];
+    const cpa = record.conversions > 0 ? record.spend / record.conversions : null;
+    const roas = record.spend > 0 && record.revenue > 0 ? record.revenue / record.spend : null;
+
+    if (roas !== null) {
+      if (roas >= 3) insights.push(`ROAS ${roas.toFixed(2)}x,表現不錯,廣告花費有換回明顯的營收。`);
+      else if (roas >= 1.5) insights.push(`ROAS ${roas.toFixed(2)}x,表現普通,還有優化空間。`);
+      else insights.push(`ROAS ${roas.toFixed(2)}x,偏低,建議檢視這週表現差的廣告是否該關掉或調整素材。`);
+    } else {
+      insights.push("這週沒有轉換金額資料,無法計算 ROAS。");
+    }
+
+    if (cpa !== null) {
+      insights.push(`平均每筆訂單成本(CPA)是 ${fmtMoney(cpa, record.currency)},轉單數共 ${fmtInt(record.conversions)} 筆。`);
+    } else {
+      insights.push("這週沒有任何轉單,檢查一下廣告是否正常投放中。");
+    }
+
+    const spendyAds = record.ads.filter((a) => a.spend >= 500);
+    if (spendyAds.length) {
+      const bestRoas = spendyAds
+        .map((a) => ({ ...a, roasVal: a.spend > 0 && a.revenue > 0 ? a.revenue / a.spend : null }))
+        .filter((a) => a.roasVal !== null)
+        .sort((a, b) => b.roasVal - a.roasVal)[0];
+      if (bestRoas) insights.push(`這週表現最好的廣告是「${bestRoas.name}」,ROAS 有 ${bestRoas.roasVal.toFixed(2)}x。`);
+
+      const badOnes = spendyAds.filter((a) => a.spend > 0 && (a.revenue <= 0 || a.revenue / a.spend < 1));
+      if (badOnes.length) {
+        insights.push(`有 ${badOnes.length} 支花費超過 500 的廣告 ROAS 低於 1x(等於虧錢),建議優先檢查這些廣告。`);
+      }
+    }
+
+    return insights;
+  }
+
+  // ---------- 投放中廣告成效分類(成效好 / 成效正常 / 成效不好 / 學習中) ----------
+  const LEARNING_MIN_CONVERSIONS = 10; // 轉單數不足,還看不出真實成效,先歸類為「學習中」
+  const PERF_LABELS = { good: "成效好", normal: "成效正常", poor: "成效不好", learning: "學習中" };
+  const PERF_COLORS = { good: "var(--green)", normal: "var(--blue)", poor: "var(--red)", learning: "var(--amber)" };
+  const PERF_ORDER = ["good", "normal", "poor", "learning"];
+
+  function classifyAdPerformance(ad) {
+    if (ad.conversions < LEARNING_MIN_CONVERSIONS) return "learning";
+    const roas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
+    if (roas === null) return "poor";
+    if (roas >= 3) return "good";
+    if (roas >= 1.5) return "normal";
+    return "poor";
+  }
+
+  function groupAdsByPerformance(ads) {
+    // 這裡故意不只看「目前投放中」的廣告——花費超過門檻、已經停止但表現不好的廣告,
+    // 也應該讓你看得到(不然「成效不好」分類永遠是空的,容易誤以為沒有表現差的廣告)。
+    const qualifyingAds = (ads || []).filter((a) => a.spend >= MIN_AD_SPEND);
+    const buckets = { good: [], normal: [], poor: [], learning: [] };
+    qualifyingAds.forEach((ad) => {
+      buckets[classifyAdPerformance(ad)].push(ad);
+    });
+    PERF_ORDER.forEach((k) => buckets[k].sort((a, b) => b.spend - a.spend));
+    return { qualifyingAds, buckets };
+  }
+
+  // ---------- 行銷活動(campaign)整體成效分析 ----------
+  function computeCampaignStats(ads) {
+    const activeAds = (ads || []).filter((a) => a.active);
+    const campaignMap = {};
+    activeAds.forEach((ad) => {
+      const key = ad.campaign || "(未分類活動)";
+      if (!campaignMap[key]) campaignMap[key] = { name: key, spend: 0, conversions: 0, revenue: 0, adCount: 0 };
+      const c = campaignMap[key];
+      c.spend += ad.spend;
+      c.conversions += ad.conversions;
+      c.revenue += ad.revenue;
+      c.adCount += 1;
+    });
+    return Object.values(campaignMap)
+      .map((c) => ({
+        ...c,
+        cpa: c.conversions > 0 ? c.spend / c.conversions : null,
+        roas: c.spend > 0 && c.revenue > 0 ? c.revenue / c.spend : null,
+      }))
+      .sort((a, b) => b.spend - a.spend);
+  }
+
+  function computeCampaignInsights(campaignStats, currencyCode) {
+    if (!campaignStats.length) return ["目前沒有偵測到任何投放中的廣告,無法進行行銷活動分析。"];
+    const insights = [];
+    const totalSpend = campaignStats.reduce((s, c) => s + c.spend, 0);
+    const totalConv = campaignStats.reduce((s, c) => s + c.conversions, 0);
+    const totalRev = campaignStats.reduce((s, c) => s + c.revenue, 0);
+    const overallRoas = totalSpend > 0 && totalRev > 0 ? totalRev / totalSpend : null;
+    insights.push(
+      `目前投放中的活動共 ${campaignStats.length} 個,總花費 ${fmtMoney(totalSpend, currencyCode)},轉單 ${fmtInt(totalConv)} 筆${overallRoas !== null ? `,整體 ROAS ${overallRoas.toFixed(2)}x` : ""}。`
+    );
+    const withRoas = campaignStats.filter((c) => c.roas !== null);
+    if (withRoas.length) {
+      const best = withRoas.slice().sort((a, b) => b.roas - a.roas)[0];
+      insights.push(`表現最好的活動是「${best.name}」,ROAS 有 ${best.roas.toFixed(2)}x。`);
+      const worst = withRoas.slice().sort((a, b) => a.roas - b.roas)[0];
+      if (worst.name !== best.name && worst.roas < 1.5) {
+        insights.push(`表現較弱的活動是「${worst.name}」,ROAS 只有 ${worst.roas.toFixed(2)}x,建議檢視受眾或素材。`);
+      }
+    } else {
+      insights.push("目前投放中的活動都還沒有足夠的轉換金額資料,先持續觀察。");
+    }
+    const noDataCampaigns = campaignStats.filter((c) => c.conversions < LEARNING_MIN_CONVERSIONS);
+    if (noDataCampaigns.length) {
+      insights.push(`有 ${noDataCampaigns.length} 個活動轉單數還不到 ${LEARNING_MIN_CONVERSIONS} 筆,屬於學習中階段,建議再觀察一段時間再下結論。`);
+    }
+    return insights;
+  }
+
+  // 依「行銷活動名稱」最前面的括號(例如「【RS】」「【AP】」)自動歸類,統計各產品的營業額/廣告費佔比與利潤。
+  // 產品代號完全依實際行銷活動名稱動態產生——新增產品時只要照同一套命名規則建立行銷活動,
+  // 不需要在系統裡手動登記新產品,代號就會自動出現在分析裡。
+  // 「一頁式正確業績」比對區塊:後台每日收益表匯入後的實際營收/廣告費,vs. Meta 回報的轉單金額,依產品代號逐一比對落差。
+  function LedgerVsMetaComparison({ ads, currencyCode, ledgerAgg, onOpenImport, periodLabel }) {
+    if (!ledgerAgg) {
+      return (
+        <div className="mal-empty">
+          <p>這個{periodLabel}還沒有匯入後台的「每日收益表」,沒辦法比對後台實際業績跟 Meta 回報的落差。</p>
+          <button className="mal-btn mal-btn-primary" onClick={onOpenImport}>📥 匯入後台每日收益表</button>
+        </div>
+      );
+    }
+    const metaBreak = buildProductBreakdown(ads || [], MIN_AD_SPEND);
+    const metaByCode = {};
+    metaBreak.rows.forEach((r) => { metaByCode[r.code] = r; });
+    const codes = Array.from(new Set([...Object.keys(ledgerAgg.byCode), ...Object.keys(metaByCode)])).sort();
+    let totalBackendRevenue = 0, totalMetaRevenue = 0, totalBackendSpend = 0, totalMetaSpend = 0;
+    const rows = codes.map((code) => {
+      const b = ledgerAgg.byCode[code];
+      const m = metaByCode[code];
+      const backendRevenue = b ? b.revenue : 0;
+      const metaRevenue = m ? m.revenue : 0;
+      const backendSpend = b ? b.spend : 0;
+      const metaSpend = m ? m.spend : 0;
+      totalBackendRevenue += backendRevenue; totalMetaRevenue += metaRevenue;
+      totalBackendSpend += backendSpend; totalMetaSpend += metaSpend;
+      const revGap = metaRevenue - backendRevenue;
+      const revGapPct = backendRevenue > 0 ? (revGap / backendRevenue) * 100 : null;
+      const spendGap = metaSpend - backendSpend;
+      const spendGapPct = backendSpend > 0 ? (spendGap / backendSpend) * 100 : null;
+      return { code, backendRevenue, metaRevenue, revGap, revGapPct, backendSpend, metaSpend, spendGap, spendGapPct, onlyBackend: !!b && !m, onlyMeta: !!m && !b };
+    });
+    const totalRevGap = totalMetaRevenue - totalBackendRevenue;
+    const totalRevGapPct = totalBackendRevenue > 0 ? (totalRevGap / totalBackendRevenue) * 100 : null;
+    const totalSpendGap = totalMetaSpend - totalBackendSpend;
+    const totalSpendGapPct = totalBackendSpend > 0 ? (totalSpendGap / totalBackendSpend) * 100 : null;
+    const onlyBackendCodes = rows.filter((r) => r.onlyBackend).map((r) => r.code);
+    const onlyMetaCodes = rows.filter((r) => r.onlyMeta).map((r) => r.code);
+    return (
+      <>
+        <div className="mal-cards" style={{ marginBottom: 18 }}>
+          <div className="mal-card">
+            <div className="mal-card-label">後台實際營收</div>
+            <div className="mal-card-value">{fmtMoney(totalBackendRevenue, currencyCode)}</div>
+          </div>
+          <div className="mal-card">
+            <div className="mal-card-label">Meta 回報營收</div>
+            <div className="mal-card-value">{fmtMoney(totalMetaRevenue, currencyCode)}</div>
+          </div>
+          <div className="mal-card">
+            <div className="mal-card-label">營收落差</div>
+            <div className="mal-card-value">{fmtMoney(totalRevGap, currencyCode)}</div>
+            {totalRevGapPct !== null && <DeltaBadge value={totalRevGapPct} />}
+          </div>
+          <div className="mal-card">
+            <div className="mal-card-label">廣告費落差</div>
+            <div className="mal-card-value">{fmtMoney(totalSpendGap, currencyCode)}</div>
+            {totalSpendGapPct !== null && <DeltaBadge value={totalSpendGapPct} invert />}
+          </div>
+        </div>
+        <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+          <table className="mal-table mal-ledger-table">
+            <thead>
+              <tr>
+                <th rowSpan={2} style={{ verticalAlign: "bottom" }}>產品代號</th>
+                <th colSpan={2} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🟩 後台實際業績</th>
+                <th colSpan={2} className="mal-ledger-group-meta mal-ledger-group-label-meta" style={{ textAlign: "center" }}>🟧 Meta 回報業績</th>
+                <th colSpan={2} className="mal-ledger-group-gap" style={{ textAlign: "center" }}>落差</th>
+              </tr>
+              <tr>
+                <th className="mal-ledger-group-backend">營收</th>
+                <th className="mal-ledger-group-backend">廣告費</th>
+                <th className="mal-ledger-group-meta">營收</th>
+                <th className="mal-ledger-group-meta">廣告費</th>
+                <th className="mal-ledger-group-gap">營收落差%</th>
+                <th className="mal-ledger-group-gap">廣告費落差%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.code}>
+                  <td>
+                    {r.code}
+                    {r.onlyBackend && <span style={{ fontSize: 10, color: "var(--red)", marginLeft: 4 }}>僅後台</span>}
+                    {r.onlyMeta && <span style={{ fontSize: 10, color: "var(--red)", marginLeft: 4 }}>僅Meta</span>}
+                  </td>
+                  <td className="mal-ledger-group-backend">{fmtMoney(r.backendRevenue, currencyCode)}</td>
+                  <td className="mal-ledger-group-backend">{fmtMoney(r.backendSpend, currencyCode)}</td>
+                  <td className="mal-ledger-group-meta">{fmtMoney(r.metaRevenue, currencyCode)}</td>
+                  <td className="mal-ledger-group-meta">{fmtMoney(r.metaSpend, currencyCode)}</td>
+                  <td className="mal-ledger-group-gap">{r.revGapPct !== null ? <DeltaBadge value={r.revGapPct} /> : "—"}</td>
+                  <td className="mal-ledger-group-gap">{r.spendGapPct !== null ? `${r.spendGapPct >= 0 ? "+" : ""}${r.spendGapPct.toFixed(0)}%` : "—"}</td>
+                </tr>
+              ))}
+              <tr>
+                <td className="mal-row-month">合計</td>
+                <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(totalBackendRevenue, currencyCode)}</td>
+                <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(totalBackendSpend, currencyCode)}</td>
+                <td className="mal-ledger-group-meta mal-row-month">{fmtMoney(totalMetaRevenue, currencyCode)}</td>
+                <td className="mal-ledger-group-meta mal-row-month">{fmtMoney(totalMetaSpend, currencyCode)}</td>
+                <td className="mal-ledger-group-gap mal-row-month">{totalRevGapPct !== null ? <DeltaBadge value={totalRevGapPct} /> : "—"}</td>
+                <td className="mal-ledger-group-gap mal-row-month">{totalSpendGapPct !== null ? `${totalSpendGapPct >= 0 ? "+" : ""}${totalSpendGapPct.toFixed(0)}%` : "—"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "8px 0 0" }}>
+          🟩 後台實際業績 = 匯入的每日收益表(以下單日期為準,已扣退換貨);🟧 Meta 回報業績 = Meta 廣告後台回報的轉換金額(以歸因時間為準)。落差% = (Meta − 後台) ÷ 後台。
+        </p>
+        <div className="mal-week-analysis">
+          <div className="mal-week-analysis-title">基礎分析:為什麼會有落差</div>
+          <ul>
+            <li>歸因時間差:Meta 依廣告帳戶時區、點擊或瀏覽後 1~7 天內成立的轉換計算,後台則依「實際下單日期」計算,同一筆訂單可能被算進不同天,尤其影響跨月/跨週邊界。</li>
+            <li>非 Meta 廣告帶來的訂單:自然流量、Google、社團、業配連結等其他渠道的訂單只會出現在後台,不會算進 Meta 回報的營收。</li>
+            <li>退換貨與訂單取消:後台營收通常已扣除退貨/取消,Meta 的轉換數字多半不會事後修正,會讓 Meta 端顯示比實際偏高。</li>
+            <li>轉換去重估算方式不同:Meta 用像素/CAPI 綜合估算轉換金額,與後台實際成立訂單金額本來就存在估算誤差。</li>
+            {onlyBackendCodes.length > 0 && (
+              <li>「{onlyBackendCodes.join("、")}」只有後台資料、Meta 端找不到對應代號,可能是這些商品目前沒有投放 Meta 廣告,或廣告活動命名沒有加上一致的產品代號。</li>
+            )}
+            {onlyMetaCodes.length > 0 && (
+              <li>「{onlyMetaCodes.join("、")}」只有 Meta 資料、後台找不到對應,請確認是否已匯入這個{periodLabel}的後台報表,或後台的產品代號拼法是否一致。</li>
+            )}
+            {metaBreak.unresolved > 0 && (
+              <li>Meta 端另有 {metaBreak.unresolved} 支廣告的行銷活動名稱沒有加上「【產品代號】」,沒有被算進上表,可能讓 Meta 端的營收被低估。</li>
+            )}
+          </ul>
+        </div>
+      </>
+    );
+  }
+
+  function ProductShareBreakdown({ ads, currencyCode, prevAds, comparisonLabel = "上期" }) {
+    if (!ads || !ads.length) {
+      return <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>目前還沒有足夠的資料可以分析業績比例。</p>;
+    }
+    const { rows, unresolved, excludedTestCount, lowSpendCount, lowSpendAmount, totalRevenue, totalSpend } =
+      buildProductBreakdown(ads, MIN_AD_SPEND);
+    if (!rows.length) {
+      return (
+        <div className="mal-empty">
+          <p>目前的行銷活動名稱前面沒有辨識出「【產品代號】」,系統沒辦法自動統計各產品的業績比例。</p>
+          <p style={{ fontSize: 12.5 }}>
+            建議在行銷活動名稱最前面加上代號,例如「【RS】A+SC｜價值｜圖+影｜空間噴霧｜CPA」,
+            之後新增產品也會自動被抓進來,不需要另外設定。
+          </p>
+        </div>
+      );
+    }
+    // 上一期(上個月/上週)每個產品代號的營業額,用來算「與上期比」——兩期的營業額都是直接取用 Meta 回報的數字,沒有另外加工計算。
+    const prevBreakdown = prevAds && prevAds.length ? buildProductBreakdown(prevAds, MIN_AD_SPEND) : null;
+    const prevRevenueByCode = {};
+    if (prevBreakdown) prevBreakdown.rows.forEach((r) => { prevRevenueByCode[r.code] = r.revenue; });
+    const hasPrevData = !!prevBreakdown;
+    const chartData = rows.map((r, i) => ({ label: r.code, value: r.revenue, color: colorForIndex(i) }));
+    return (
+      <>
+        <div className="mal-chart-box" style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" }}>
+          <DonutChart data={chartData} />
+          <div style={{ flex: 1, minWidth: 200 }}>
+            {chartData.map((d) => (
+              <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 7 }}>
+                <i className="mal-chart-dot" style={{ background: d.color, width: 10, height: 10, flexShrink: 0 }}></i>
+                <span style={{ fontWeight: 600 }}>{d.label}</span>
+                <span style={{ color: "var(--ink-soft)", marginLeft: "auto", fontFamily: "IBM Plex Mono, monospace" }}>
+                  {totalRevenue > 0 ? ((d.value / totalRevenue) * 100).toFixed(0) : 0}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+          <table className="mal-table">
+            <thead>
+              <tr>
+                <th>產品代號</th><th>廣告數</th><th>營業額(Meta 回報)</th><th>與{comparisonLabel}比</th>
+                <th>廣告費</th><th>廣告費／營業額比</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const prevRevenue = hasPrevData ? prevRevenueByCode[r.code] : undefined;
+                const isNewCode = hasPrevData && prevRevenue === undefined;
+                return (
+                  <tr key={r.code}>
+                    <td>{r.code}</td>
+                    <td>{r.count}</td>
+                    <td>{fmtMoney(r.revenue, currencyCode)}</td>
+                    <td>
+                      {!hasPrevData ? (
+                        "—"
+                      ) : isNewCode ? (
+                        <span style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>新代號</span>
+                      ) : (
+                        <DeltaBadge value={pctChange(r.revenue, prevRevenue)} />
+                      )}
+                    </td>
+                    <td>{fmtMoney(r.spend, currencyCode)}</td>
+                    <td>{r.costRatio !== null ? `${r.costRatio.toFixed(0)}%` : "—"}</td>
+                  </tr>
+                );
+              })}
+              <tr>
+                <td className="mal-row-month">合計</td>
+                <td></td>
+                <td>{fmtMoney(totalRevenue, currencyCode)}</td>
+                <td>{hasPrevData ? <DeltaBadge value={pctChange(totalRevenue, prevBreakdown.totalRevenue)} /> : "—"}</td>
+                <td>{fmtMoney(totalSpend, currencyCode)}</td>
+                <td>{totalRevenue > 0 ? `${((totalSpend / totalRevenue) * 100).toFixed(0)}%` : "—"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        {(unresolved > 0 || excludedTestCount > 0 || lowSpendCount > 0) && (
+          <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 8, lineHeight: 1.8 }}>
+            {unresolved > 0 && (
+              <p style={{ margin: "4px 0" }}>
+                另外有 {unresolved} 支廣告所屬的行銷活動名稱前面沒有加上「【產品代號】」,沒有被算進上面的分析。
+              </p>
+            )}
+            {excludedTestCount > 0 && (
+              <p style={{ margin: "4px 0" }}>
+                另外有 {excludedTestCount} 支廣告所屬的行銷活動代號含有「test / 測試」字樣,判斷為測試活動,不算進上面的分析。
+              </p>
+            )}
+            {lowSpendCount > 0 && (
+              <p style={{ margin: "4px 0" }}>
+                另外有 {lowSpendCount} 支廣告花費低於 {fmtMoney(MIN_AD_SPEND, currencyCode)} 且沒有轉單金額
+                (合計 {fmtMoney(lowSpendAmount, currencyCode)}),為了避免資料量過大拖慢讀取,沒有算進上面的分析——
+                這是合計金額跟頁面最上方總花費卡片對不起來的原因。
+              </p>
+            )}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  function PerformanceBreakdown({ ads, currencyCode, accountId }) {
+    const { qualifyingAds, buckets } = groupAdsByPerformance(ads);
+    // 預設先把每一組收起來(不然「成效好」動輒上百支廣告,頁面會很長),
+    // 點卡片跳過去的時候,才把該組展開,同時捲動過去。
+    const [collapsed, setCollapsed] = useState({ good: true, normal: true, poor: true, learning: true });
+
+    useEffect(() => {
+      function handleExpandAll() {
+        setCollapsed({ good: false, normal: false, poor: false, learning: false });
+      }
+      window.addEventListener(PERF_EXPAND_ALL_EVENT, handleExpandAll);
+      return () => window.removeEventListener(PERF_EXPAND_ALL_EVENT, handleExpandAll);
+    }, []);
+
+    if (!qualifyingAds.length) return null;
+
+    function jumpToBucket(k) {
+      if (!buckets[k].length) return;
+      setCollapsed((prev) => ({ ...prev, [k]: false }));
+      // 等展開後 DOM 高度更新,再捲動,位置才會準——不然可能捲到展開前的舊位置。
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`mal-perf-bucket-${k}`);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+    }
+
+    function toggleBucket(k) {
+      setCollapsed((prev) => ({ ...prev, [k]: !prev[k] }));
+    }
+
+    return (
+      <>
+        <h2 className="mal-section-title">
+          廣告成效分類<span className="mal-section-count">(花費 ≥ {MIN_AD_SPEND} 的廣告共 {qualifyingAds.length} 支,含已停止)</span>
+        </h2>
+        <div className="mal-cards">
+          {PERF_ORDER.map((k) => (
+            <button
+              type="button"
+              key={k}
+              className="mal-card mal-perf-card"
+              disabled={!buckets[k].length}
+              onClick={() => jumpToBucket(k)}
+            >
+              <div className="mal-perf-card-label" style={{ color: PERF_COLORS[k] }}>{PERF_LABELS[k]}</div>
+              <div className="mal-card-value">{buckets[k].length}</div>
+              {buckets[k].length > 0 && <div className="mal-perf-card-hint">↓ 點擊查看廣告明細</div>}
+            </button>
+          ))}
+        </div>
+        {PERF_ORDER.filter((k) => buckets[k].length > 0).map((k) => (
+          <div key={k} id={`mal-perf-bucket-${k}`} className="mal-perf-section">
+            <button type="button" className="mal-perf-section-header" onClick={() => toggleBucket(k)}>
+              <span className="mal-perf-section-title" style={{ color: PERF_COLORS[k] }}>
+                {PERF_LABELS[k]}<span className="mal-section-count">({buckets[k].length})</span>
+              </span>
+              <span className="mal-perf-section-chevron" style={{ transform: collapsed[k] ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
+            </button>
+            {!collapsed[k] && (
+              <div className="mal-perf-section-body">
+                <div className="mal-ad-list">
+                  {buckets[k].map((ad, i) => {
+                    const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
+                    const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
+                    const fbLink = fbAdsManagerLink(accountId, ad.adIds);
+                    return (
+                      <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
+                        <AdThumb src={ad.image} alt={ad.name} />
+                        <div className="mal-ad-info">
+                          <div className="mal-ad-name" title={ad.name}>
+                            {ad.name}
+                            <ActiveBadge active={ad.active} />
+                            {cpaThresholds[activeBrandId] != null && adCpa !== null && adCpa > cpaThresholds[activeBrandId] && (
+                              <span style={{ color: "var(--red)", fontWeight: 600, fontSize: 11 }}> ⚠ CPA過高</span>
+                            )}
+                          </div>
+                          <div className="mal-ad-utm" title={ad.campaign}>📣 {ad.campaign}</div>
+                          {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
+                          {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                        </div>
+                        <div className="mal-ad-stats">
+                          <div><span>廣告費</span>{fmtMoney(ad.spend, currencyCode)}</div>
+                          <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
+                          <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, currencyCode) : "—"}</div>
+                          <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, currencyCode) : "—"}</div>
+                          <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </>
+    );
+  }
+
+  function CampaignAnalysis({ ads, currencyCode }) {
+    const campaignStats = computeCampaignStats(ads);
+    if (!campaignStats.length) return null;
+    const insights = computeCampaignInsights(campaignStats, currencyCode);
+    return (
+      <>
+        <h2 className="mal-section-title">
+          行銷活動整體成效分析<span className="mal-section-count">({campaignStats.length} 個投放中活動)</span>
+        </h2>
+        <div className="mal-week-analysis">
+          <div className="mal-week-analysis-title">整體分析</div>
+          <ul>
+            {insights.map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+          <table className="mal-table">
+            <thead><tr><th>行銷活動</th><th>投放中廣告數</th><th>廣告費</th><th>轉單</th><th>轉單金額</th><th>CPA</th><th>ROAS</th></tr></thead>
+            <tbody>
+              {campaignStats.map((c) => (
+                <tr key={c.name}>
+                  <td className="mal-row-month">{c.name}</td>
+                  <td>{c.adCount}</td>
+                  <td>{fmtMoney(c.spend, currencyCode)}</td>
+                  <td>{fmtInt(c.conversions)}</td>
+                  <td>{c.revenue > 0 ? fmtMoney(c.revenue, currencyCode) : "—"}</td>
+                  <td>{c.cpa !== null ? fmtMoney(c.cpa, currencyCode) : "—"}</td>
+                  <td>{c.roas !== null ? `${c.roas.toFixed(2)}x` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  }
+
+  async function fetchFullMonthFromApi() {
+    if (!apiToken.trim() || !apiAccountId.trim() || !apiMonth) {
+      setApiError("請填入存取權杖、廣告帳號 ID,並選擇月份。");
+      return;
+    }
+    setApiError(null);
+    setApiNotice(null);
+    setApiLoading(true);
+    try {
+      const cleanId = apiAccountId.trim().replace(/^act_/, "");
+      await storage.set("meta-api-account-id", cleanId).catch(() => {});
+      const record = await fetchOneBrandMonth(apiToken.trim(), cleanId, apiMonth);
+      if (!record.ads.length) {
+        setApiNotice(`${monthLabel(apiMonth)} 沒有抓到任何廣告成效資料,請確認該月份確實有花費紀錄。`);
+        setApiLoading(false);
+        return;
+      }
+      const brandIdToUse = await ensureBrandRegistered(cleanId);
+      await storage.set(monthKeyFor(brandIdToUse, apiMonth), JSON.stringify(record));
+      setActiveBrandId(brandIdToUse);
+      await loadAll(brandIdToUse);
+      setFocusMonth(apiMonth);
+      setApiNotice(`已從 API 抓到 ${monthLabel(apiMonth)} 的資料,共 ${record.ads.length} 支廣告。`);
+      setShowApiPanel(false);
+    } catch (e) {
+      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
+    } finally {
+      setApiLoading(false);
+    }
+  }
+
+  async function fetchBatchFromApi() {
+    if (!apiToken.trim() || (batchGranularity === "month" && !apiMonth)) {
+      setApiError("請填入存取權杖" + (batchGranularity === "month" ? "並選擇月份。" : "。"));
+      return;
+    }
+    const targets = brands.filter((b) => selectedBatchBrandIds.includes(b.id));
+    if (!targets.length) {
+      setApiError("請至少勾選一個品牌。");
+      return;
+    }
+    setApiError(null);
+    setApiNotice(null);
+    setApiLoading(true);
+    const progress = targets.map((b) => ({ id: b.id, name: b.name, status: "pending", message: "" }));
+    setBatchProgress(progress);
+    let lastWeekRangeUsed = null;
+    for (let i = 0; i < targets.length; i++) {
+      const b = targets[i];
+      setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "running" } : p)));
+      try {
+        if (batchGranularity === "week") {
+          // 每個品牌的廣告帳號時區可能不一樣,「上週」要分別依各自帳號的時區去算,
+          // 不能整批共用同一組日期,不然時區跟瀏覽器不同的帳號會抓錯週次、數字對不起來。
+          const tzOffset = await fetchAccountUtcOffset(apiToken.trim(), b.id);
+          const weekRangeForThisBrand = getLastWeekRange(tzOffset);
+          lastWeekRangeUsed = weekRangeForThisBrand;
+          const record = await fetchInsightsForRange(apiToken.trim(), b.id, weekRangeForThisBrand.since, weekRangeForThisBrand.until, true);
+          await storage.set(weekKeyFor(b.id, weekRangeForThisBrand.weekStart), JSON.stringify(record));
+          setBatchProgress((prev) =>
+            prev.map((p, idx) => (idx === i ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
+          );
+        } else {
+          const record = await fetchOneBrandMonth(apiToken.trim(), b.id, apiMonth);
+          await storage.set(monthKeyFor(b.id, apiMonth), JSON.stringify(record));
+          setBatchProgress((prev) =>
+            prev.map((p, idx) => (idx === i ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
+          );
+        }
+      } catch (e) {
+        setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "error", message: e.message } : p)));
+      }
+      if (i < targets.length - 1) await new Promise((r) => setTimeout(r, 4000));
+    }
+    setApiLoading(false);
+    if (batchGranularity === "week" && lastWeekRangeUsed) setWeekInfo(lastWeekRangeUsed);
+    setApiNotice("批次抓取完成,上方可以切換品牌查看結果。");
+    await loadAll(activeBrandId);
+    await loadAllWeeks(activeBrandId);
+  }
+
+  async function toggleRememberToken(checked) {
+    setRememberToken(checked);
+    if (checked) {
+      await storage.set("meta-api-remember-token", "1").catch(() => {});
+      if (apiToken.trim()) await storage.set("meta-api-token", apiToken.trim()).catch(() => {});
+    } else {
+      await storage.set("meta-api-remember-token", "0").catch(() => {});
+      await storage.delete("meta-api-token").catch(() => {});
+      // 不記住權杖的話,自動同步也一併關閉,因為沒有存起來的權杖可以自動用
+      if (autoSyncEnabled) {
+        setAutoSyncEnabled(false);
+        await storage.set("meta-api-autosync", "0").catch(() => {});
+      }
+    }
+  }
+
+  async function toggleAutoSync(checked) {
+    setAutoSyncEnabled(checked);
+    await storage.set("meta-api-autosync", checked ? "1" : "0").catch(() => {});
+  }
+
+  // 開啟網頁時的自動同步:檢查上週(週一~週日)跟上個月的資料是否已經存在,
+  // 沒有的話就自動用記住的權杖抓一次,依序抓每個常用品牌(或預設帳號),中間間隔 4 秒避免觸發 Meta 頻率限制。
+  async function runAutoSyncWith(token, brandsList, defaultAccountId) {
+    if (!token || !token.trim()) return;
+    const cleanDefaultId = (defaultAccountId || "").trim().replace(/^act_/, "");
+    const targets = (brandsList && brandsList.length)
+      ? brandsList.map((b) => ({ apiId: b.id, storageId: b.id, name: b.name }))
+      : cleanDefaultId
+      // 已經拿掉「預設帳本」,所以這裡也不能再把資料存進看不到的地方——
+      // 沒有任何常用品牌時,直接用帳號 ID 本身當作品牌 ID 來存,並登記進品牌清單。
+      ? [{ apiId: cleanDefaultId, storageId: cleanDefaultId, name: cleanDefaultId }]
+      : [];
+    if (!targets.length) return;
+
+    if (!brandsList || !brandsList.length) {
+      const autoBrand = { name: cleanDefaultId, id: cleanDefaultId };
+      const updatedBrands = [autoBrand];
+      setBrands(updatedBrands);
+      await storage.set("meta-api-brands", JSON.stringify(updatedBrands)).catch(() => {});
+    }
+
+    const now = new Date();
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+    const weekListRes = await storage.list(WEEK_STORAGE_PREFIX).catch(() => ({ keys: [] }));
+    const monthListRes = await storage.list(STORAGE_PREFIX).catch(() => ({ keys: [] }));
+    const existingWeekKeys = new Set(weekListRes.keys || []);
+    const existingMonthKeys = new Set(monthListRes.keys || []);
+
+    // 開啟網頁自動同步時,不是只補「上週」一週,而是自動檢查並補齊「最近 4 週」裡缺少的每一週——
+    // 這樣不用手動開「連接 Meta API」選「回溯抓取」,平常自動同步就會自動幫你把最近幾週補齊。
+    // 每個品牌的廣告帳號時區可能不一樣,所以每一週的日期範圍都分別依各自帳號的時區去算。
+    const AUTO_SYNC_WEEKS_BACK = 4;
+    const needsWeek = [];
+    for (const t of targets) {
+      const tzOffset = await fetchAccountUtcOffset(token.trim(), t.apiId);
+      for (let w = 1; w <= AUTO_SYNC_WEEKS_BACK; w++) {
+        const weekRange = getLastWeekRange(tzOffset, w);
+        if (!existingWeekKeys.has(weekKeyFor(t.storageId, weekRange.weekStart))) {
+          needsWeek.push({ apiId: t.apiId, storageId: t.storageId, name: t.name, weekRange });
+        }
+      }
+    }
+    const needsMonth = targets.filter((t) => !existingMonthKeys.has(monthKeyFor(t.storageId, lastMonthKey)));
+    if (!needsWeek.length && !needsMonth.length) return; // 資料都是新的,不用做任何事
+
+    setAutoSyncStatus(`自動同步中… 補齊最近 ${AUTO_SYNC_WEEKS_BACK} 週與 ${monthLabel(lastMonthKey)} 資料`);
+    let successCount = 0, errorCount = 0;
+
+    for (let i = 0; i < needsWeek.length; i++) {
+      const t = needsWeek[i];
+      try {
+        const record = await fetchInsightsForRange(token.trim(), t.apiId, t.weekRange.since, t.weekRange.until, true);
+        await storage.set(weekKeyFor(t.storageId, t.weekRange.weekStart), JSON.stringify(record));
+        successCount++;
+      } catch { errorCount++; }
+      if (i < needsWeek.length - 1 || needsMonth.length) await new Promise((r) => setTimeout(r, 4000));
+    }
+    for (let i = 0; i < needsMonth.length; i++) {
+      const t = needsMonth[i];
+      try {
+        const record = await fetchOneBrandMonth(token.trim(), t.apiId, lastMonthKey);
+        await storage.set(monthKeyFor(t.storageId, lastMonthKey), JSON.stringify(record));
+        successCount++;
+      } catch { errorCount++; }
+      if (i < needsMonth.length - 1) await new Promise((r) => setTimeout(r, 4000));
+    }
+
+    setAutoSyncStatus(null);
+    await loadAll(activeBrandId);
+    await loadAllWeeks(activeBrandId);
+    if (successCount > 0) {
+      setApiNotice(`已自動同步完成:成功更新 ${successCount} 筆資料${errorCount > 0 ? `,${errorCount} 筆失敗(可能是頻率限制,之後再手動抓一次即可)` : ""}。`);
+    } else if (errorCount > 0) {
+      setApiError("自動同步失敗,請手動連接 Meta API 重新抓取一次。");
+    }
+  }
+
+  // 手動觸發同步(例如面板裡的「立即同步」按鈕),用目前畫面上的權杖跟品牌清單
+  function runAutoSync() {
+    return runAutoSyncWith(apiToken, brands, apiAccountId);
+  }
+
+  const sortedKeys = useMemo(() => Object.keys(months).sort(), [months]);
+  const enriched = useMemo(() => { const out = {}; for (const mk of sortedKeys) out[mk] = deriveMetrics(months[mk]); return out; }, [months, sortedKeys]);
+  const chartData = useMemo(() => sortedKeys.map((mk) => ({
+    month: monthLabel(mk), 廣告費: Math.round(enriched[mk].spend), 轉單: enriched[mk].conversions,
+    CPA: enriched[mk].cpa !== null ? Number(enriched[mk].cpa.toFixed(1)) : null,
+    ROAS: enriched[mk].roas !== null ? Number(enriched[mk].roas.toFixed(2)) : null,
+  })), [sortedKeys, enriched]);
+  const currency = sortedKeys.length ? months[sortedKeys[sortedKeys.length - 1]].currency : "TWD";
+  const focusIdx = sortedKeys.indexOf(focusMonth);
+  const focusData = focusMonth ? enriched[focusMonth] : null;
+  const prevData = focusIdx > 0 ? enriched[sortedKeys[focusIdx - 1]] : null;
+  const MIN_AD_SPEND = 500;
+  const spendFilteredAds = focusData && focusData.ads ? focusData.ads.filter((ad) => ad.spend >= MIN_AD_SPEND) : [];
+  const visibleAds = filterAdsByStatus(spendFilteredAds, adStatusFilter);
+  const hiddenAdCount = focusData && focusData.ads ? focusData.ads.length - spendFilteredAds.length : 0;
+
+  // ---------- 每日營收報表:直接呈現後台每日收益表(ledgerByMonth)裡「每一天 x 每個產品代號」的明細,不用另外彙總 ----------
+  // 選單月份/選單日,都用「目前選到的值如果還存在就沿用,否則自動退回最新一筆」的方式決定,換品牌、重新同步後資料一變會自動跟著更新,不用另外寫 useEffect 同步。
+  const ledgerMonthKeys = useMemo(() => Object.keys(ledgerByMonth).sort(), [ledgerByMonth]);
+  const activeDailyMonth = (dailyMonth && ledgerByMonth[dailyMonth]) ? dailyMonth : (ledgerMonthKeys.length ? ledgerMonthKeys[ledgerMonthKeys.length - 1] : null);
+  const dailyMonthRecord = activeDailyMonth ? ledgerByMonth[activeDailyMonth] : null;
+  const sortedDailyDays = useMemo(
+    () => (dailyMonthRecord ? dailyMonthRecord.days.slice().sort((a, b) => (a.date < b.date ? -1 : 1)) : []),
+    [dailyMonthRecord]
+  );
+  const activeFocusDay = (focusDay && sortedDailyDays.some((d) => d.date === focusDay))
+    ? focusDay
+    : (sortedDailyDays.length ? sortedDailyDays[sortedDailyDays.length - 1].date : null);
+  const focusDayRecord = activeFocusDay ? sortedDailyDays.find((d) => d.date === activeFocusDay) : null;
+  const dailyMatrixCodes = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
+  const adPct = (spend, revenue) => (revenue > 0 ? `${((spend / revenue) * 100).toFixed(0)}%` : "—");
+
+  // ---------- 業配廣告長線分析:把名稱或行銷活動裡含「業配」兩個字的廣告單獨拉出來,依月份累計趨勢 ----------
+  const SPONSOR_KEYWORD = "業配";
+  const sponsorMonthlyStats = useMemo(() => sortedKeys.map((mk) => {
+    const rec = months[mk];
+    const sponsorAds = (rec.ads || []).filter(
+      (ad) => (ad.name && ad.name.includes(SPONSOR_KEYWORD)) || (ad.campaign && ad.campaign.includes(SPONSOR_KEYWORD))
+    );
+    const spend = sponsorAds.reduce((s, a) => s + a.spend, 0);
+    const conversions = sponsorAds.reduce((s, a) => s + a.conversions, 0);
+    const revenue = sponsorAds.reduce((s, a) => s + a.revenue, 0);
+    return {
+      monthKey: mk, month: monthLabel(mk), ads: sponsorAds, spend, conversions, revenue,
+      cpa: conversions > 0 ? spend / conversions : null,
+      roas: spend > 0 && revenue > 0 ? revenue / spend : null,
+    };
+  }), [sortedKeys, months]);
+  const sponsorChartData = useMemo(() => sponsorMonthlyStats.map((s) => ({
+    month: s.month, 廣告費: Math.round(s.spend), 轉單: s.conversions,
+    CPA: s.cpa !== null ? Number(s.cpa.toFixed(1)) : null,
+    ROAS: s.roas !== null ? Number(s.roas.toFixed(2)) : null,
+  })), [sponsorMonthlyStats]);
+  const sponsorTotal = useMemo(() => {
+    const spend = sponsorMonthlyStats.reduce((s, m) => s + m.spend, 0);
+    const conversions = sponsorMonthlyStats.reduce((s, m) => s + m.conversions, 0);
+    const revenue = sponsorMonthlyStats.reduce((s, m) => s + m.revenue, 0);
+    return { spend, conversions, revenue, cpa: conversions > 0 ? spend / conversions : null, roas: spend > 0 && revenue > 0 ? revenue / spend : null };
+  }, [sponsorMonthlyStats]);
+  const sponsorMonthsWithData = sponsorMonthlyStats.filter((m) => m.ads.length > 0);
+
+  const sortedWeekKeys = useMemo(() => Object.keys(weeksData).sort(), [weeksData]);
+  const focusWeekData = focusWeek ? weeksData[focusWeek] : null;
+  const focusWeekIdx = sortedWeekKeys.indexOf(focusWeek);
+  const prevWeekData = focusWeekIdx > 0 ? weeksData[sortedWeekKeys[focusWeekIdx - 1]] : null;
+  function weekLabel(weekStart) {
+    if (!weekStart) return "";
+    const [y, m, d] = weekStart.split("-").map(Number);
+    const start = new Date(y, m - 1, d);
+    const end = new Date(y, m - 1, d + 6);
+    const fmt2 = (dt) => `${String(dt.getMonth() + 1).padStart(2, "0")}/${String(dt.getDate()).padStart(2, "0")}`;
+    return `${fmt2(start)}~${fmt2(end)}`;
+  }
+
+  const sortedVisibleAds = useMemo(() => {
+    const withMetrics = visibleAds.map((ad) => ({
+      ad,
+      cpa: ad.conversions > 0 ? ad.spend / ad.conversions : null,
+      roas: ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null,
+    }));
+    if (adSortMode === "cpa") {
+      return withMetrics
+        .slice()
+        .sort((a, b) => {
+          if (a.cpa === null) return 1;
+          if (b.cpa === null) return -1;
+          return a.cpa - b.cpa;
+        })
+        .map((x) => x.ad);
+    }
+    if (adSortMode === "roas") {
+      return withMetrics
+        .slice()
+        .sort((a, b) => {
+          if (a.roas === null) return 1;
+          if (b.roas === null) return -1;
+          return b.roas - a.roas;
+        })
+        .map((x) => x.ad);
+    }
+    if (adSortMode === "composite") {
+      // rank-based composite: best CPA (lowest) and best ROAS (highest) each contribute a rank;
+      // lower combined rank = better overall performance. Ads missing a metric get the worst rank.
+      const n = withMetrics.length;
+      const byCpa = withMetrics
+        .map((x, i) => i)
+        .sort((i, j) => {
+          const a = withMetrics[i].cpa, b = withMetrics[j].cpa;
+          if (a === null) return 1;
+          if (b === null) return -1;
+          return a - b;
+        });
+      const byRoas = withMetrics
+        .map((x, i) => i)
+        .sort((i, j) => {
+          const a = withMetrics[i].roas, b = withMetrics[j].roas;
+          if (a === null) return 1;
+          if (b === null) return -1;
+          return b - a;
+        });
+      const cpaRank = new Array(n), roasRank = new Array(n);
+      byCpa.forEach((idx, rank) => { cpaRank[idx] = rank; });
+      byRoas.forEach((idx, rank) => { roasRank[idx] = rank; });
+      return withMetrics
+        .map((x, i) => ({ ad: x.ad, score: cpaRank[i] + roasRank[i] }))
+        .sort((a, b) => a.score - b.score)
+        .map((x) => x.ad);
+    }
+    // default: by spend, high to low
+    return withMetrics.map((x) => x.ad).sort((a, b) => b.spend - a.spend);
+  }, [visibleAds, adSortMode]);
+
+  return (
+    <div className="mal-shell">
+      <div className="mal-header">
+        <div className="mal-title-block">
+          <div className="mal-stamp"><img src="data:image/png;base64,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" alt="火箭 Logo" /></div>
+          <div>
+            <h1 className="mal-title">品牌成效分析</h1>
+            <p className="mal-subtitle">
+              廣告費 · 轉單 · CPA · ROAS,每月自動累積
+              {cloudStatus === "artifact" && "(報表資料團隊共用,Meta 金鑰只留在你自己的瀏覽器)"}
+              {cloudStatus === "connected" && `(已連上 Cloudflare 共用資料庫${credentialName ? `,目前身份:${credentialName}` : ",團隊看到的是同一份資料"})`}
+              {cloudStatus === "unauthorized" && "(已連上 Cloudflare,但團隊密碼不對,請點右上角重新輸入)"}
+              {(cloudStatus === "unavailable" || cloudStatus === "unknown") && "(尚未連上共用資料庫,目前資料只存在這個瀏覽器)"}
+            </p>
+          </div>
+        </div>
+        <div className="mal-header-actions" style={{ display: "flex", gap: 10 }}>
+          <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}>🔌 連接 Meta API</button>
+          {!HAS_SHARED_STORAGE && (
+            <button className="mal-btn" onClick={() => { setTeamKeyInput(getTeamKey()); setShowTeamKeyModal(true); }}>
+              {cloudStatus === "connected" ? `☁️ ${credentialName || "已連線"}` : "🔑 團隊密碼"}
+            </button>
+          )}
+          {activeBrandId && (
+            <button className="mal-btn" onClick={() => setShowLedgerModal(true)}>📥 匯入後台業績</button>
+          )}
+          {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
+            <button className="mal-btn mal-print-btn" onClick={handlePrintClick}>🖨 列印</button>
+          )}
+          {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
+            <button className="mal-btn mal-print-btn" disabled={pdfExporting} onClick={exportPDF}>
+              {pdfExporting ? "匯出中…" : "📄 匯出 PDF"}
+            </button>
+          )}
+          {sortedKeys.length > 0 && <button className="mal-btn mal-btn-danger" onClick={() => setConfirmReset(true)}>🗑 重置</button>}
+        </div>
+      </div>
+
+      {brands.length > 0 && (
+        <div className="mal-brand-switch">
+          <span className="mal-brand-switch-label">品牌:</span>
+          {brands.map((b) => (
+            <div
+              key={b.id}
+              className={`mal-brand-chip ${activeBrandId === b.id ? "mal-brand-chip-active" : ""}`}
+              onClick={() => setActiveBrandId(b.id)}
+              title={b.id}
+            >
+              {b.name}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeBrandId && (
+        <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginBottom: 18, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>CPA 過高標準:</span>
+          <strong style={{ color: "var(--ink)", fontFamily: "IBM Plex Mono, monospace" }}>
+            {cpaThresholds[activeBrandId] != null ? `$${cpaThresholds[activeBrandId]}` : "尚未設定"}
+          </strong>
+          <button className="mal-btn" style={{ padding: "3px 10px", fontSize: 11.5 }} onClick={() => editCpaThreshold(activeBrandId)}>
+            ✎ {cpaThresholds[activeBrandId] != null ? "修改" : "設定"}
+          </button>
+        </div>
+      )}
+
+      {notice && <div className="mal-notice">✓ {notice}</div>}
+      {apiNotice && <div className="mal-notice">✓ {apiNotice}</div>}
+      {autoSyncStatus && <div className="mal-notice">⏳ {autoSyncStatus}</div>}
+      {error && <div className="mal-error">⚠ {error}</div>}
+      {apiError && <div className="mal-error">⚠ {apiError}</div>}
+
+      <div className="mal-viewmode-switch">
+        <button className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("month")}>
+          📅 每月報表
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "week" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("week")}>
+          🗓 每週報表
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "insight" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("insight")}>
+          📦 業績比例分析
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
+          🎤 業配分析
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "daily" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("daily")}>
+          📆 每日報表
+        </button>
+      </div>
+
+      {viewMode === "month" && (loading ? <p style={{ color: "var(--ink-soft)" }}>載入帳本中…</p> : sortedKeys.length === 0 ? (
+        <div className="mal-empty">
+          <div style={{ fontSize: 30 }}>📖</div>
+          <h3 style={{ fontFamily: "'Noto Serif KR', serif", margin: "12px 0 0" }}>帳本還是空的</h3>
+          <p>點選下方按鈕連接 Meta API,系統會自動抓取廣告費、成果/購買次數、轉換價值等資料,並整理成逐廣告明細。</p>
+          <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}>🔌 連接 Meta API</button>
+        </div>
+      ) : (
+        <>
+          <div className="mal-tabs">
+            {sortedKeys.map((mk) => (
+              <div key={mk} className={`mal-tab ${mk === focusMonth ? "mal-tab-active" : ""}`} onClick={() => setFocusMonth(mk)}>{monthLabel(mk)}</div>
+            ))}
+          </div>
+
+          {focusData && (
+            <div className="mal-cards">
+              <div className="mal-card">
+                <div className="mal-card-label">廣告費</div>
+                <div className="mal-card-value">{fmtMoney(focusData.spend, focusData.currency)}</div>
+                <DeltaBadge value={pctChange(focusData.spend, prevData && prevData.spend)} />
+              </div>
+              <div className="mal-card">
+                <div className="mal-card-label">轉單數</div>
+                <div className="mal-card-value">{fmtInt(focusData.conversions)}</div>
+                <DeltaBadge value={pctChange(focusData.conversions, prevData && prevData.conversions)} />
+              </div>
+              <div className="mal-card">
+                <div className="mal-card-label">CPA(每筆訂單成本)</div>
+                <div className="mal-card-value">{focusData.cpa !== null ? fmtMoney(focusData.cpa, focusData.currency) : "—"}</div>
+                <DeltaBadge value={pctChange(focusData.cpa, prevData && prevData.cpa)} invert />
+                {cpaThresholds[activeBrandId] != null && focusData.cpa !== null && focusData.cpa > cpaThresholds[activeBrandId] && (
+                  <div style={{ fontSize: 11, color: "var(--red)", fontWeight: 600, marginTop: 4 }}>⚠ 超過標準 ${cpaThresholds[activeBrandId]}</div>
+                )}
+              </div>
+              <div className="mal-card">
+                <div className="mal-card-label">ROAS</div>
+                <div className="mal-card-value">{focusData.roas !== null ? `${focusData.roas.toFixed(2)}x` : "—"}</div>
+                <DeltaBadge value={pctChange(focusData.roas, prevData && prevData.roas)} />
+              </div>
+            </div>
+          )}
+
+          {sortedKeys.length > 1 && (
+            <>
+              <h2 className="mal-section-title">廣告費 / 轉單 趨勢</h2>
+              <div className="mal-chart-box">
+                <SimpleBarChart data={chartData} seriesA="廣告費" seriesB="轉單" colorA="#6E8577" colorB="#BFA054"
+                  labelA="廣告費" labelB="轉單" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v} />
+              </div>
+              <h2 className="mal-section-title">CPA / ROAS 趨勢</h2>
+              <div className="mal-chart-box">
+                <SimpleLineChart data={chartData} seriesA="CPA" seriesB="ROAS" colorA="#A8607A" colorB="#7C8B54"
+                  labelA={`CPA (${currency})`} labelB="ROAS (x)" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v + "x"} />
+              </div>
+            </>
+          )}
+
+          {focusData && (
+            <>
+              <h2 className="mal-section-title">
+                {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
+              </h2>
+              <LedgerVsMetaComparison
+                ads={filterAdsByStatus(focusData.ads, adStatusFilter)}
+                currencyCode={focusData.currency}
+                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+                onOpenImport={() => setShowLedgerModal(true)}
+                periodLabel="月份"
+              />
+            </>
+          )}
+
+          {focusData && spendFilteredAds.length > 0 && (
+            <StatusFilterButtons value={adStatusFilter} onChange={setAdStatusFilter} />
+          )}
+          {focusData && spendFilteredAds.length > 0 && visibleAds.length === 0 && (
+            <p style={{ color: "var(--ink-soft)", fontSize: 13, marginBottom: 20 }}>
+              目前篩選條件下沒有符合的廣告,試試切換上面的篩選按鈕。
+            </p>
+          )}
+
+          {focusData && visibleAds.length > 0 && (
+            <>
+              <div className="mal-ad-header-row">
+                <h2 className="mal-section-title mal-section-title-flex">
+                  {monthLabel(focusMonth)} 廣告明細<span className="mal-section-count">({visibleAds.length} 支廣告{hiddenAdCount > 0 ? `,已隱藏 ${hiddenAdCount} 支花費低於 ${MIN_AD_SPEND} 的廣告` : ""})</span>
+                </h2>
+                <select className="mal-ad-sort-select" value={adSortMode} onChange={(e) => setAdSortMode(e.target.value)}>
+                  <option value="spend">排序:廣告費（高→低）</option>
+                  <option value="cpa">排序:CPA（好→壞）</option>
+                  <option value="roas">排序:ROAS（好→壞）</option>
+                  <option value="composite">排序:綜合成效（好→壞）</option>
+                </select>
+              </div>
+              <div className="mal-ad-list">
+                {(showAllAds ? sortedVisibleAds : sortedVisibleAds.slice(0, 6)).map((ad, i) => {
+                  const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
+                  const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
+                  const names = ad.rawNames && ad.rawNames.length ? ad.rawNames : [ad.name];
+                  const resolvedImage = ad.image || "";
+                  const fbLink = fbAdsManagerLink(focusData.accountId, ad.adIds);
+                  return (
+                    <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
+                      <AdThumb src={resolvedImage} alt={ad.name} />
+                      <div className="mal-ad-info">
+                        <div className="mal-ad-name" title={ad.name}>
+                          {ad.name}
+                          <ActiveBadge active={ad.active} />
+                          {cpaThresholds[activeBrandId] != null && adCpa !== null && adCpa > cpaThresholds[activeBrandId] && (
+                            <span style={{ color: "var(--red)", fontWeight: 600, fontSize: 11 }}> ⚠ CPA過高</span>
+                          )}
+                        </div>
+                        {ad.campaign && <div className="mal-ad-utm" title={ad.campaign}>📣 {ad.campaign}</div>}
+                        {ad.utm ? (
+                          <div className="mal-ad-utm" title={ad.utm}>🏷 {ad.utm}{ad.adCount > 1 && <span className="mal-ad-count">· 合併 {ad.adCount} 支廣告</span>}</div>
+                        ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
+                        {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
+                        {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                      </div>
+                      <div className="mal-ad-stats">
+                        <div><span>廣告費</span>{fmtMoney(ad.spend, focusData.currency)}</div>
+                        <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
+                        <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, focusData.currency) : "—"}</div>
+                        <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, focusData.currency) : "—"}</div>
+                        <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {visibleAds.length > 6 && (
+                <button className="mal-btn mal-toggle-ads" onClick={() => setShowAllAds((v) => !v)}>
+                  {showAllAds ? "▲ 收合" : `▼ 顯示全部 ${visibleAds.length} 支廣告`}
+                </button>
+              )}
+
+              <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter)} currencyCode={focusData.currency} accountId={focusData.accountId} />
+              <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
+
+              <h2 className="mal-section-title">
+                {monthLabel(focusMonth)} 業績比例分析<span className="mal-section-count">(依行銷活動名稱最前面的產品代號自動歸類)</span>
+              </h2>
+              <ProductShareBreakdown
+                ads={filterAdsByStatus(focusData.ads, adStatusFilter)}
+                currencyCode={focusData.currency}
+                prevAds={prevData ? filterAdsByStatus(prevData.ads, adStatusFilter) : null}
+                comparisonLabel="上月"
+              />
+            </>
+          )}
+
+          <h2 className="mal-section-title">每月明細</h2>
+          <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+            <table className="mal-table">
+              <thead><tr><th>月份</th><th>廣告費</th><th>轉單</th><th>轉單金額</th><th>CPA</th><th>ROAS</th><th></th></tr></thead>
+              <tbody>
+                {sortedKeys.slice().reverse().map((mk) => {
+                  const d = enriched[mk];
+                  return (
+                    <tr key={mk}>
+                      <td className="mal-row-month">{monthLabel(mk)}</td>
+                      <td>{fmtMoney(d.spend, d.currency)}</td>
+                      <td>{fmtInt(d.conversions)}</td>
+                      <td>{d.revenue > 0 ? fmtMoney(d.revenue, d.currency) : "—"}</td>
+                      <td>{d.cpa !== null ? fmtMoney(d.cpa, d.currency) : "—"}</td>
+                      <td>{d.roas !== null ? `${d.roas.toFixed(2)}x` : "—"}</td>
+                      <td><button className="mal-icon-btn" onClick={() => setConfirmDelete(mk)} title="刪除此月資料">🗑</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ))}
+
+      {viewMode === "week" && (
+        sortedWeekKeys.length === 0 ? (
+          <div className="mal-empty">
+            <div style={{ fontSize: 30 }}>🗓</div>
+            <h3 style={{ fontFamily: "'Noto Serif KR', serif", margin: "12px 0 0" }}>還沒有任何週報表</h3>
+            <p>點右上角「連接 Meta API」,模式選「上週報表」或「多品牌批次抓取」(選上週資料),抓一次之後這裡就會出現。</p>
+            <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}>🔌 連接 Meta API</button>
+          </div>
+        ) : (
+          <>
+            <div className="mal-tabs">
+              {sortedWeekKeys.map((wk) => (
+                <div key={wk} className={`mal-tab ${wk === focusWeek ? "mal-tab-active" : ""}`} onClick={() => setFocusWeek(wk)}>
+                  {weekLabel(wk)}
+                </div>
+              ))}
+            </div>
+
+            {focusWeekData && (
+              <>
+                <div className="mal-cards">
+                  <div className="mal-card">
+                    <div className="mal-card-label">廣告費</div>
+                    <div className="mal-card-value">{fmtMoney(focusWeekData.spend, focusWeekData.currency)}</div>
+                  </div>
+                  <div className="mal-card">
+                    <div className="mal-card-label">轉單數</div>
+                    <div className="mal-card-value">{fmtInt(focusWeekData.conversions)}</div>
+                  </div>
+                  <div className="mal-card">
+                    <div className="mal-card-label">轉單金額</div>
+                    <div className="mal-card-value">{focusWeekData.revenue > 0 ? fmtMoney(focusWeekData.revenue, focusWeekData.currency) : "—"}</div>
+                  </div>
+                  <div className="mal-card">
+                    <div className="mal-card-label">CPA</div>
+                    <div className="mal-card-value">
+                      {focusWeekData.conversions > 0 ? fmtMoney(focusWeekData.spend / focusWeekData.conversions, focusWeekData.currency) : "—"}
+                    </div>
+                    {cpaThresholds[activeBrandId] != null && focusWeekData.conversions > 0 && (focusWeekData.spend / focusWeekData.conversions) > cpaThresholds[activeBrandId] && (
+                      <div style={{ fontSize: 11, color: "var(--red)", fontWeight: 600, marginTop: 4 }}>⚠ 超過標準 ${cpaThresholds[activeBrandId]}</div>
+                    )}
+                  </div>
+                  <div className="mal-card">
+                    <div className="mal-card-label">ROAS</div>
+                    <div className="mal-card-value">
+                      {focusWeekData.spend > 0 && focusWeekData.revenue > 0 ? `${(focusWeekData.revenue / focusWeekData.spend).toFixed(2)}x` : "—"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mal-week-analysis">
+                  <div className="mal-week-analysis-title">基本分析</div>
+                  <ul>
+                    {computeWeekAnalysis(focusWeekData).map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <h2 className="mal-section-title">
+                  {weekLabel(focusWeek)} 一頁式正確業績(後台實際 vs Meta 回報)
+                </h2>
+                <LedgerVsMetaComparison
+                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter)}
+                  currencyCode={focusWeekData.currency}
+                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
+                  onOpenImport={() => setShowLedgerModal(true)}
+                  periodLabel="週"
+                />
+
+                {focusWeekData.ads && focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND).length > 0 && (
+                  <StatusFilterButtons value={adStatusFilter} onChange={setAdStatusFilter} />
+                )}
+
+                {focusWeekData.ads && filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter).length > 0 && (
+                  <>
+                    <h2 className="mal-section-title">{weekLabel(focusWeek)} 廣告明細</h2>
+                    <div className="mal-ad-list">
+                      {filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter).slice(0, 10).map((ad, i) => {
+                        const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
+                        const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
+                        const fbLink = fbAdsManagerLink(focusWeekData.accountId, ad.adIds);
+                        return (
+                          <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
+                            <AdThumb src={ad.image} alt={ad.name} />
+                            <div className="mal-ad-info">
+                              <div className="mal-ad-name" title={ad.name}>
+                                {ad.name}
+                                <ActiveBadge active={ad.active} />
+                                {cpaThresholds[activeBrandId] != null && adCpa !== null && adCpa > cpaThresholds[activeBrandId] && (
+                                  <span style={{ color: "var(--red)", fontWeight: 600, fontSize: 11 }}> ⚠ CPA過高</span>
+                                )}
+                              </div>
+                              {ad.campaign && <div className="mal-ad-utm" title={ad.campaign}>📣 {ad.campaign}</div>}
+                              {ad.utm ? (
+                                <div className="mal-ad-utm" title={ad.utm}>🏷 {ad.utm}</div>
+                              ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
+                              {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
+                              {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                            </div>
+                            <div className="mal-ad-stats">
+                              <div><span>廣告費</span>{fmtMoney(ad.spend, focusWeekData.currency)}</div>
+                              <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
+                              <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, focusWeekData.currency) : "—"}</div>
+                              <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, focusWeekData.currency) : "—"}</div>
+                              <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
+                <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
+
+                <h2 className="mal-section-title">
+                  {weekLabel(focusWeek)} 業績比例分析<span className="mal-section-count">(依行銷活動名稱最前面的產品代號自動歸類)</span>
+                </h2>
+                <ProductShareBreakdown
+                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter)}
+                  currencyCode={focusWeekData.currency}
+                  prevAds={prevWeekData ? filterAdsByStatus(prevWeekData.ads, adStatusFilter) : null}
+                  comparisonLabel="上週"
+                />
+
+                <div className="mal-modal-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
+                  <button
+                    className="mal-icon-btn"
+                    onClick={async () => {
+                      await storage.delete(weekKeyFor(activeBrandId, focusWeek));
+                      await loadAllWeeks(activeBrandId);
+                    }}
+                    title="刪除這週資料"
+                  >
+                    🗑 刪除這週資料
+                  </button>
+                </div>
+              </>
+            )}
+          </>
+        )
+      )}
+
+      {viewMode === "insight" && (
+        loading ? <p style={{ color: "var(--ink-soft)" }}>載入帳本中…</p> : sortedKeys.length === 0 ? (
+          <div className="mal-empty">
+            <div style={{ fontSize: 30 }}>📦</div>
+            <h3 style={{ fontFamily: "'Noto Serif KR', serif", margin: "12px 0 0" }}>還沒有任何月報表資料</h3>
+            <p>請先連接 Meta API 抓取資料,才能進行業績比例分析。</p>
+          </div>
+        ) : (
+          <>
+            <div className="mal-tabs">
+              {sortedKeys.map((mk) => (
+                <div key={mk} className={`mal-tab ${mk === focusMonth ? "mal-tab-active" : ""}`} onClick={() => setFocusMonth(mk)}>{monthLabel(mk)}</div>
+              ))}
+            </div>
+            {focusData && (
+              <>
+                <h2 className="mal-section-title">
+                  {monthLabel(focusMonth)} 業績比例分析
+                  <span className="mal-section-count">(依行銷活動名稱最前面的產品代號自動歸類)</span>
+                </h2>
+                <p style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: -6, marginBottom: 18, lineHeight: 1.6 }}>
+                  這個分析是根據每支廣告所屬的「行銷活動名稱」最前面的「【產品代號】」做統計比對(例如「【SR】A+SC｜…」會歸類到「SR」),
+                  不是真的看懂圖片/影片內容或文案寫了什麼。產品可以隨時新增,只要行銷活動的命名規則不變(代號放在名稱最前面的括號裡),
+                  新代號會自動被抓出來,不需要手動維護產品清單;如果活動名稱前面沒有加上代號,會顯示「無法辨識」,
+                  不會硬套錯誤的分類——建議統一命名方式,分析才會準確。代號裡含有「test / 測試」字樣的活動會自動排除,不當成產品;
+                  花費低於 {MIN_AD_SPEND} 元且沒有轉單金額的廣告也會排除,避免資料量過大拖慢讀取——這兩種排除都會在下方單獨列出數量。
+                </p>
+                <ProductShareBreakdown
+                  ads={focusData.ads}
+                  currencyCode={focusData.currency}
+                  prevAds={prevData ? prevData.ads : null}
+                  comparisonLabel="上月"
+                />
+              </>
+            )}
+          </>
+        )
+      )}
+
+      {viewMode === "sponsor" && (
+        loading ? <p style={{ color: "var(--ink-soft)" }}>載入帳本中…</p> : sortedKeys.length === 0 ? (
+          <div className="mal-empty">
+            <div style={{ fontSize: 30 }}>🎤</div>
+            <h3 style={{ fontFamily: "'Noto Serif KR', serif", margin: "12px 0 0" }}>還沒有任何月報表資料</h3>
+            <p>請先連接 Meta API 抓取資料,才能進行業配廣告的長線分析。</p>
+          </div>
+        ) : sponsorMonthsWithData.length === 0 ? (
+          <div className="mal-empty">
+            <div style={{ fontSize: 30 }}>🎤</div>
+            <h3 style={{ fontFamily: "'Noto Serif KR', serif", margin: "12px 0 0" }}>沒有找到業配廣告</h3>
+            <p>目前抓到的廣告名稱、行銷活動名稱裡都沒有包含「業配」這個關鍵字,所以沒有資料可以顯示。</p>
+            <p style={{ fontSize: 12.5 }}>如果你的業配廣告用了不同的命名方式,把廣告名稱或活動名稱加上「業配」兩個字,系統就能自動抓出來做長線分析。</p>
+          </div>
+        ) : (
+          <>
+            <h2 className="mal-section-title">業配廣告總覽<span className="mal-section-count">(名稱或行銷活動含「業配」的廣告,累計所有月份)</span></h2>
+            <div className="mal-cards">
+              <div className="mal-card">
+                <div className="mal-card-label">業配總花費</div>
+                <div className="mal-card-value">{fmtMoney(sponsorTotal.spend, currency)}</div>
+              </div>
+              <div className="mal-card">
+                <div className="mal-card-label">業配總轉單</div>
+                <div className="mal-card-value">{fmtInt(sponsorTotal.conversions)}</div>
+              </div>
+              <div className="mal-card">
+                <div className="mal-card-label">業配平均 CPA</div>
+                <div className="mal-card-value">{sponsorTotal.cpa !== null ? fmtMoney(sponsorTotal.cpa, currency) : "—"}</div>
+              </div>
+              <div className="mal-card">
+                <div className="mal-card-label">業配平均 ROAS</div>
+                <div className="mal-card-value">{sponsorTotal.roas !== null ? `${sponsorTotal.roas.toFixed(2)}x` : "—"}</div>
+              </div>
+            </div>
+
+            <h2 className="mal-section-title">業配廣告費 / 轉單 趨勢</h2>
+            <div className="mal-chart-box">
+              <SimpleBarChart data={sponsorChartData} seriesA="廣告費" seriesB="轉單" colorA="#6E8577" colorB="#BFA054"
+                labelA="廣告費" labelB="轉單" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v} />
+            </div>
+            <h2 className="mal-section-title">業配 CPA / ROAS 趨勢</h2>
+            <div className="mal-chart-box">
+              <SimpleLineChart data={sponsorChartData} seriesA="CPA" seriesB="ROAS" colorA="#A8607A" colorB="#7C8B54"
+                labelA={`CPA (${currency})`} labelB="ROAS (x)" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v + "x"} />
+            </div>
+
+            <h2 className="mal-section-title">逐月業配廣告明細</h2>
+            {sponsorMonthsWithData.map((m) => (
+              <div key={m.monthKey} style={{ marginBottom: 22 }}>
+                <div className="mal-week-analysis-title">
+                  {m.month}
+                  <span className="mal-section-count">
+                    (花費 {fmtMoney(m.spend, currency)}、轉單 {fmtInt(m.conversions)}、CPA {m.cpa !== null ? fmtMoney(m.cpa, currency) : "—"}、ROAS {m.roas !== null ? `${m.roas.toFixed(2)}x` : "—"})
+                  </span>
+                </div>
+                <div className="mal-ad-list">
+                  {m.ads.map((ad, i) => {
+                    const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
+                    const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
+                    const fbLink = fbAdsManagerLink(months[m.monthKey].accountId, ad.adIds);
+                    return (
+                      <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
+                        <AdThumb src={ad.image} alt={ad.name} />
+                        <div className="mal-ad-info">
+                          <div className="mal-ad-name" title={ad.name}>{ad.name}<ActiveBadge active={ad.active} /></div>
+                          {ad.utm ? (
+                            <div className="mal-ad-utm" title={ad.utm}>🏷 {ad.utm}</div>
+                          ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
+                          {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
+                          {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                        </div>
+                        <div className="mal-ad-stats">
+                          <div><span>廣告費</span>{fmtMoney(ad.spend, currency)}</div>
+                          <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
+                          <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, currency) : "—"}</div>
+                          <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, currency) : "—"}</div>
+                          <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </>
+        )
+      )}
+
+      {viewMode === "daily" && (
+        !dailyMonthRecord && ledgerMonthKeys.length === 0 ? (
+          <div className="mal-empty">
+            <div style={{ fontSize: 30 }}>📆</div>
+            <h3 style={{ fontFamily: "'Noto Serif KR', serif", margin: "12px 0 0" }}>還沒有匯入後台每日收益表</h3>
+            <p>每日報表需要先匯入「後台每日收益表」(.xlsx 上傳,或 Google 試算表同步),系統才有逐日、逐產品代號的資料可以顯示。</p>
+            <button className="mal-btn mal-btn-primary" onClick={() => setShowLedgerModal(true)}>📥 匯入後台每日收益表</button>
+          </div>
+        ) : (
+          <>
+            <div className="mal-tabs">
+              {ledgerMonthKeys.map((mk) => (
+                <div key={mk} className={`mal-tab ${mk === activeDailyMonth ? "mal-tab-active" : ""}`} onClick={() => { setDailyMonth(mk); setFocusDay(null); }}>
+                  {monthLabel(mk)}
+                </div>
+              ))}
+            </div>
+
+            <div className="mal-viewmode-switch" style={{ marginBottom: 18 }}>
+              <button className={`mal-viewmode-btn ${dailySubMode === "single" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setDailySubMode("single")}>
+                📌 選一天
+              </button>
+              <button className={`mal-viewmode-btn ${dailySubMode === "matrix" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setDailySubMode("matrix")}>
+                📊 矩陣總覽
+              </button>
+            </div>
+
+            {dailySubMode === "single" && (
+              <>
+                <div className="mal-tabs">
+                  {sortedDailyDays.map((d) => (
+                    <div key={d.date} className={`mal-tab ${d.date === activeFocusDay ? "mal-tab-active" : ""}`} onClick={() => setFocusDay(d.date)}>
+                      {d.date.slice(5)}
+                    </div>
+                  ))}
+                </div>
+
+                {focusDayRecord ? (
+                  <>
+                    <div className="mal-cards" style={{ marginBottom: 18 }}>
+                      <div className="mal-card">
+                        <div className="mal-card-label">🏬 全店營收</div>
+                        <div className="mal-card-value">{fmtMoney(focusDayRecord.overall.revenue)}</div>
+                      </div>
+                      <div className="mal-card">
+                        <div className="mal-card-label">🏬 全店廣告費</div>
+                        <div className="mal-card-value">{fmtMoney(focusDayRecord.overall.adSpend)}</div>
+                        <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>
+                          佔營收 {adPct(focusDayRecord.overall.adSpend, focusDayRecord.overall.revenue)}
+                        </div>
+                      </div>
+                      <div className="mal-card">
+                        <div className="mal-card-label">🏬 全店淨利潤</div>
+                        <div className="mal-card-value">{fmtMoney(focusDayRecord.overall.netProfit)}</div>
+                      </div>
+                    </div>
+
+                    <h2 className="mal-section-title">
+                      {activeFocusDay} 各產品代號明細
+                      <span className="mal-section-count">(依當日營收由高到低排序)</span>
+                    </h2>
+                    <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+                      <table className="mal-table">
+                        <thead>
+                          <tr>
+                            <th>代號</th><th>營收</th><th>廣告費</th><th>廣告費佔比</th><th>淨利潤</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(focusDayRecord.byCode)
+                            .sort((a, b) => b[1].revenue - a[1].revenue)
+                            .map(([code, v]) => (
+                              <tr key={code}>
+                                <td>{code}</td>
+                                <td>{fmtMoney(v.revenue)}</td>
+                                <td>{fmtMoney(v.spend)}</td>
+                                <td>{adPct(v.spend, v.revenue)}</td>
+                                <td>{fmtMoney(v.netProfit)}</td>
+                              </tr>
+                            ))}
+                          <tr>
+                            <td className="mal-row-month">🏬 全店合計</td>
+                            <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.revenue)}</td>
+                            <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.adSpend)}</td>
+                            <td className="mal-row-month">{adPct(focusDayRecord.overall.adSpend, focusDayRecord.overall.revenue)}</td>
+                            <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.netProfit)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "8px 0 0" }}>
+                      🏬 全店合計取自後台每日收益表本身的總表欄位(不是加總各代號估算的),各代號明細加總起來如果對不上,通常是因為部分業績沒有掛在任何一個產品代號底下(例如混合購物車訂單)。
+                    </p>
+                  </>
+                ) : (
+                  <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>這一天沒有資料。</p>
+                )}
+              </>
+            )}
+
+            {dailySubMode === "matrix" && (
+              <>
+                <h2 className="mal-section-title">
+                  {activeDailyMonth ? monthLabel(activeDailyMonth) : ""} 每日 x 產品代號矩陣
+                  <span className="mal-section-count">(表格較寬,可左右滑動)</span>
+                </h2>
+                <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+                  <table className="mal-table mal-ledger-table">
+                    <thead>
+                      <tr>
+                        <th rowSpan={2} style={{ verticalAlign: "bottom" }}>日期</th>
+                        <th colSpan={3} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🏬 全店</th>
+                        {dailyMatrixCodes.map((code) => (
+                          <th key={code} colSpan={3} style={{ textAlign: "center" }}>{code}</th>
+                        ))}
+                      </tr>
+                      <tr>
+                        <th className="mal-ledger-group-backend">營收</th>
+                        <th className="mal-ledger-group-backend">廣告費</th>
+                        <th className="mal-ledger-group-backend">淨利潤</th>
+                        {dailyMatrixCodes.map((code) => (
+                          <React.Fragment key={code}>
+                            <th>營收</th><th>廣告費</th><th>淨利潤</th>
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedDailyDays.map((d) => (
+                        <tr key={d.date}>
+                          <td>{d.date}</td>
+                          <td className="mal-ledger-group-backend">{fmtMoney(d.overall.revenue)}</td>
+                          <td className="mal-ledger-group-backend">{fmtMoney(d.overall.adSpend)}</td>
+                          <td className="mal-ledger-group-backend">{fmtMoney(d.overall.netProfit)}</td>
+                          {dailyMatrixCodes.map((code) => {
+                            const v = d.byCode[code];
+                            return (
+                              <React.Fragment key={code}>
+                                <td>{v ? fmtMoney(v.revenue) : "—"}</td>
+                                <td>{v ? fmtMoney(v.spend) : "—"}</td>
+                                <td>{v ? fmtMoney(v.netProfit) : "—"}</td>
+                              </React.Fragment>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                      {dailyMonthRecord && dailyMonthRecord.monthTotal && (
+                        <tr>
+                          <td className="mal-row-month">總計</td>
+                          <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.revenue)}</td>
+                          <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.adSpend)}</td>
+                          <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.netProfit)}</td>
+                          {dailyMatrixCodes.map((code) => {
+                            const v = dailyMonthRecord.monthTotal.byCode[code];
+                            return (
+                              <React.Fragment key={code}>
+                                <td className="mal-row-month">{v ? fmtMoney(v.revenue) : "—"}</td>
+                                <td className="mal-row-month">{v ? fmtMoney(v.spend) : "—"}</td>
+                                <td className="mal-row-month">{v ? fmtMoney(v.netProfit) : "—"}</td>
+                              </React.Fragment>
+                            );
+                          })}
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </>
+        )
+      )}
+
+      {showApiPanel && (
+        <div className="mal-modal-overlay">
+          <div className="mal-modal mal-modal-small">
+            <h3>連接 Meta API</h3>
+            <p className="mal-modal-sub">
+              {rememberToken
+                ? "權杖已記住,存在這台瀏覽器裡(其他人用同一台電腦、同一個瀏覽器也看得到)。"
+                : "權杖不會存起來,重新整理頁面後要重新貼一次。"}
+            </p>
+
+            <div className="mal-field">
+              <label>模式</label>
+              <select value={apiMode} onChange={(e) => { setApiMode(e.target.value); setBatchProgress(null); }}>
+                <option value="full">直接抓整月資料</option>
+                <option value="multi">多品牌批次抓取</option>
+                <option value="week">上週報表(週一至週日)</option>
+                <option value="recentWeeks">自動回溯抓取過去 N 週</option>
+              </select>
+            </div>
+
+            <div className="mal-field">
+              <label>存取權杖(Access Token)</label>
+              <input
+                type="password"
+                value={apiToken}
+                onChange={(e) => setApiToken(e.target.value)}
+                placeholder="EAAxxxxxxxxxxxxxxxx"
+                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "12px" }}
+              />
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, marginTop: 8, fontSize: 12.5 }}>
+                <input type="checkbox" checked={rememberToken} onChange={(e) => toggleRememberToken(e.target.checked)} />
+                記住這組權杖(存在這台瀏覽器,下次開啟自動帶入)
+              </label>
+              {rememberToken && (
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, marginTop: 6, fontSize: 12.5 }}>
+                  <input type="checkbox" checked={autoSyncEnabled} onChange={(e) => toggleAutoSync(e.target.checked)} />
+                  開啟網頁時自動檢查並補抓上週 / 上個月的資料
+                </label>
+              )}
+              {autoSyncEnabled && rememberToken && (
+                <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+                  只在打開這個網頁的當下才會檢查,不會在你沒開網頁時於背景執行。已經抓過的週/月不會重抓。
+                </p>
+              )}
+            </div>
+
+            {rememberToken && (
+              <div className="mal-field">
+                <button
+                  type="button"
+                  className="mal-btn"
+                  disabled={!!autoSyncStatus}
+                  onClick={runAutoSync}
+                >
+                  {autoSyncStatus ? "同步中…" : "🔄 立即檢查並補抓上週/上月資料"}
+                </button>
+              </div>
+            )}
+
+            {apiMode !== "multi" && brands.length > 0 && (
+              <div className="mal-field">
+                <label>常用品牌</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <select
+                    style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "Noto Sans TC, sans-serif", fontSize: "13px", background: "var(--paper-raised)" }}
+                    value={brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")) ? brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")).name : ""}
+                    onChange={(e) => selectBrand(e.target.value)}
+                  >
+                    <option value="">— 選擇品牌自動帶入 ID —</option>
+                    {brands.map((b) => (
+                      <option key={b.name} value={b.name}>{b.name}</option>
+                    ))}
+                  </select>
+                  {brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")) && (
+                    <button
+                      type="button"
+                      className="mal-icon-btn"
+                      title="刪除這個常用品牌"
+                      onClick={() => deleteBrand(brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")).name)}
+                    >
+                      🗑
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {apiMode !== "multi" && (
+              <div className="mal-field">
+                <label>廣告帳號 ID</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="text"
+                    value={apiAccountId}
+                    onChange={(e) => setApiAccountId(e.target.value)}
+                    placeholder="2157995930925784 或 act_2157995930925784"
+                    style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "12px" }}
+                  />
+                  <button type="button" className="mal-btn" style={{ padding: "8px 12px", fontSize: 12 }} onClick={saveCurrentAsBrand}>
+                    存為常用
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {apiMode === "multi" && (
+              <div className="mal-field">
+                <label>要抓整月還是上週?</label>
+                <div style={{ display: "flex", gap: 16 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+                    <input type="radio" name="batchGranularity" checked={batchGranularity === "month"} onChange={() => setBatchGranularity("month")} />
+                    整月資料
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+                    <input type="radio" name="batchGranularity" checked={batchGranularity === "week"} onChange={() => setBatchGranularity("week")} />
+                    上週資料(週一至週日)
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {apiMode === "multi" && (
+              <div className="mal-field">
+                <label>選擇要一起抓的品牌</label>
+                {brands.length === 0 ? (
+                  <p style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
+                    還沒有存過任何常用品牌。先切到「直接抓整月資料」模式,填一次帳號 ID 並「存為常用」,之後就能在這裡勾選批次抓取。
+                  </p>
+                ) : (
+                  <div style={{ border: "1px solid var(--rule)", borderRadius: "10px", padding: "8px 10px", maxHeight: 160, overflowY: "auto" }}>
+                    {brands.map((b) => (
+                      <label key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedBatchBrandIds.includes(b.id)}
+                          onChange={(e) => {
+                            setSelectedBatchBrandIds((prev) =>
+                              e.target.checked ? [...prev, b.id] : prev.filter((id) => id !== b.id)
+                            );
+                          }}
+                        />
+                        {b.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(apiMode === "week" || (apiMode === "multi" && batchGranularity === "week")) && (
+              <div className="mal-field">
+                <label>上週日期範圍</label>
+                <div style={{ padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", background: "var(--paper-raised)", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}>
+                  {weekInfo.since} ~ {weekInfo.until}
+                </div>
+                <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+                  自動抓「上一個完整的週一到週日」,只統計「購買」類型的轉換。花費 ≥ 500 的廣告會收錄;花費雖然還不到 500,但目前仍在投放中的廣告也會一併收錄,方便觀察剛起步的廣告。
+                </p>
+              </div>
+            )}
+
+            {apiMode === "recentWeeks" && (
+              <div className="mal-field">
+                <label>要往前回溯抓幾週?</label>
+                <select
+                  value={recentWeeksCount}
+                  onChange={(e) => setRecentWeeksCount(Number(e.target.value))}
+                  style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", background: "var(--paper-raised)" }}
+                >
+                  <option value={2}>過去 2 週</option>
+                  <option value={4}>過去 4 週</option>
+                  <option value={8}>過去 8 週</option>
+                  <option value={12}>過去 12 週</option>
+                </select>
+                <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+                  會從「上週」開始,一週一週往前抓(每週都是完整的週一到週日),每抓完一週會間隔 4 秒再抓下一週,避免觸發 Meta 頻率限制。
+                  週數越多需要等待的時間越長,過程中請不要關掉這個分頁。已經抓過的週份重新抓取會直接覆蓋更新。
+                </p>
+              </div>
+            )}
+
+            {(apiMode === "full" || (apiMode === "multi" && batchGranularity === "month")) && (
+              <div className="mal-field">
+                <label>要抓哪個月?</label>
+                <input
+                  type="month"
+                  value={apiMonth}
+                  onChange={(e) => setApiMonth(e.target.value)}
+                  style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "Noto Sans TC, sans-serif", fontSize: "13px" }}
+                />
+                <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+                  只會統計「購買」類型的轉換(訂單數與金額)。如果你的廣告目標不是導購,轉單數可能會顯示 0,這是正常的。
+                </p>
+              </div>
+            )}
+
+            {batchProgress && (
+              <div className="mal-field">
+                <label>批次進度</label>
+                <div style={{ border: "1px solid var(--rule)", borderRadius: "10px", padding: "8px 10px" }}>
+                  {batchProgress.map((p) => (
+                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "4px 0" }}>
+                      <span>{p.name}</span>
+                      <span style={{
+                        color: p.status === "error" ? "var(--red)" : p.status === "done" ? "var(--green)" : "var(--ink-soft)",
+                      }}>
+                        {p.status === "pending" && "等待中"}
+                        {p.status === "running" && "抓取中…"}
+                        {p.status === "done" && `✓ ${p.message}`}
+                        {p.status === "empty" && "沒有資料"}
+                        {p.status === "error" && `✗ ${p.message}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mal-modal-actions">
+              <button className="mal-btn" onClick={() => setShowApiPanel(false)}>取消</button>
+              <button
+                className="mal-btn mal-btn-primary"
+                disabled={apiLoading || weekLoading}
+                onClick={
+                  apiMode === "full"
+                    ? fetchFullMonthFromApi
+                    : apiMode === "multi"
+                    ? fetchBatchFromApi
+                    : apiMode === "recentWeeks"
+                    ? () => fetchRecentWeeksFromApi(recentWeeksCount)
+                    : fetchLastWeekData
+                }
+              >
+                {apiLoading || weekLoading ? "抓取中…" : "開始抓取"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTeamKeyModal && (
+        <div className="mal-modal-overlay">
+          <div className="mal-modal">
+            <h3>登入身份密碼</h3>
+            <p className="mal-modal-sub">
+              這個網站部署在 Cloudflare 上,後台設定了 <code>TEAM_CREDENTIALS</code>(多組密碼,各自綁定能看的品牌)。
+              輸入你自己那組密碼,系統會自動判斷你能看哪些品牌的資料。密碼只存在你自己的瀏覽器裡,不會被同步出去。
+            </p>
+            <div className="mal-field">
+              <label>密碼</label>
+              <input
+                type="password"
+                value={teamKeyInput}
+                onChange={(e) => setTeamKeyInput(e.target.value)}
+                placeholder="輸入你的登入密碼"
+                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}
+              />
+            </div>
+            <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+              目前狀態:
+              {cloudStatus === "connected" && ` ☁️ 已連上共用資料庫${credentialName ? `(身份:${credentialName})` : ""}`}
+              {cloudStatus === "unauthorized" && " ⚠️ 有連上,但密碼不對"}
+              {cloudStatus === "unavailable" && " ⚠️ 連不到 /api/kv,請確認 Cloudflare Functions 已經跟這個網站一起部署"}
+              {cloudStatus === "unknown" && " 尚未測試"}
+            </p>
+            <div className="mal-modal-actions">
+              <button className="mal-btn" onClick={() => setShowTeamKeyModal(false)}>關閉</button>
+              <button className="mal-btn mal-btn-primary" onClick={saveTeamKey}>儲存並測試連線</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLedgerModal && (
+        <div className="mal-modal-overlay">
+          <div className="mal-modal">
+            <h3>匯入後台每日收益表</h3>
+            <p className="mal-modal-sub">
+              上傳「每日收益表」.xlsx 檔(跟範例表單一致:分頁是「1月」~「12月」,欄位依產品代號拆分)。
+              系統會自動抓出每個分頁對應的月份,存成該品牌的後台實際業績,週報表/月報表會自動比對 Meta 回報的落差。
+              重新匯入同一個月份會直接覆蓋更新。
+            </p>
+            <div className="mal-field">
+              <label>這份檔案的年度 <span className="mal-req">*</span></label>
+              <input
+                type="number"
+                value={ledgerYear}
+                onChange={(e) => setLedgerYear(e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}
+              />
+              <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+                表單裡的分頁只有「月」沒有「年」,所以需要另外指定年度,才能正確存成例如 2026-07 這樣的月份。
+              </p>
+            </div>
+            <div className="mal-field">
+              <label>選擇檔案 <span className="mal-req">*</span></label>
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) importLedgerFile(f); }}
+                style={{ width: "100%" }}
+              />
+            </div>
+            {!HAS_SHARED_STORAGE && (
+              <>
+                <div style={{ borderTop: "1px dashed var(--rule)", margin: "16px 0 14px" }} />
+                <div className="mal-field">
+                  <label>或者:直接從 Google 試算表同步(不用手動下載/上傳)</label>
+                  <input
+                    type="text"
+                    value={sheetIdInput}
+                    onChange={(e) => setSheetIdInput(e.target.value)}
+                    placeholder="Google 試算表 ID(網址 .../spreadsheets/d/ 後面那一串)"
+                    style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px", marginBottom: 8 }}
+                  />
+                  <p style={{ fontSize: 11.5, color: "var(--ink-soft)", lineHeight: 1.5, marginBottom: 8 }}>
+                    試算表不用公開,只要分享給服務帳號的 email(檢視者權限即可,詳見 README「步驟 7」)。
+                    會同步到目前選取的品牌(廣告帳號 ID:{activeBrandId || "尚未選擇"}),下次打開會自動記住這個品牌對應的試算表 ID(留空直接按同步,會沿用上次記住的那份)。
+                  </p>
+                  <button className="mal-btn mal-btn-primary" disabled={sheetSyncLoading} onClick={syncFromGoogleSheet}>
+                    {sheetSyncLoading ? "同步中…" : "☁️ 從 Google 試算表同步"}
+                  </button>
+                </div>
+              </>
+            )}
+            {ledgerImportError && <div className="mal-error">⚠ {ledgerImportError}</div>}
+            {ledgerImportNotice && <div className="mal-notice">✓ {ledgerImportNotice}</div>}
+            <div className="mal-modal-actions">
+              <button className="mal-btn" disabled={ledgerImportLoading} onClick={() => setShowLedgerModal(false)}>
+                {ledgerImportLoading ? "匯入中…" : "關閉"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmReset && (
+        <div className="mal-modal-overlay">
+          <div className="mal-modal mal-modal-small">
+            <h3>重置「{activeBrandId ? (brands.find((b) => b.id === activeBrandId) || {}).name || activeBrandId : "此帳本"}」?</h3>
+            <p className="mal-modal-sub">這會刪除目前這個品牌底下所有已儲存的月份資料,無法復原。其他品牌的資料不受影響。</p>
+            <div className="mal-modal-actions">
+              <button className="mal-btn" onClick={() => setConfirmReset(false)}>取消</button>
+              <button className="mal-btn mal-btn-danger" onClick={resetAll}>確認重置</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="mal-modal-overlay">
+          <div className="mal-modal mal-modal-small">
+            <h3>刪除 {monthLabel(confirmDelete)} 的資料?</h3>
+            <p className="mal-modal-sub">刪除後可重新上傳該月報表補回。</p>
+            <div className="mal-modal-actions">
+              <button className="mal-btn" onClick={() => setConfirmDelete(null)}>取消</button>
+              <button className="mal-btn mal-btn-danger" onClick={() => deleteMonth(confirmDelete)}>確認刪除</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<MetaAdsLedger />);
+</script>
+</body>
+</html>

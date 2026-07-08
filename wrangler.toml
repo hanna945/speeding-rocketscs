@@ -1,0 +1,19 @@
+# 這個檔案是給想用 wrangler CLI 部署的人用的,非必要。
+# 如果你是用 Cloudflare Dashboard 網頁介面「拖檔案上傳」的方式部署,可以完全忽略這個檔案,
+# KV 綁定跟 TEAM_SECRET 改成在 Dashboard 的 Settings 頁面設定即可(README.md 有step by step)。
+
+name = "brand-report"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "."
+
+[[kv_namespaces]]
+binding = "REPORT_KV"
+id = "請填入你在 Cloudflare Dashboard 建立的 KV Namespace ID"
+
+[vars]
+# 建議一定要設定,否則任何拿到網址的人都能讀寫你的報表資料庫
+# TEAM_SECRET = "設一個團隊都知道的密碼"
+
+# 選用:Google 服務帳號的 JSON 金鑰,設定後可以直接從 Google 試算表同步後台每日收益表(試算表不用公開)。
+# 一定要用「Secret」類型設定,不要寫在這個檔案裡明碼儲存。詳見 README「步驟 7」。
+# GOOGLE_SERVICE_ACCOUNT_KEY 請到 Cloudflare Dashboard 網頁介面設定,不要寫在這裡。
