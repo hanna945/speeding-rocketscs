@@ -247,7 +247,7 @@ const WEEK_STORAGE_PREFIX = "metaads-week:";
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
-const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds"]);
+const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds"]);
 const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
@@ -924,6 +924,7 @@ function MetaAdsLedger() {
   const [brands, setBrands] = useState([]);
   const [activeBrandId, setActiveBrandId] = useState("");
   const [cpaThresholds, setCpaThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「CPA 過高」標準
+  const [adRatioThresholds, setAdRatioThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「廣告費佔比過高」標準(百分比數字,例如 30 代表 30%)
   const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
   const [batchProgress, setBatchProgress] = useState(null);
   const [weekInfo, setWeekInfo] = useState(getLastWeekRange());
@@ -962,18 +963,22 @@ function MetaAdsLedger() {
 
   useEffect(() => {
     async function loadInitialConfig() {
-      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes] = await Promise.all([
+      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes, adRatioRes] = await Promise.all([
         storage.get("meta-api-account-id").catch(() => null),
         storage.get("meta-api-brands").catch(() => null),
         storage.get("meta-api-remember-token").catch(() => null),
         storage.get("meta-api-autosync").catch(() => null),
         storage.get("meta-api-cpa-thresholds").catch(() => null),
+        storage.get("meta-api-adratio-thresholds").catch(() => null),
       ]);
 
       if (accountIdRes && accountIdRes.value) setApiAccountId(accountIdRes.value);
 
       if (cpaRes && cpaRes.value) {
         try { setCpaThresholds(JSON.parse(cpaRes.value)); } catch { /* ignore malformed data */ }
+      }
+      if (adRatioRes && adRatioRes.value) {
+        try { setAdRatioThresholds(JSON.parse(adRatioRes.value)); } catch { /* ignore malformed data */ }
       }
 
       let cleanedBrandsForAutoSelect = [];
@@ -1332,6 +1337,32 @@ function MetaAdsLedger() {
     }
     setCpaThresholds(updated);
     storage.set("meta-api-cpa-thresholds", JSON.stringify(updated)).catch(() => {});
+  }
+
+  // 跟 editCpaThreshold 同一套模式:每個品牌各自的「廣告費佔比過高」標準(百分比),
+  // 超過這個比例,每日報表(選一天/矩陣總覽)裡的廣告費佔比欄位會標紅提醒。
+  function editAdRatioThreshold(brandId) {
+    const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
+    const current = adRatioThresholds[brandId];
+    const input = window.prompt(
+      `設定「${brandName}」的廣告費佔比過高標準——廣告費佔營收的比例超過這個百分比,每日報表會標紅提醒(只要輸入數字,例如想設 30%,輸入 30 就好,不用打 % 符號)。\n留空白可以清除這個品牌的標準。`,
+      current != null ? String(current) : ""
+    );
+    if (input === null) return;
+    const trimmed = input.trim();
+    const updated = { ...adRatioThresholds };
+    if (!trimmed) {
+      delete updated[brandId];
+    } else {
+      const num = parseFloat(trimmed);
+      if (isNaN(num) || num <= 0 || num > 100) {
+        setApiError("廣告費佔比標準請輸入 0~100 之間的數字(百分比)。");
+        return;
+      }
+      updated[brandId] = num;
+    }
+    setAdRatioThresholds(updated);
+    storage.set("meta-api-adratio-thresholds", JSON.stringify(updated)).catch(() => {});
   }
 
   async function saveCurrentAsBrand() {
@@ -2420,7 +2451,31 @@ function MetaAdsLedger() {
     : (sortedDailyDays.length ? sortedDailyDays[sortedDailyDays.length - 1].date : null);
   const focusDayRecord = activeFocusDay ? sortedDailyDays.find((d) => d.date === activeFocusDay) : null;
   const dailyMatrixCodes = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
-  const adPct = (spend, revenue) => (revenue > 0 ? `${((spend / revenue) * 100).toFixed(0)}%` : "—");
+  // threshold 有給且超過時,回傳標紅、加驚嘆號的樣式;沒給 threshold 或沒超過,就是原本的樣式。
+  const adPct = (spend, revenue, threshold) => {
+    if (revenue <= 0) return "—";
+    const pct = (spend / revenue) * 100;
+    const isHigh = threshold != null && pct > threshold;
+    return (
+      <span style={isHigh ? { color: "var(--red)", fontWeight: 700 } : undefined}>
+        {pct.toFixed(0)}%{isHigh ? " ⚠" : ""}
+      </span>
+    );
+  };
+  // 基礎分析用:當月每一天的廣告費佔比,抓出佔比最高的一天,以及(如果有設定門檻)超過門檻的天數清單。
+  const dailyRatioStats = useMemo(() => {
+    let highestDay = null;
+    const overThresholdDays = [];
+    const threshold = adRatioThresholds[activeBrandId];
+    sortedDailyDays.forEach((d) => {
+      if (d.overall.revenue > 0) {
+        const pct = (d.overall.adSpend / d.overall.revenue) * 100;
+        if (!highestDay || pct > highestDay.pct) highestDay = { date: d.date, pct };
+        if (threshold != null && pct > threshold) overThresholdDays.push({ date: d.date, pct });
+      }
+    });
+    return { highestDay, overThresholdDays };
+  }, [sortedDailyDays, adRatioThresholds, activeBrandId]);
 
   // ---------- 業配廣告長線分析:把名稱或行銷活動裡含「業配」兩個字的廣告單獨拉出來,依月份累計趨勢 ----------
   const SPONSOR_KEYWORD = "業配";
@@ -2577,13 +2632,20 @@ function MetaAdsLedger() {
       )}
 
       {activeBrandId && (
-        <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginBottom: 18, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginBottom: 18, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span>CPA 過高標準:</span>
           <strong style={{ color: "var(--ink)", fontFamily: "IBM Plex Mono, monospace" }}>
             {cpaThresholds[activeBrandId] != null ? `$${cpaThresholds[activeBrandId]}` : "尚未設定"}
           </strong>
           <button className="mal-btn" style={{ padding: "3px 10px", fontSize: 11.5 }} onClick={() => editCpaThreshold(activeBrandId)}>
             ✎ {cpaThresholds[activeBrandId] != null ? "修改" : "設定"}
+          </button>
+          <span style={{ marginLeft: 8 }}>廣告費佔比過高標準:</span>
+          <strong style={{ color: "var(--ink)", fontFamily: "IBM Plex Mono, monospace" }}>
+            {adRatioThresholds[activeBrandId] != null ? `${adRatioThresholds[activeBrandId]}%` : "尚未設定"}
+          </strong>
+          <button className="mal-btn" style={{ padding: "3px 10px", fontSize: 11.5 }} onClick={() => editAdRatioThreshold(activeBrandId)}>
+            ✎ {adRatioThresholds[activeBrandId] != null ? "修改" : "設定"}
           </button>
         </div>
       )}
@@ -3110,7 +3172,7 @@ function MetaAdsLedger() {
                         <div className="mal-card-label">🏬 全店廣告費</div>
                         <div className="mal-card-value">{fmtMoney(focusDayRecord.overall.adSpend)}</div>
                         <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>
-                          佔營收 {adPct(focusDayRecord.overall.adSpend, focusDayRecord.overall.revenue)}
+                          佔營收 {adPct(focusDayRecord.overall.adSpend, focusDayRecord.overall.revenue, adRatioThresholds[activeBrandId])}
                         </div>
                       </div>
                       <div className="mal-card">
@@ -3138,7 +3200,7 @@ function MetaAdsLedger() {
                                 <td>{code}</td>
                                 <td>{fmtMoney(v.revenue)}</td>
                                 <td>{fmtMoney(v.spend)}</td>
-                                <td>{adPct(v.spend, v.revenue)}</td>
+                                <td>{adPct(v.spend, v.revenue, adRatioThresholds[activeBrandId])}</td>
                                 <td>{fmtMoney(v.netProfit)}</td>
                               </tr>
                             ))}
@@ -3146,7 +3208,7 @@ function MetaAdsLedger() {
                             <td className="mal-row-month">🏬 全店合計</td>
                             <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.revenue)}</td>
                             <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.adSpend)}</td>
-                            <td className="mal-row-month">{adPct(focusDayRecord.overall.adSpend, focusDayRecord.overall.revenue)}</td>
+                            <td className="mal-row-month">{adPct(focusDayRecord.overall.adSpend, focusDayRecord.overall.revenue, adRatioThresholds[activeBrandId])}</td>
                             <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.netProfit)}</td>
                           </tr>
                         </tbody>
@@ -3173,18 +3235,19 @@ function MetaAdsLedger() {
                     <thead>
                       <tr>
                         <th rowSpan={2} style={{ verticalAlign: "bottom" }}>日期</th>
-                        <th colSpan={3} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🏬 全店</th>
+                        <th colSpan={4} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🏬 全店</th>
                         {dailyMatrixCodes.map((code) => (
-                          <th key={code} colSpan={3} style={{ textAlign: "center" }}>{code}</th>
+                          <th key={code} colSpan={4} style={{ textAlign: "center" }}>{code}</th>
                         ))}
                       </tr>
                       <tr>
                         <th className="mal-ledger-group-backend">營收</th>
                         <th className="mal-ledger-group-backend">廣告費</th>
+                        <th className="mal-ledger-group-backend">廣告費佔比</th>
                         <th className="mal-ledger-group-backend">淨利潤</th>
                         {dailyMatrixCodes.map((code) => (
                           <React.Fragment key={code}>
-                            <th>營收</th><th>廣告費</th><th>淨利潤</th>
+                            <th>營收</th><th>廣告費</th><th>廣告費佔比</th><th>淨利潤</th>
                           </React.Fragment>
                         ))}
                       </tr>
@@ -3195,6 +3258,7 @@ function MetaAdsLedger() {
                           <td>{d.date}</td>
                           <td className="mal-ledger-group-backend">{fmtMoney(d.overall.revenue)}</td>
                           <td className="mal-ledger-group-backend">{fmtMoney(d.overall.adSpend)}</td>
+                          <td className="mal-ledger-group-backend">{adPct(d.overall.adSpend, d.overall.revenue, adRatioThresholds[activeBrandId])}</td>
                           <td className="mal-ledger-group-backend">{fmtMoney(d.overall.netProfit)}</td>
                           {dailyMatrixCodes.map((code) => {
                             const v = d.byCode[code];
@@ -3202,6 +3266,7 @@ function MetaAdsLedger() {
                               <React.Fragment key={code}>
                                 <td>{v ? fmtMoney(v.revenue) : "—"}</td>
                                 <td>{v ? fmtMoney(v.spend) : "—"}</td>
+                                <td>{v ? adPct(v.spend, v.revenue, adRatioThresholds[activeBrandId]) : "—"}</td>
                                 <td>{v ? fmtMoney(v.netProfit) : "—"}</td>
                               </React.Fragment>
                             );
@@ -3213,6 +3278,7 @@ function MetaAdsLedger() {
                           <td className="mal-row-month">總計</td>
                           <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.revenue)}</td>
                           <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.adSpend)}</td>
+                          <td className="mal-ledger-group-backend mal-row-month">{adPct(dailyMonthRecord.monthTotal.overall.adSpend, dailyMonthRecord.monthTotal.overall.revenue, adRatioThresholds[activeBrandId])}</td>
                           <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.netProfit)}</td>
                           {dailyMatrixCodes.map((code) => {
                             const v = dailyMonthRecord.monthTotal.byCode[code];
@@ -3220,6 +3286,7 @@ function MetaAdsLedger() {
                               <React.Fragment key={code}>
                                 <td className="mal-row-month">{v ? fmtMoney(v.revenue) : "—"}</td>
                                 <td className="mal-row-month">{v ? fmtMoney(v.spend) : "—"}</td>
+                                <td className="mal-row-month">{v ? adPct(v.spend, v.revenue, adRatioThresholds[activeBrandId]) : "—"}</td>
                                 <td className="mal-row-month">{v ? fmtMoney(v.netProfit) : "—"}</td>
                               </React.Fragment>
                             );
@@ -3230,6 +3297,31 @@ function MetaAdsLedger() {
                   </table>
                 </div>
               </>
+            )}
+
+            {dailyMonthRecord && (
+              <div className="mal-week-analysis">
+                <div className="mal-week-analysis-title">基礎分析</div>
+                <ul>
+                  <li>廣告費佔比 = 廣告費 ÷ 營收,反映這筆營收有多少比例被廣告成本吃掉,佔比越低代表帶量效率越好;佔比拉高不代表淨利潤會等比例下降,要看原本的毛利空間夠不夠厚。</li>
+                  {dailyRatioStats.highestDay && (
+                    <li>
+                      {monthLabel(activeDailyMonth)}廣告費佔比最高的一天是 {dailyRatioStats.highestDay.date}
+                      ({dailyRatioStats.highestDay.pct.toFixed(0)}%)。
+                    </li>
+                  )}
+                  {adRatioThresholds[activeBrandId] == null ? (
+                    <li>目前還沒設定「廣告費佔比過高標準」(在上方「✎ 設定」),設定後這裡會自動列出超標的日期,表格裡超標的儲存格也會標紅提醒。</li>
+                  ) : dailyRatioStats.overThresholdDays.length > 0 ? (
+                    <li>
+                      {monthLabel(activeDailyMonth)}有 {dailyRatioStats.overThresholdDays.length} 天廣告費佔比超過設定的 {adRatioThresholds[activeBrandId]}% 門檻:
+                      {dailyRatioStats.overThresholdDays.map((d) => d.date.slice(5)).join("、")}。
+                    </li>
+                  ) : (
+                    <li>{monthLabel(activeDailyMonth)}每一天的廣告費佔比都在設定的 {adRatioThresholds[activeBrandId]}% 門檻以內。</li>
+                  )}
+                </ul>
+              </div>
             )}
           </>
         )
