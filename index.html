@@ -298,6 +298,18 @@ async function probeCloud(force) {
 }
 function getCredentialName() { return credentialNameCache; }
 function getCredentialBrands() { return credentialBrandsCache; }
+// 把「共用品牌清單」(meta-api-brands)跟「目前登入身份自帶的品牌清單」(如果 TEAM_CREDENTIALS 有設定 {id,name} 格式)合併成
+// 最終可切換的品牌清單。身份自帶的清單優先排在前面,共用清單裡其他不在身份清單內的品牌(例如最高權限使用者額外存的常用品牌)接在後面。
+// 純函式,不管在「網頁剛打開」還是「登入成功那一刻」呼叫,結果都一樣,兩處共用同一套邏輯,不會各自維護一份容易漏改其中一邊。
+function mergeCredentialBrands(cleanedSharedBrands) {
+  const credBrands = getCredentialBrands();
+  if (!credBrands || !credBrands.length) return cleanedSharedBrands;
+  const byId = {};
+  cleanedSharedBrands.forEach((b) => { byId[b.id] = b; });
+  credBrands.forEach((b) => { if (!byId[b.id]) byId[b.id] = { id: b.id, name: b.name }; });
+  const credIds = new Set(credBrands.map((b) => b.id));
+  return [...credBrands.map((b) => byId[b.id]), ...cleanedSharedBrands.filter((b) => !credIds.has(b.id))];
+}
 const cloudStorage = {
   async get(key) {
     const res = await fetch(`${CLOUD_KV_BASE}/item/${encodeURIComponent(key)}`, { headers: teamKeyHeaders() });
@@ -971,20 +983,7 @@ function MetaAdsLedger() {
           try { parsed = JSON.parse(brandsRes.value); } catch { parsed = []; }
         }
         const cleaned = parsed.filter((b) => !LEGACY_DEFAULT_BRAND_IDS.includes(b.id));
-
-        // 如果目前這組登入身份本身就帶著一份品牌清單(TEAM_CREDENTIALS 設定成 {id,name} 格式),
-        // 直接併進來當作可切換的品牌——不用另外在畫面上手動「存為常用」登記一次。
-        // 就算 meta-api-brands 這份共用清單目前完全是空的(例如全新專案),身份自帶的清單還是會生效,
-        // 確保只要密碼設定裡有列的品牌,登入後一定看得到、選得到。
-        const credBrands = getCredentialBrands();
-        let merged = cleaned;
-        if (credBrands && credBrands.length) {
-          const byId = {};
-          cleaned.forEach((b) => { byId[b.id] = b; });
-          credBrands.forEach((b) => { if (!byId[b.id]) byId[b.id] = { id: b.id, name: b.name }; });
-          const credIds = new Set(credBrands.map((b) => b.id));
-          merged = [...credBrands.map((b) => byId[b.id]), ...cleaned.filter((b) => !credIds.has(b.id))];
-        }
+        const merged = mergeCredentialBrands(cleaned);
 
         cleanedBrandsForAutoSelect = merged;
         setBrands(merged);
@@ -1030,6 +1029,7 @@ function MetaAdsLedger() {
       if (status === "connected") {
         setCredentialName(getCredentialName());
         triggerAutoAccountSync();
+        refreshBrandsAfterAuth();
       }
     });
   }, []);
@@ -1049,6 +1049,23 @@ function MetaAdsLedger() {
     } catch { /* 背景動作,失敗不影響主要畫面 */ }
   }
 
+  // 網頁剛打開的當下,不一定已經知道「目前是哪組登入身份」(密碼可能是這次才輸入的),
+  // 所以品牌清單要在「確定連線成功、身份解析出來」之後再重新整理一次,不能只靠網頁剛打開那一瞬間的合併結果——
+  // 否則先打開網頁、後貼密碼登入的情況,身份自帶的品牌清單永遠不會套用進去。
+  async function refreshBrandsAfterAuth() {
+    const brandsRes = await storage.get("meta-api-brands").catch(() => null);
+    let parsed = [];
+    if (brandsRes && brandsRes.value) {
+      try { parsed = JSON.parse(brandsRes.value); } catch { parsed = []; }
+    }
+    const cleaned = parsed.filter((b) => !LEGACY_DEFAULT_BRAND_IDS.includes(b.id));
+    const merged = mergeCredentialBrands(cleaned);
+    setBrands(merged);
+    if (merged.length > 0) {
+      setActiveBrandId((prev) => (prev && merged.some((b) => b.id === prev) ? prev : merged[0].id));
+    }
+  }
+
   async function saveTeamKey() {
     setTeamKey(teamKeyInput.trim());
     const status = await probeCloud(true);
@@ -1056,6 +1073,7 @@ function MetaAdsLedger() {
     if (status === "connected") {
       setCredentialName(getCredentialName());
       triggerAutoAccountSync();
+      refreshBrandsAfterAuth();
       setShowTeamKeyModal(false);
     }
   }
@@ -2274,16 +2292,20 @@ function MetaAdsLedger() {
   async function runAutoSyncWith(token, brandsList, defaultAccountId) {
     if (!token || !token.trim()) return;
     const cleanDefaultId = (defaultAccountId || "").trim().replace(/^act_/, "");
-    const targets = (brandsList && brandsList.length)
-      ? brandsList.map((b) => ({ apiId: b.id, storageId: b.id, name: b.name }))
+    // 如果呼叫時沒帶品牌清單,先看「目前登入身份自己有沒有帶一份品牌清單」(TEAM_CREDENTIALS 設定的 {id,name} 清單)可以用,
+    // 不要一沒清單就直接拿「畫面上記住的單一帳號 ID」捏造一個假品牌、覆蓋掉真正的品牌清單——
+    // 這是之前造成品牌清單被單一帳號蓋掉的原因,範圍受限的身份尤其容易踩到,因為 meta-api-brands 這份共用清單一開始可能是空的。
+    const effectiveBrandsList = (brandsList && brandsList.length) ? brandsList : (getCredentialBrands() || []);
+    const targets = (effectiveBrandsList && effectiveBrandsList.length)
+      ? effectiveBrandsList.map((b) => ({ apiId: b.id, storageId: b.id, name: b.name }))
       : cleanDefaultId
       // 已經拿掉「預設帳本」,所以這裡也不能再把資料存進看不到的地方——
-      // 沒有任何常用品牌時,直接用帳號 ID 本身當作品牌 ID 來存,並登記進品牌清單。
+      // 沒有任何常用品牌、身份也沒有自帶清單時,直接用帳號 ID 本身當作品牌 ID 來存,並登記進品牌清單。
       ? [{ apiId: cleanDefaultId, storageId: cleanDefaultId, name: cleanDefaultId }]
       : [];
     if (!targets.length) return;
 
-    if (!brandsList || !brandsList.length) {
+    if (!effectiveBrandsList || !effectiveBrandsList.length) {
       const autoBrand = { name: cleanDefaultId, id: cleanDefaultId };
       const updatedBrands = [autoBrand];
       setBrands(updatedBrands);
