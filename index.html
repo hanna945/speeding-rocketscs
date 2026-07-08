@@ -469,6 +469,14 @@ function fbAdsManagerLink(accountId, adIds) {
   if (!accountId || !adIds || !adIds.length) return null;
   return `https://business.facebook.com/adsmanager/manage/ads?act=${accountId}&selected_ad_ids=${adIds.join(",")}`;
 }
+// FB 前台(Meta 廣告檔案庫 Ad Library)的公開連結——不用登入、不用權限,任何人打開都看得到廣告實際呈現的樣子
+// (前台使用者看到的畫面),跟上面 fbAdsManagerLink 那個「後台管理頁」是兩回事。
+// 只對「還在投放中」的廣告顯示這個連結:已停止的一般商業廣告(非政治類)在檔案庫裡不會留檔,連結打開會是空的。
+// 如果這張卡片是合併多支廣告顯示的(UTM 相同、素材不同),只能連到其中第一支的廣告 ID。
+function fbAdLibraryLink(adIds) {
+  if (!adIds || !adIds.length) return null;
+  return `https://www.facebook.com/ads/library/?id=${adIds[0]}`;
+}
 
 // 依「投放中 / 已停止」篩選廣告清單。若資料沒有狀態資訊(active 是 undefined),
 // 選「全部」時一樣會顯示,但選「只看投放中」或「只看已停止」時會被排除,因為系統無法確認它屬於哪一種。
@@ -2160,6 +2168,7 @@ function MetaAdsLedger() {
                     const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                     const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                     const fbLink = fbAdsManagerLink(accountId, ad.adIds);
+                    const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
                     return (
                       <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
                         <AdThumb src={ad.image} alt={ad.name} />
@@ -2174,6 +2183,7 @@ function MetaAdsLedger() {
                           <div className="mal-ad-utm" title={ad.campaign}>📣 {ad.campaign}</div>
                           {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
                           {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                          {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
                         </div>
                         <div className="mal-ad-stats">
                           <div><span>廣告費</span>{fmtMoney(ad.spend, currencyCode)}</div>
@@ -2803,6 +2813,7 @@ function MetaAdsLedger() {
                   const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                   const names = ad.rawNames && ad.rawNames.length ? ad.rawNames : [ad.name];
                   const resolvedImage = ad.image || "";
+                  const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
                   const fbLink = fbAdsManagerLink(focusData.accountId, ad.adIds);
                   return (
                     <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
@@ -2821,6 +2832,7 @@ function MetaAdsLedger() {
                         ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
                         {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
                         {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                        {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
                       </div>
                       <div className="mal-ad-stats">
                         <div><span>廣告費</span>{fmtMoney(ad.spend, focusData.currency)}</div>
@@ -2959,6 +2971,7 @@ function MetaAdsLedger() {
                     <div className="mal-ad-list">
                       {filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter).slice(0, 10).map((ad, i) => {
                         const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
+                        const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
                         const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                         const fbLink = fbAdsManagerLink(focusWeekData.accountId, ad.adIds);
                         return (
@@ -2978,6 +2991,7 @@ function MetaAdsLedger() {
                               ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
                               {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
                               {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                              {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
                             </div>
                             <div className="mal-ad-stats">
                               <div><span>廣告費</span>{fmtMoney(ad.spend, focusWeekData.currency)}</div>
@@ -3121,6 +3135,7 @@ function MetaAdsLedger() {
                 </div>
                 <div className="mal-ad-list">
                   {m.ads.map((ad, i) => {
+                  const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
                     const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                     const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                     const fbLink = fbAdsManagerLink(months[m.monthKey].accountId, ad.adIds);
@@ -3134,6 +3149,7 @@ function MetaAdsLedger() {
                           ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
                           {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
                           {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                          {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
                         </div>
                         <div className="mal-ad-stats">
                           <div><span>廣告費</span>{fmtMoney(ad.spend, currency)}</div>
