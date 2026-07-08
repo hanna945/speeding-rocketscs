@@ -2392,9 +2392,22 @@ function MetaAdsLedger() {
   const hiddenAdCount = focusData && focusData.ads ? focusData.ads.length - spendFilteredAds.length : 0;
 
   // ---------- 每日營收報表:直接呈現後台每日收益表(ledgerByMonth)裡「每一天 x 每個產品代號」的明細,不用另外彙總 ----------
-  // 選單月份/選單日,都用「目前選到的值如果還存在就沿用,否則自動退回最新一筆」的方式決定,換品牌、重新同步後資料一變會自動跟著更新,不用另外寫 useEffect 同步。
+  // 選單月份/選單日,優先順序是:①使用者自己手動點過的(dailyMonth/focusDay,只要那筆資料還在就沿用,尊重手動導覽)
+  // ②今天實際的月份/日期(如果那個月/那一天剛好有資料的話)③都沒有的話,退回資料裡最後一筆(例如試算表只匯到某個過去的月份)。
+  // 這樣打開「每日報表」預設就會對準今天,不用手動點,但只要手動切換過,還是會照使用者選的走,不會一直搶跳回今天。
   const ledgerMonthKeys = useMemo(() => Object.keys(ledgerByMonth).sort(), [ledgerByMonth]);
-  const activeDailyMonth = (dailyMonth && ledgerByMonth[dailyMonth]) ? dailyMonth : (ledgerMonthKeys.length ? ledgerMonthKeys[ledgerMonthKeys.length - 1] : null);
+  const todayParts = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return { monthKey: `${y}-${m}`, dateKey: `${y}-${m}-${d}` };
+  }, []);
+  const activeDailyMonth = (dailyMonth && ledgerByMonth[dailyMonth])
+    ? dailyMonth
+    : ledgerByMonth[todayParts.monthKey]
+    ? todayParts.monthKey
+    : (ledgerMonthKeys.length ? ledgerMonthKeys[ledgerMonthKeys.length - 1] : null);
   const dailyMonthRecord = activeDailyMonth ? ledgerByMonth[activeDailyMonth] : null;
   const sortedDailyDays = useMemo(
     () => (dailyMonthRecord ? dailyMonthRecord.days.slice().sort((a, b) => (a.date < b.date ? -1 : 1)) : []),
@@ -2402,6 +2415,8 @@ function MetaAdsLedger() {
   );
   const activeFocusDay = (focusDay && sortedDailyDays.some((d) => d.date === focusDay))
     ? focusDay
+    : sortedDailyDays.some((d) => d.date === todayParts.dateKey)
+    ? todayParts.dateKey
     : (sortedDailyDays.length ? sortedDailyDays[sortedDailyDays.length - 1].date : null);
   const focusDayRecord = activeFocusDay ? sortedDailyDays.find((d) => d.date === activeFocusDay) : null;
   const dailyMatrixCodes = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
