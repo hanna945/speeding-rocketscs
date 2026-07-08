@@ -85,6 +85,12 @@
   .mal-ledger-group-gap { background: var(--paper-raised); }
   .mal-ledger-group-label-backend { color: #5C6B41; }
   .mal-ledger-group-label-meta { color: #8A6A2E; }
+  /* 表格較寬需要左右滑動時,第一欄(產品代號/日期)凍結不跟著捲動,滑到多右邊都看得到現在是哪一列。 */
+  .mal-ledger-table th:first-child, .mal-ledger-table td:first-child {
+    position: sticky; left: 0; z-index: 1; background: var(--paper);
+  }
+  .mal-ledger-table thead th:first-child { z-index: 2; }
+  .mal-ledger-table tr:hover td:first-child { background: #F7F2EA; }
   .mal-tab { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; padding: 7px 16px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-raised); color: var(--ink-soft); cursor: pointer; white-space: nowrap; transition: all 0.15s ease; }
   .mal-tab-active { border-color: var(--blue); color: #fff; background: var(--blue); }
   .mal-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 26px; }
