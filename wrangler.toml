@@ -8,7 +8,7 @@ pages_build_output_dir = "."
 
 [[kv_namespaces]]
 binding = "REPORT_KV"
-id = "請填入你在 Cloudflare Dashboard 建立的 KV Namespace ID"
+id = "d283e1d9fa8f4ec1b1a64f2818649cb0"
 
 [vars]
 # 建議一定要設定,否則任何拿到網址的人都能讀寫你的報表資料庫
