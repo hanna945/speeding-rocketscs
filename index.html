@@ -2468,6 +2468,17 @@ function MetaAdsLedger() {
       </span>
     );
   };
+  // 淨利潤是負的(虧錢)時,用比廣告費佔比超標更重的標紅樣式(深紅底色+粗體),兩種警示程度做出區別。
+  const netProfitCell = (value) => {
+    if (value < 0) {
+      return (
+        <span style={{ color: "#8B1E2B", fontWeight: 700, background: "#FBE4E4", padding: "1px 6px", borderRadius: 4 }}>
+          {fmtMoney(value)}
+        </span>
+      );
+    }
+    return fmtMoney(value);
+  };
   // 基礎分析用:當月每一天的廣告費佔比,抓出佔比最高的一天,以及(如果有設定門檻)超過門檻的天數清單。
   const dailyRatioStats = useMemo(() => {
     let highestDay = null;
@@ -3183,7 +3194,7 @@ function MetaAdsLedger() {
                       </div>
                       <div className="mal-card">
                         <div className="mal-card-label">🏬 全店淨利潤</div>
-                        <div className="mal-card-value">{fmtMoney(focusDayRecord.overall.netProfit)}</div>
+                        <div className="mal-card-value">{netProfitCell(focusDayRecord.overall.netProfit)}</div>
                       </div>
                     </div>
 
@@ -3207,7 +3218,7 @@ function MetaAdsLedger() {
                                 <td>{fmtMoney(v.revenue)}</td>
                                 <td>{fmtMoney(v.spend)}</td>
                                 <td>{adPct(v.spend, v.revenue, adRatioThresholds[activeBrandId])}</td>
-                                <td>{fmtMoney(v.netProfit)}</td>
+                                <td>{netProfitCell(v.netProfit)}</td>
                               </tr>
                             ))}
                           <tr>
@@ -3215,7 +3226,7 @@ function MetaAdsLedger() {
                             <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.revenue)}</td>
                             <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.adSpend)}</td>
                             <td className="mal-row-month">{adPct(focusDayRecord.overall.adSpend, focusDayRecord.overall.revenue, adRatioThresholds[activeBrandId])}</td>
-                            <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.netProfit)}</td>
+                            <td className="mal-row-month">{netProfitCell(focusDayRecord.overall.netProfit)}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -3265,7 +3276,7 @@ function MetaAdsLedger() {
                           <td className="mal-ledger-group-backend">{fmtMoney(d.overall.revenue)}</td>
                           <td className="mal-ledger-group-backend">{fmtMoney(d.overall.adSpend)}</td>
                           <td className="mal-ledger-group-backend">{adPct(d.overall.adSpend, d.overall.revenue, adRatioThresholds[activeBrandId])}</td>
-                          <td className="mal-ledger-group-backend">{fmtMoney(d.overall.netProfit)}</td>
+                          <td className="mal-ledger-group-backend">{netProfitCell(d.overall.netProfit)}</td>
                           {dailyMatrixCodes.map((code) => {
                             const v = d.byCode[code];
                             return (
@@ -3273,7 +3284,7 @@ function MetaAdsLedger() {
                                 <td>{v ? fmtMoney(v.revenue) : "—"}</td>
                                 <td>{v ? fmtMoney(v.spend) : "—"}</td>
                                 <td>{v ? adPct(v.spend, v.revenue, adRatioThresholds[activeBrandId]) : "—"}</td>
-                                <td>{v ? fmtMoney(v.netProfit) : "—"}</td>
+                                <td>{v ? netProfitCell(v.netProfit) : "—"}</td>
                               </React.Fragment>
                             );
                           })}
@@ -3285,7 +3296,7 @@ function MetaAdsLedger() {
                           <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.revenue)}</td>
                           <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.adSpend)}</td>
                           <td className="mal-ledger-group-backend mal-row-month">{adPct(dailyMonthRecord.monthTotal.overall.adSpend, dailyMonthRecord.monthTotal.overall.revenue, adRatioThresholds[activeBrandId])}</td>
-                          <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.netProfit)}</td>
+                          <td className="mal-ledger-group-backend mal-row-month">{netProfitCell(dailyMonthRecord.monthTotal.overall.netProfit)}</td>
                           {dailyMatrixCodes.map((code) => {
                             const v = dailyMonthRecord.monthTotal.byCode[code];
                             return (
@@ -3293,7 +3304,7 @@ function MetaAdsLedger() {
                                 <td className="mal-row-month">{v ? fmtMoney(v.revenue) : "—"}</td>
                                 <td className="mal-row-month">{v ? fmtMoney(v.spend) : "—"}</td>
                                 <td className="mal-row-month">{v ? adPct(v.spend, v.revenue, adRatioThresholds[activeBrandId]) : "—"}</td>
-                                <td className="mal-row-month">{v ? fmtMoney(v.netProfit) : "—"}</td>
+                                <td className="mal-row-month">{v ? netProfitCell(v.netProfit) : "—"}</td>
                               </React.Fragment>
                             );
                           })}
