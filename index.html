@@ -196,6 +196,8 @@
     .mal-section-title { break-after: avoid; }
     a[href]::after { content: none !important; }
     .mal-shell { max-width: 100%; }
+    .mal-scroll-wrap { overflow: visible !important; }
+    .mal-ledger-table th:first-child, .mal-ledger-table td:first-child { position: static !important; }
   }
 
   body.mal-exporting .mal-header-actions,
@@ -208,6 +210,12 @@
   }
   body.mal-exporting .mal-scroll-wrap {
     overflow: visible !important;
+  }
+  /* 匯出 PDF 時(html2canvas 截圖),position: sticky 常常截不準,乾脆匯出時關掉凍結效果——
+     反正上面那行已經把捲動框展開顯示全部內容了,凍結欄位本來就只有「還在捲動」的情境下才有意義。 */
+  body.mal-exporting .mal-ledger-table th:first-child,
+  body.mal-exporting .mal-ledger-table td:first-child {
+    position: static !important;
   }
   body.mal-exporting .mal-perf-card-hint,
   body.mal-exporting .mal-perf-section-chevron {
