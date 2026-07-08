@@ -19,7 +19,12 @@ export async function onRequestGet({ request, env, data }) {
       const brandId = extractBrandFromKey(name);
       return !brandId || canAccessBrand(credential, brandId);
     });
-  return new Response(JSON.stringify({ keys, credentialName: credential ? credential.name : "" }), {
-    headers: { "Content-Type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({
+      keys,
+      credentialName: credential ? credential.name : "",
+      credentialBrands: credential && credential.roster ? credential.roster : null,
+    }),
+    { headers: { "Content-Type": "application/json" } }
+  );
 }

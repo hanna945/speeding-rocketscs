@@ -276,6 +276,7 @@ function teamKeyHeaders() {
 // cloudStatus: "unknown"(還沒測)|"connected"(接得上)|"unauthorized"(接得上但密碼不對)|"unavailable"(沒有部署這個API,例如單純開檔案或還沒佈署Functions)
 let cloudStatusCache = "unknown";
 let credentialNameCache = ""; // 目前這組密碼對應的顯示名稱(依 Cloudflare 的 TEAM_CREDENTIALS 設定),沒有多身份設定時是空字串。
+let credentialBrandsCache = null; // 這組密碼「自帶」的品牌清單([{id,name}, ...]),來自 TEAM_CREDENTIALS 本身;最高權限身份或沒設定多身份時是 null。
 async function probeCloud(force) {
   if (cloudStatusCache !== "unknown" && !force) return cloudStatusCache;
   try {
@@ -286,7 +287,8 @@ async function probeCloud(force) {
       try {
         const j = await res.json();
         credentialNameCache = (j && j.credentialName) || "";
-      } catch { credentialNameCache = ""; }
+        credentialBrandsCache = (j && j.credentialBrands) || null;
+      } catch { credentialNameCache = ""; credentialBrandsCache = null; }
     }
     else cloudStatusCache = "unavailable";
   } catch {
@@ -295,6 +297,7 @@ async function probeCloud(force) {
   return cloudStatusCache;
 }
 function getCredentialName() { return credentialNameCache; }
+function getCredentialBrands() { return credentialBrandsCache; }
 const cloudStorage = {
   async get(key) {
     const res = await fetch(`${CLOUD_KV_BASE}/item/${encodeURIComponent(key)}`, { headers: teamKeyHeaders() });
@@ -962,18 +965,34 @@ function MetaAdsLedger() {
       }
 
       let cleanedBrandsForAutoSelect = [];
-      if (brandsRes && brandsRes.value) {
-        try {
-          const parsed = JSON.parse(brandsRes.value);
-          const cleaned = parsed.filter((b) => !LEGACY_DEFAULT_BRAND_IDS.includes(b.id));
-          cleanedBrandsForAutoSelect = cleaned;
-          setBrands(cleaned);
-          if (cleaned.length !== parsed.length) {
-            storage.set("meta-api-brands", JSON.stringify(cleaned)).catch(() => {});
-          }
-          // 已經拿掉「預設帳本」,不能再讓品牌是空白——沒有選取品牌的話就自動選第一個。
-          if (cleaned.length > 0) setActiveBrandId((prev) => prev || cleaned[0].id);
-        } catch { /* ignore malformed data */ }
+      {
+        let parsed = [];
+        if (brandsRes && brandsRes.value) {
+          try { parsed = JSON.parse(brandsRes.value); } catch { parsed = []; }
+        }
+        const cleaned = parsed.filter((b) => !LEGACY_DEFAULT_BRAND_IDS.includes(b.id));
+
+        // 如果目前這組登入身份本身就帶著一份品牌清單(TEAM_CREDENTIALS 設定成 {id,name} 格式),
+        // 直接併進來當作可切換的品牌——不用另外在畫面上手動「存為常用」登記一次。
+        // 就算 meta-api-brands 這份共用清單目前完全是空的(例如全新專案),身份自帶的清單還是會生效,
+        // 確保只要密碼設定裡有列的品牌,登入後一定看得到、選得到。
+        const credBrands = getCredentialBrands();
+        let merged = cleaned;
+        if (credBrands && credBrands.length) {
+          const byId = {};
+          cleaned.forEach((b) => { byId[b.id] = b; });
+          credBrands.forEach((b) => { if (!byId[b.id]) byId[b.id] = { id: b.id, name: b.name }; });
+          const credIds = new Set(credBrands.map((b) => b.id));
+          merged = [...credBrands.map((b) => byId[b.id]), ...cleaned.filter((b) => !credIds.has(b.id))];
+        }
+
+        cleanedBrandsForAutoSelect = merged;
+        setBrands(merged);
+        if (cleaned.length !== parsed.length) {
+          storage.set("meta-api-brands", JSON.stringify(cleaned)).catch(() => {});
+        }
+        // 已經拿掉「預設帳本」,不能再讓品牌是空白——沒有選取品牌的話就自動選第一個。
+        if (merged.length > 0) setActiveBrandId((prev) => prev || merged[0].id);
       }
 
       const remembered = rememberRes && rememberRes.value === "1";
