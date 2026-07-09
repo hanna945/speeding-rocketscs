@@ -1428,7 +1428,7 @@ function MetaAdsLedger() {
     const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
     const current = adRatioThresholds[brandId];
     const input = window.prompt(
-      `設定「${brandName}」的廣告費佔比過高標準——廣告費佔營收的比例超過這個百分比,每日報表會標紅提醒(只要輸入數字,例如想設 30%,輸入 30 就好,不用打 % 符號)。\n留空白可以清除這個品牌的標準。`,
+      `設定「${brandName}」的廣告費佔比過高標準——廣告費佔營收的比例超過這個百分比,會用黃字提醒;超過 30% 不管有沒有設定,一律用紅字提醒,比黃字更嚴重(只要輸入數字,例如想設 25%,輸入 25 就好,不用打 % 符號)。\n留空白可以清除這個品牌的標準(但超過 30% 紅字提醒不受影響,一定會顯示)。`,
       current != null ? String(current) : ""
     );
     if (input === null) return;
@@ -2570,13 +2570,20 @@ function MetaAdsLedger() {
   const focusDayRecord = activeFocusDay ? sortedDailyDays.find((d) => d.date === activeFocusDay) : null;
   const dailyMatrixCodes = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
   // threshold 有給且超過時,回傳標紅、加驚嘆號的樣式;沒給 threshold 或沒超過,就是原本的樣式。
+  const AD_RATIO_CRITICAL_PCT = 30; // 廣告費佔比超過這個數字,不管有沒有設定門檻,一律標紅(比黃字警示更嚴重的等級)
   const adPct = (spend, revenue, threshold) => {
     if (revenue <= 0) return "—";
     const pct = (spend / revenue) * 100;
-    const isHigh = threshold != null && pct > threshold;
+    const isCritical = pct > AD_RATIO_CRITICAL_PCT;
+    const isOverThreshold = !isCritical && threshold != null && pct > threshold; // 超過自訂門檻、但還沒到 30% 的中間警示等級
+    const style = isCritical
+      ? { color: "var(--red)", fontWeight: 700 }
+      : isOverThreshold
+      ? { color: "var(--amber)", fontWeight: 700 }
+      : undefined;
     return (
-      <span style={isHigh ? { color: "var(--red)", fontWeight: 700 } : undefined}>
-        {pct.toFixed(0)}%{isHigh ? " ⚠" : ""}
+      <span style={style}>
+        {pct.toFixed(0)}%{isCritical ? " ‼" : isOverThreshold ? " ⚠" : ""}
       </span>
     );
   };
