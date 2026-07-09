@@ -145,14 +145,28 @@
   .mal-status-off { color: var(--ink-soft); background: #EDE7DC; }
   .mal-ad-row-inactive { opacity: 0.68; }
   .mal-ad-startdate { font-family: 'Noto Sans TC', sans-serif; font-size: 11px; color: var(--ink-soft); margin-top: 3px; display: block; }
-  .mal-status-filter { display: flex; gap: 6px; margin-bottom: 16px; }
+  .mal-status-filter { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
   .mal-status-filter-btn {
     font-family: 'Noto Sans TC', sans-serif; font-size: 12px; font-weight: 600; padding: 7px 15px;
     border-radius: 999px; border: 1px solid var(--rule); background: var(--paper-raised);
     color: var(--ink-soft); cursor: pointer; transition: all 0.15s ease;
   }
   .mal-status-filter-btn-active { border-color: var(--blue); color: #fff; background: var(--blue); }
+  .mal-ad-search-wrap { position: relative; margin-left: auto; }
+  .mal-ad-search-wrap input {
+    font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; padding: 7px 30px 7px 13px;
+    border-radius: 999px; border: 1px solid var(--rule); background: var(--paper-raised);
+    color: var(--ink); width: 190px; transition: border-color 0.15s ease;
+  }
+  .mal-ad-search-wrap input:focus { outline: none; border-color: var(--blue); }
+  .mal-ad-search-wrap .mal-ad-search-icon { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--ink-soft); pointer-events: none; }
+  .mal-ad-search-wrap .mal-ad-search-clear {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: none; background: none;
+    color: var(--ink-soft); cursor: pointer; font-size: 13px; padding: 3px 5px; line-height: 1;
+  }
+  .mal-ad-search-wrap .mal-ad-search-clear:hover { color: var(--red); }
   .mal-ad-count { color: var(--ink-soft); font-style: italic; margin-left: 4px; }
+  .mal-synced-at { color: var(--ink-soft); font-size: 12px; margin: -6px 0 16px; font-family: 'IBM Plex Mono', monospace; }
   .mal-ad-stats { display: flex; gap: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; flex-shrink: 0; }
   .mal-ad-stats div { display: flex; flex-direction: column; align-items: flex-end; }
   .mal-ad-stats span { font-family: 'Noto Sans TC', sans-serif; font-size: 10px; color: var(--ink-soft); text-transform: uppercase; }
@@ -490,10 +504,20 @@ function fbPostLink(postId) {
 // 因為收合的區塊在收合狀態下完全沒有渲染 DOM,不這樣做的話,列印/PDF 會漏掉收合中的廣告明細。
 const PERF_EXPAND_ALL_EVENT = "mal:expand-all-perf";
 
-function filterAdsByStatus(ads, filter) {
-  if (filter === "active") return (ads || []).filter((a) => a.active === true);
-  if (filter === "inactive") return (ads || []).filter((a) => a.active === false);
-  return ads || [];
+function filterAdsByStatus(ads, filter, keyword) {
+  let result = ads || [];
+  if (filter === "active") result = result.filter((a) => a.active === true);
+  else if (filter === "inactive") result = result.filter((a) => a.active === false);
+  const kw = (keyword || "").trim().toLowerCase();
+  if (kw) {
+    result = result.filter((a) => {
+      const name = (a.name || "").toLowerCase();
+      const campaign = (a.campaign || "").toLowerCase();
+      const utm = (a.utm || "").toLowerCase();
+      return name.includes(kw) || campaign.includes(kw) || utm.includes(kw);
+    });
+  }
+  return result;
 }
 
 // 從「行銷活動名稱」(campaign,不是廣告名稱)最前面的括號解析出「產品代號」。
@@ -724,6 +748,25 @@ function fmtMoney(n, currency) {
     return new Intl.NumberFormat("zh-TW", { style: "currency", currency: currency || "TWD", maximumFractionDigits: 0 }).format(n);
   } catch { return `${currency || ""} ${fmtInt(n)}`; }
 }
+// 把 syncedAt 的 UTC ISO 字串轉成台灣時間顯示,格式跟畫面上其他日期欄位一致(YYYY/MM/DD HH:mm)。
+function fmtSyncedAt(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const tw = new Date(d.getTime() + 8 * 3600 * 1000);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${tw.getUTCFullYear()}/${pad(tw.getUTCMonth() + 1)}/${pad(tw.getUTCDate())} ${pad(tw.getUTCHours())}:${pad(tw.getUTCMinutes())}`;
+}
+// 資料是「什麼時候抓的」提示——這個時間點是「最後一次成功呼叫 Meta API 的當下」,不是「資料涵蓋到哪一天」。
+// 舊資料(這次修改之前就存在 KV 裡的)沒有這個欄位,顯示「—」而不是硬猜一個時間,避免誤導。
+function SyncedAtNote({ iso }) {
+  const text = fmtSyncedAt(iso);
+  return (
+    <p className="mal-synced-at">
+      🕒 資料更新於:{text || "— (舊資料,尚無記錄;重新抓取後就會有)"}
+    </p>
+  );
+}
 function deriveMetrics(agg) {
   const cpa = agg.conversions > 0 ? agg.spend / agg.conversions : null;
   const roas = agg.spend > 0 && agg.revenue > 0 ? agg.revenue / agg.spend : null;
@@ -762,7 +805,7 @@ function ActiveBadge({ active }) {
   return <span className="mal-status-badge mal-status-off">■ 已停止</span>;
 }
 
-function StatusFilterButtons({ value, onChange }) {
+function StatusFilterButtons({ statusValue, onStatusChange, keyword, onKeywordChange }) {
   const options = [
     { key: "all", label: "全部" },
     { key: "active", label: "● 只看投放中" },
@@ -774,12 +817,25 @@ function StatusFilterButtons({ value, onChange }) {
         <button
           key={opt.key}
           type="button"
-          className={`mal-status-filter-btn ${value === opt.key ? "mal-status-filter-btn-active" : ""}`}
-          onClick={() => onChange(opt.key)}
+          className={`mal-status-filter-btn ${statusValue === opt.key ? "mal-status-filter-btn-active" : ""}`}
+          onClick={() => onStatusChange(opt.key)}
         >
           {opt.label}
         </button>
       ))}
+      <div className="mal-ad-search-wrap">
+        <input
+          type="text"
+          value={keyword}
+          onChange={(e) => onKeywordChange(e.target.value)}
+          placeholder="搜尋廣告名稱/活動/UTM"
+        />
+        {keyword ? (
+          <button type="button" className="mal-ad-search-clear" onClick={() => onKeywordChange("")} title="清除搜尋">✕</button>
+        ) : (
+          <span className="mal-ad-search-icon">🔍</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -939,6 +995,7 @@ function MetaAdsLedger() {
   const [showAllAds, setShowAllAds] = useState(false);
   const [adSortMode, setAdSortMode] = useState("spend");
   const [adStatusFilter, setAdStatusFilter] = useState("all"); // "all" | "active" | "inactive" —— 篩選要看投放中還是已停止的廣告
+  const [adSearchKeyword, setAdSearchKeyword] = useState(""); // 依廣告名稱/行銷活動/UTM 關鍵字搜尋,空字串表示不篩選
   const [showApiPanel, setShowApiPanel] = useState(false);
   // 全域節流用:記錄「最後一次真正打到 Meta Graph API」的時間戳。
   // 不管是週報表、月報表、批次、自動同步或縮圖抓取,只要是打 Meta 的請求都共用同一個時間戳,
@@ -1560,7 +1617,7 @@ function MetaAdsLedger() {
     }
 
     if (!rows.length) {
-      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [] };
+      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], syncedAt: new Date().toISOString() };
     }
 
     // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
@@ -1672,7 +1729,7 @@ function MetaAdsLedger() {
       })
       .sort((a, b) => b.spend - a.spend);
 
-    return { spend: totalSpend, conversions: totalConv, revenue: totalRev, campaigns: 0, currency, accountId, ads };
+    return { spend: totalSpend, conversions: totalConv, revenue: totalRev, campaigns: 0, currency, accountId, ads, syncedAt: new Date().toISOString() };
   }
 
   async function fetchLastWeekData() {
@@ -2458,7 +2515,7 @@ function MetaAdsLedger() {
   const prevData = focusIdx > 0 ? enriched[sortedKeys[focusIdx - 1]] : null;
   const MIN_AD_SPEND = 500;
   const spendFilteredAds = focusData && focusData.ads ? focusData.ads.filter((ad) => ad.spend >= MIN_AD_SPEND) : [];
-  const visibleAds = filterAdsByStatus(spendFilteredAds, adStatusFilter);
+  const visibleAds = filterAdsByStatus(spendFilteredAds, adStatusFilter, adSearchKeyword);
   const hiddenAdCount = focusData && focusData.ads ? focusData.ads.length - spendFilteredAds.length : 0;
 
   // ---------- 每日營收報表:直接呈現後台每日收益表(ledgerByMonth)裡「每一天 x 每個產品代號」的明細,不用另外彙總 ----------
@@ -2750,17 +2807,19 @@ function MetaAdsLedger() {
           </div>
 
           {focusData && (
-            <div className="mal-cards">
-              <div className="mal-card">
-                <div className="mal-card-label">廣告費</div>
-                <div className="mal-card-value">{fmtMoney(focusData.spend, focusData.currency)}</div>
-                <DeltaBadge value={pctChange(focusData.spend, prevData && prevData.spend)} />
-              </div>
-              <div className="mal-card">
-                <div className="mal-card-label">轉單數</div>
-                <div className="mal-card-value">{fmtInt(focusData.conversions)}</div>
-                <DeltaBadge value={pctChange(focusData.conversions, prevData && prevData.conversions)} />
-              </div>
+            <>
+              <SyncedAtNote iso={focusData.syncedAt} />
+              <div className="mal-cards">
+                <div className="mal-card">
+                  <div className="mal-card-label">廣告費</div>
+                  <div className="mal-card-value">{fmtMoney(focusData.spend, focusData.currency)}</div>
+                  <DeltaBadge value={pctChange(focusData.spend, prevData && prevData.spend)} />
+                </div>
+                <div className="mal-card">
+                  <div className="mal-card-label">轉單數</div>
+                  <div className="mal-card-value">{fmtInt(focusData.conversions)}</div>
+                  <DeltaBadge value={pctChange(focusData.conversions, prevData && prevData.conversions)} />
+                </div>
               <div className="mal-card">
                 <div className="mal-card-label">CPA(每筆訂單成本)</div>
                 <div className="mal-card-value">{focusData.cpa !== null ? fmtMoney(focusData.cpa, focusData.currency) : "—"}</div>
@@ -2775,6 +2834,7 @@ function MetaAdsLedger() {
                 <DeltaBadge value={pctChange(focusData.roas, prevData && prevData.roas)} />
               </div>
             </div>
+            </>
           )}
 
           {sortedKeys.length > 1 && (
@@ -2798,7 +2858,7 @@ function MetaAdsLedger() {
                 {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
               </h2>
               <LedgerVsMetaComparison
-                ads={filterAdsByStatus(focusData.ads, adStatusFilter)}
+                ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
                 currencyCode={focusData.currency}
                 ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
                 onOpenImport={() => setShowLedgerModal(true)}
@@ -2808,11 +2868,11 @@ function MetaAdsLedger() {
           )}
 
           {focusData && spendFilteredAds.length > 0 && (
-            <StatusFilterButtons value={adStatusFilter} onChange={setAdStatusFilter} />
+            <StatusFilterButtons statusValue={adStatusFilter} onStatusChange={setAdStatusFilter} keyword={adSearchKeyword} onKeywordChange={setAdSearchKeyword} />
           )}
           {focusData && spendFilteredAds.length > 0 && visibleAds.length === 0 && (
             <p style={{ color: "var(--ink-soft)", fontSize: 13, marginBottom: 20 }}>
-              目前篩選條件下沒有符合的廣告,試試切換上面的篩選按鈕。
+              目前篩選條件下沒有符合的廣告,試試切換上面的篩選按鈕,或清空搜尋框。
             </p>
           )}
 
@@ -2874,16 +2934,16 @@ function MetaAdsLedger() {
                 </button>
               )}
 
-              <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter)} currencyCode={focusData.currency} accountId={focusData.accountId} />
+              <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
               <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
 
               <h2 className="mal-section-title">
                 {monthLabel(focusMonth)} 業績比例分析<span className="mal-section-count">(依行銷活動名稱最前面的產品代號自動歸類)</span>
               </h2>
               <ProductShareBreakdown
-                ads={filterAdsByStatus(focusData.ads, adStatusFilter)}
+                ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
                 currencyCode={focusData.currency}
-                prevAds={prevData ? filterAdsByStatus(prevData.ads, adStatusFilter) : null}
+                prevAds={prevData ? filterAdsByStatus(prevData.ads, adStatusFilter, adSearchKeyword) : null}
                 comparisonLabel="上月"
               />
             </>
@@ -2934,6 +2994,7 @@ function MetaAdsLedger() {
 
             {focusWeekData && (
               <>
+                <SyncedAtNote iso={focusWeekData.syncedAt} />
                 <div className="mal-cards">
                   <div className="mal-card">
                     <div className="mal-card-label">廣告費</div>
@@ -2977,7 +3038,7 @@ function MetaAdsLedger() {
                   {weekLabel(focusWeek)} 一頁式正確業績(後台實際 vs Meta 回報)
                 </h2>
                 <LedgerVsMetaComparison
-                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter)}
+                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
                   currencyCode={focusWeekData.currency}
                   ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
                   onOpenImport={() => setShowLedgerModal(true)}
@@ -2985,14 +3046,14 @@ function MetaAdsLedger() {
                 />
 
                 {focusWeekData.ads && focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND).length > 0 && (
-                  <StatusFilterButtons value={adStatusFilter} onChange={setAdStatusFilter} />
+                  <StatusFilterButtons statusValue={adStatusFilter} onStatusChange={setAdStatusFilter} keyword={adSearchKeyword} onKeywordChange={setAdSearchKeyword} />
                 )}
 
-                {focusWeekData.ads && filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter).length > 0 && (
+                {focusWeekData.ads && filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter, adSearchKeyword).length > 0 && (
                   <>
                     <h2 className="mal-section-title">{weekLabel(focusWeek)} 廣告明細</h2>
                     <div className="mal-ad-list">
-                      {filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter).slice(0, 10).map((ad, i) => {
+                      {filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter, adSearchKeyword).slice(0, 10).map((ad, i) => {
                         const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                         const fbLibLink = fbPostLink(ad.postId);
                         const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
@@ -3030,16 +3091,16 @@ function MetaAdsLedger() {
                   </>
                 )}
 
-                <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
+                <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
                 <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
 
                 <h2 className="mal-section-title">
                   {weekLabel(focusWeek)} 業績比例分析<span className="mal-section-count">(依行銷活動名稱最前面的產品代號自動歸類)</span>
                 </h2>
                 <ProductShareBreakdown
-                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter)}
+                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
                   currencyCode={focusWeekData.currency}
-                  prevAds={prevWeekData ? filterAdsByStatus(prevWeekData.ads, adStatusFilter) : null}
+                  prevAds={prevWeekData ? filterAdsByStatus(prevWeekData.ads, adStatusFilter, adSearchKeyword) : null}
                   comparisonLabel="上週"
                 />
 
