@@ -145,6 +145,10 @@
   .mal-status-off { color: var(--ink-soft); background: #EDE7DC; }
   .mal-ad-row-inactive { opacity: 0.68; }
   .mal-ad-startdate { font-family: 'Noto Sans TC', sans-serif; font-size: 11px; color: var(--ink-soft); margin-top: 3px; display: block; }
+  .mal-ad-nopost-divider {
+    font-family: 'Noto Sans TC', sans-serif; font-size: 12px; color: var(--ink-soft); font-weight: 600;
+    padding: 10px 4px 6px; border-top: 1px dashed var(--rule); margin-top: 8px;
+  }
   .mal-status-filter { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
   .mal-status-filter-btn {
     font-family: 'Noto Sans TC', sans-serif; font-size: 12px; font-weight: 600; padding: 7px 15px;
@@ -483,19 +487,13 @@ function fbAdsManagerLink(accountId, adIds) {
   if (!accountId || !adIds || !adIds.length) return null;
   return `https://business.facebook.com/adsmanager/manage/ads?act=${accountId}&selected_ad_ids=${adIds.join(",")}`;
 }
-// FB 前台(廣告底層的粉專貼文本身)的公開連結——不用登入、不用權限,打開就是使用者實際刷到這則貼文時
-// 看到的畫面(讚/留言/分享都在),跟上面 fbAdsManagerLink 那個「後台管理頁」是兩回事。
-// 原本這裡連到 Meta 廣告檔案庫(Ad Library),但檔案庫只保證留檔「社會議題/選舉/政治」類廣告或觸及歐盟的廣告,
-// 像這種一般商業/電商廣告即使正在投放中,檔案庫大多也搜尋不到,點開就是「沒有符合你搜尋條件的廣告」——
-// 這正是原本連結打開會是空的原因。改用貼文的 effective_object_story_id(格式「粉專ID_貼文ID」,
-// 不管一般貼文或廣告專用的隱藏貼文/dark post 都有這個值)直接組出貼文連結,不受廣告是否還在投放中影響——
-// 貼文只要沒被刪除,廣告停了一樣打得開,所以呼叫端不用再另外判斷 active 狀態。
-// 如果這張卡片是合併多支廣告顯示的(UTM 相同、素材不同),只能連到其中第一支抓得到貼文 ID 的廣告。
-function fbPostLink(postId) {
-  if (!postId) return null;
-  const parts = postId.split("_");
-  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
-  return `https://www.facebook.com/${parts[0]}/posts/${parts[1]}`;
+// FB 前台(Meta 廣告檔案庫 Ad Library)的公開連結——不用登入、不用權限,任何人打開都看得到廣告實際呈現的樣子
+// (前台使用者看到的畫面),跟上面 fbAdsManagerLink 那個「後台管理頁」是兩回事。
+// 只對「還在投放中」的廣告顯示這個連結:已停止的一般商業廣告(非政治類)在檔案庫裡不會留檔,連結打開會是空的。
+// 如果這張卡片是合併多支廣告顯示的(UTM 相同、素材不同),只能連到其中第一支的廣告 ID。
+function fbAdLibraryLink(adIds) {
+  if (!adIds || !adIds.length) return null;
+  return `https://www.facebook.com/ads/library/?id=${adIds[0]}`;
 }
 
 // 依「投放中 / 已停止」篩選廣告清單。若資料沒有狀態資訊(active 是 undefined),
@@ -1629,7 +1627,7 @@ function MetaAdsLedger() {
     let statusMap = {};
     let campaignMap = {};
     let startDateMap = {};
-    let postIdMap = {};
+    let storyIdMap = {}; // ad.id -> effective_object_story_id(這支廣告素材背後對應的前台貼文 ID,不是每支廣告都有)
     const ID_CHUNK_SIZE = 50;
     for (let i = 0; i < periodAdIds.length; i += ID_CHUNK_SIZE) {
       const chunk = periodAdIds.slice(i, i + ID_CHUNK_SIZE);
@@ -1643,10 +1641,6 @@ function MetaAdsLedger() {
         (json.data || []).forEach((ad) => {
           const thumb = ad.creative && (ad.creative.thumbnail_url || ad.creative.image_url);
           if (thumb) thumbMap[ad.id] = thumb;
-          // effective_object_story_id = 「粉專ID_貼文ID」,不管是一般貼文還是廣告專用的隱藏貼文(dark post)都會有值,
-          // 用來組出貼文本身的前台連結(取代原本連到 Meta 廣告檔案庫、但一般商業廣告常常搜不到的做法)。
-          const storyId = ad.creative && ad.creative.effective_object_story_id;
-          if (storyId) postIdMap[ad.id] = storyId;
           // 有些廣告(例如動態素材/型錄類廣告)的追蹤參數是設在「創意」層級,不是廣告本身,
           // 所以廣告本身的 url_tags 抓不到值時,再退回去看創意底下的 url_tags。
           const tags = ad.url_tags || (ad.creative && ad.creative.url_tags) || "";
@@ -1657,11 +1651,36 @@ function MetaAdsLedger() {
           // 抓不到的話(例如舊資料、權限限制)退回用廣告本身的建立時間,當作大概的參考。
           const startRaw = (ad.adset && ad.adset.start_time) || ad.created_time || "";
           if (startRaw) startDateMap[ad.id] = startRaw;
+          if (ad.creative && ad.creative.effective_object_story_id) storyIdMap[ad.id] = ad.creative.effective_object_story_id;
         });
         adsUrl = json.paging && json.paging.next ? json.paging.next : null;
         page2++;
       }
     }
+
+    // 前台發表時間:貼文本身原本在粉專上發佈的時間,跟「投放起始時間」是不同的東西
+    // (例如拿一則很久以前的舊貼文來投放廣告,貼文發佈時間會比開始投放時間早很多)。
+    // 用批次查詢一次把這段期間所有廣告用到的貼文發佈時間都抓回來,不是一支廣告分開查一次,
+    // 避免多打幾十次 API 拖慢速度、更容易撞到頻率限制。沒有對應貼文的廣告(素材是直接建立、不是沿用既有貼文),
+    // 這裡就查不到值,畫面上會另外分區顯示,不會假裝有一個時間硬塞進去。
+    const uniqueStoryIds = [...new Set(Object.values(storyIdMap))];
+    let postPublishMap = {}; // story_id -> created_time
+    for (let i = 0; i < uniqueStoryIds.length; i += ID_CHUNK_SIZE) {
+      const chunk = uniqueStoryIds.slice(i, i + ID_CHUNK_SIZE);
+      try {
+        const json = await fetchGraphApi(
+          `https://graph.facebook.com/v19.0/?ids=${chunk.join(",")}&fields=created_time&access_token=${encToken}`,
+          "讀取貼文發佈時間"
+        );
+        Object.entries(json || {}).forEach(([storyId, obj]) => {
+          if (obj && obj.created_time) postPublishMap[storyId] = obj.created_time;
+        });
+      } catch { /* 查不到就算了,對應廣告會被歸類到「沒有對應貼文」那一區,不會擋住其他資料 */ }
+    }
+    const adPostPublishMap = {}; // ad.id -> 貼文發佈時間(查得到的話)
+    Object.entries(storyIdMap).forEach(([adId, storyId]) => {
+      if (postPublishMap[storyId]) adPostPublishMap[adId] = postPublishMap[storyId];
+    });
 
     // 3) 先用「完整、未篩選」的資料算總計——這樣廣告費/轉單數/轉單金額才會跟 Meta 後台的帳號總覽數字完全一致。
     // 後台的總計是把該期間「所有」廣告都算進去,不會因為某支廣告花費很小就不計入;
@@ -1695,19 +1714,21 @@ function MetaAdsLedger() {
       const isActive = statusMap[row.ad_id] === "ACTIVE";
       const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::" + (isActive ? "on" : "off");
       if (!grouped[groupKey]) {
-        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null };
+        grouped[groupKey] = { utm, names: new Set(), image: "", spend: 0, conversions: 0, revenue: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
       }
       const g = grouped[groupKey];
       g.names.add(adName);
       g.spend += spend; g.conversions += conversions; g.revenue += revenue;
       if (!g.image && thumbMap[row.ad_id]) g.image = thumbMap[row.ad_id];
-      if (!g.postId && postIdMap[row.ad_id]) g.postId = postIdMap[row.ad_id];
       if (campaignMap[row.ad_id]) g.campaigns.add(campaignMap[row.ad_id]);
       if (row.ad_id) g.adIds.add(row.ad_id);
       // 如果這個群組是合併了好幾支廣告(同一個 UTM 追蹤代碼),投放起始時間取「最早」的那個,
       // 代表這個素材/追蹤代碼最初是什麼時候開始投放的。
       const rowStart = startDateMap[row.ad_id];
       if (rowStart && (!g.startDate || rowStart < g.startDate)) g.startDate = rowStart;
+      // 前台發表時間也是取最早的一筆;只要合併起來的廣告裡「有任何一支」查得到對應貼文,這個群組就算查得到。
+      const rowPostPublish = adPostPublishMap[row.ad_id];
+      if (rowPostPublish && (!g.postPublishDate || rowPostPublish < g.postPublishDate)) g.postPublishDate = rowPostPublish;
     });
 
     const ads = Object.values(grouped)
@@ -1723,8 +1744,9 @@ function MetaAdsLedger() {
         const campaignList = [...g.campaigns];
         const campaign = campaignList.length ? campaignList.join(" / ") : "(未分類活動)";
         return {
-          name, utm: g.utm, image: g.image, postId: g.postId, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
+          name, utm: g.utm, image: g.image, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
           adCount, rawNames: nameList, active: g.active, campaign, adIds: [...g.adIds], startDate: g.startDate,
+          postPublishDate: g.postPublishDate,
         };
       })
       .sort((a, b) => b.spend - a.spend);
@@ -2237,7 +2259,7 @@ function MetaAdsLedger() {
                     const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                     const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                     const fbLink = fbAdsManagerLink(accountId, ad.adIds);
-                    const fbLibLink = fbPostLink(ad.postId);
+                    const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
                     return (
                       <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
                         <AdThumb src={ad.image} alt={ad.name} />
@@ -2690,6 +2712,18 @@ function MetaAdsLedger() {
         })
         .map((x) => x.ad);
     }
+    if (adSortMode === "postPublishDate") {
+      // 查得到前台發表時間的排前面(新到舊),查不到的排最後——查不到的那一段,畫面上會另外用分隔線標示出來,
+      // 不會讓人誤以為那些廣告也有排進時間順序裡。
+      return withMetrics
+        .slice()
+        .sort((a, b) => {
+          if (!a.ad.postPublishDate) return 1;
+          if (!b.ad.postPublishDate) return -1;
+          return a.ad.postPublishDate < b.ad.postPublishDate ? 1 : a.ad.postPublishDate > b.ad.postPublishDate ? -1 : 0;
+        })
+        .map((x) => x.ad);
+    }
     // default: by spend, high to low
     return withMetrics.map((x) => x.ad).sort((a, b) => b.spend - a.spend);
   }, [visibleAds, adSortMode]);
@@ -2888,18 +2922,28 @@ function MetaAdsLedger() {
                   <option value="roas">排序:ROAS（好→壞）</option>
                   <option value="composite">排序:綜合成效（好→壞）</option>
                   <option value="startDate">排序:投放時間（新→舊）</option>
+                  <option value="postPublishDate">排序:前台發表時間（新→舊）</option>
                 </select>
               </div>
               <div className="mal-ad-list">
-                {(showAllAds ? sortedVisibleAds : sortedVisibleAds.slice(0, 6)).map((ad, i) => {
+                {(() => {
+                  const displayAds = showAllAds ? sortedVisibleAds : sortedVisibleAds.slice(0, 6);
+                  // 只有在用「前台發表時間」排序時才需要標示分界——這個排序模式底下,查不到發表時間的廣告
+                  // 已經被排到陣列最後面,這裡只是找出「從哪一筆開始查不到」,好插入一條分隔線。
+                  const noPostDividerIndex = adSortMode === "postPublishDate" ? displayAds.findIndex((a) => !a.postPublishDate) : -1;
+                  return displayAds.map((ad, i) => {
                   const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                   const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                   const names = ad.rawNames && ad.rawNames.length ? ad.rawNames : [ad.name];
                   const resolvedImage = ad.image || "";
-                  const fbLibLink = fbPostLink(ad.postId);
+                  const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
                   const fbLink = fbAdsManagerLink(focusData.accountId, ad.adIds);
                   return (
-                    <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
+                    <React.Fragment key={ad.name + i}>
+                      {i === noPostDividerIndex && (
+                        <div className="mal-ad-nopost-divider">⬇ 以下廣告沒有找到對應的前台貼文,無法排序</div>
+                      )}
+                    <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`}>
                       <AdThumb src={resolvedImage} alt={ad.name} />
                       <div className="mal-ad-info">
                         <div className="mal-ad-name" title={ad.name}>
@@ -2914,6 +2958,7 @@ function MetaAdsLedger() {
                           <div className="mal-ad-utm" title={ad.utm}>🏷 {ad.utm}{ad.adCount > 1 && <span className="mal-ad-count">· 合併 {ad.adCount} 支廣告</span>}</div>
                         ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
                         {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
+                        {ad.postPublishDate && <span className="mal-ad-startdate">📰 {fmtStartDate(ad.postPublishDate)} 前台發表</span>}
                         {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
                         {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
                       </div>
@@ -2925,8 +2970,10 @@ function MetaAdsLedger() {
                         <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
                       </div>
                     </div>
+                    </React.Fragment>
                   );
-                })}
+                  });
+                })()}
               </div>
               {visibleAds.length > 6 && (
                 <button className="mal-btn mal-toggle-ads" onClick={() => setShowAllAds((v) => !v)}>
@@ -3055,7 +3102,7 @@ function MetaAdsLedger() {
                     <div className="mal-ad-list">
                       {filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter, adSearchKeyword).slice(0, 10).map((ad, i) => {
                         const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
-                        const fbLibLink = fbPostLink(ad.postId);
+                        const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
                         const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                         const fbLink = fbAdsManagerLink(focusWeekData.accountId, ad.adIds);
                         return (
@@ -3219,7 +3266,7 @@ function MetaAdsLedger() {
                 </div>
                 <div className="mal-ad-list">
                   {m.ads.map((ad, i) => {
-                  const fbLibLink = fbPostLink(ad.postId);
+                  const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
                     const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                     const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                     const fbLink = fbAdsManagerLink(months[m.monthKey].accountId, ad.adIds);
