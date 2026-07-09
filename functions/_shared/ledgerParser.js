@@ -29,7 +29,7 @@ export function parseLedgerSheet(matrix, year) {
       blocks.push({
         code,
         name: (row1[c + 1] || "").toString().trim(),
-        colRevenue: c, colAov: c + 1, colSpend: c + 2, colProfit: c + 4, colNetProfit: c + 5,
+        colRevenue: c, colAov: c + 1, colSpend: c + 2, colProfit: c + 4, colNetProfit: c + 6,
       });
     }
   }
