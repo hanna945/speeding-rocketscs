@@ -607,10 +607,20 @@ function parseLedgerSheet(matrix, year) {
     if ((row2[c] || "").toString().trim() === "帳面營業額") {
       const code = (row1[c] || "").toString().trim().toUpperCase();
       if (!code) continue;
+      const SEARCH_LIMIT = 12;
+      let colProfit = null;
+      let colNetProfit = null;
+      for (let k = c + 1; k < c + SEARCH_LIMIT; k++) {
+        const label = (row2[k] || "").toString().trim();
+        if (colProfit === null && label === "帳面利潤") colProfit = k;
+        if (colNetProfit === null && (label === "稅後淨利" || label.startsWith("實際利潤"))) colNetProfit = k;
+      }
       blocks.push({
         code,
         name: (row1[c + 1] || "").toString().trim(),
-        colRevenue: c, colAov: c + 1, colSpend: c + 2, colProfit: c + 4, colNetProfit: c + 6,
+        colRevenue: c, colAov: c + 1, colSpend: c + 2,
+        colProfit: colProfit !== null ? colProfit : c + 4,
+        colNetProfit: colNetProfit !== null ? colNetProfit : c + 6,
       });
     }
   }
