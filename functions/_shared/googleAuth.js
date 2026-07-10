@@ -77,7 +77,10 @@ export function sheetsValuesToMatrix(values) {
 }
 
 export async function fetchSheetMonthValues(accessToken, sheetId, tabName) {
-  const range = encodeURIComponent(`${tabName}!A1:BZ400`);
+  // 原本寫死 A1:BZ400,隨著不斷新增產品代號,欄位遲早會超出這個邊界,超出的部分從 API 這一步
+  // 就抓不到,不是解析邏輯的問題。改成只給分頁名稱、不給儲存格範圍——Google Sheets API 的行為是
+  // 這樣就會回傳整個分頁「目前有資料」的範圍,之後不管加多少產品代號都不會再卡到同樣的問題。
+  const range = encodeURIComponent(tabName);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}` +
     `?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
