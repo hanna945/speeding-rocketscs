@@ -328,7 +328,7 @@ const WEEK_STORAGE_PREFIX = "metaads-week:";
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
-const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets"]);
+const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-product-names"]);
 const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
@@ -1072,7 +1072,7 @@ function generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget) {
 // 匯出「投放成效」報告成 Word 檔——用瀏覽器版的 docx 套件(CDN載入,不用後端),
 // 圖表(長條圖)在 Word 裡不好還原,所以匯出版本只保留卡片數字、明細表格、圖例文字、自動摘要,
 // 這些才是會議上真的要看/要編輯的內容,長條圖本身在畫面上看就好。
-async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, totalConversions, overallRoas, roasTarget, periodLabel, currencyCode, brandName, insights }) {
+async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, totalConversions, overallRoas, roasTarget, periodLabel, currencyCode, brandName, insights, productNames = {} }) {
   const D = window.docx;
   if (!D || !window.saveAs) {
     window.alert("Word 匯出套件還沒載入完成,請重新整理頁面再試一次。");
@@ -1133,7 +1133,7 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
                 const tier = roasTier(roas);
                 return new TableRow({
                   children: [
-                    dataCell(r.code),
+                    dataCell(productNames[r.code] ? `${r.code}(${productNames[r.code]})` : r.code),
                     dataCell(fmtMoney(r.spend, currencyCode)),
                     dataCell(fmtMoney(r.revenue, currencyCode)),
                     dataCell(roas !== null ? `${roas.toFixed(2)}x` : "—", tier && tier.color),
@@ -1170,7 +1170,8 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 這支元件原本(另一個對話 session)漏掉了函式宣告那一行,只有內文沒有包起來,會直接造成語法錯誤。
 // 補回宣告——這支元件寫在最外層(跟 roasTier/HorizontalBarChart/exportAdPerformanceToWord 同一層),
 // 不在主 App 元件裡面,所以拿不到 brands/activeBrandId 這些畫面狀態,要透過 props 傳進來,不能用 closure 讀。
-function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, minSpend = 500 }) {
+function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, minSpend = 500, productNames = {}, onEditProductName }) {
+  const displayName = (code) => (productNames[code] ? `${code}(${productNames[code]})` : code);
   const reportRef = useRef(null);
   const [aiInsights, setAiInsights] = useState(null); // null = 還沒生成過,顯示規則統計版當預設
   const [aiLoading, setAiLoading] = useState(false);
@@ -1216,7 +1217,7 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data || data.error) throw new Error((data && data.error) || `狀態碼 ${res.status}`);
-      if (!Array.isArray(data.insights) || !data.insights.length) throw new Error("Gemini 沒有回傳有效的分析內容。");
+      if (!Array.isArray(data.insights) || !data.insights.length) throw new Error("AI 沒有回傳有效的分析內容。");
       setAiInsights(data.insights);
       setIsEditingInsights(false);
     } catch (e) {
@@ -1256,6 +1257,7 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
               exportAdPerformanceToWord({
                 rows, totalRevenue, totalSpend, totalConversions, overallRoas, roasTarget, periodLabel, currencyCode, insights: displayInsights,
                 brandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "",
+                productNames,
               })
             }
           >
@@ -1306,7 +1308,13 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
               const tier = roasTier(roas);
               return (
                 <tr key={r.code}>
-                  <td>{r.code}</td>
+                  <td
+                    style={{ cursor: onEditProductName ? "pointer" : undefined }}
+                    title={onEditProductName ? "點一下可以設定這個代號的顯示名稱" : undefined}
+                    onClick={() => onEditProductName && onEditProductName(activeBrandId, r.code)}
+                  >
+                    {displayName(r.code)}
+                  </td>
                   <td>{fmtMoney(r.spend, currencyCode)}</td>
                   <td>{fmtMoney(r.revenue, currencyCode)}</td>
                   <td style={tier ? { color: tier.color, fontWeight: 700 } : undefined}>{roas !== null ? `${roas.toFixed(2)}x` : "—"}</td>
@@ -1343,7 +1351,7 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
           <div className="mal-insight-box-title">
             📋 重點觀察
             <span style={{ fontWeight: 400, fontSize: 11, color: "var(--ink-soft)" }}>
-              ({aiInsights ? "Gemini AI 生成" : "規則統計產生,非 AI 生成文字"})
+              ({aiInsights ? "AI 生成" : "規則統計產生,非 AI 生成文字"})
             </span>
             <button
               className="mal-icon-btn"
@@ -1447,6 +1455,8 @@ function MetaAdsLedger() {
   const [cpaThresholds, setCpaThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「CPA 過高」標準
   const [adRatioThresholds, setAdRatioThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「廣告費佔比過高」標準(百分比數字,例如 30 代表 30%)
   const [roasTargets, setRoasTargets] = useState({}); // { [brandId]: number } 每個品牌各自的「投放成效報告」ROAS 目標倍數,預設 3
+  const [productNames, setProductNames] = useState({}); // { [brandId]: { [code]: name } } 每個品牌、每個代號各自的中文名稱,顯示成「代號(名稱)」——
+  // 沒辦法從行銷活動名稱自動抓出乾淨的產品名稱(命名不夠固定),所以讓使用者自己設定,類似 roasTargets 那樣。
   const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
   const [batchProgress, setBatchProgress] = useState(null);
   const [weekInfo, setWeekInfo] = useState(getLastWeekRange());
@@ -1485,7 +1495,7 @@ function MetaAdsLedger() {
 
   useEffect(() => {
     async function loadInitialConfig() {
-      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes, adRatioRes, roasRes] = await Promise.all([
+      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes, adRatioRes, roasRes, productNamesRes] = await Promise.all([
         storage.get("meta-api-account-id").catch(() => null),
         storage.get("meta-api-brands").catch(() => null),
         storage.get("meta-api-remember-token").catch(() => null),
@@ -1493,6 +1503,7 @@ function MetaAdsLedger() {
         storage.get("meta-api-cpa-thresholds").catch(() => null),
         storage.get("meta-api-adratio-thresholds").catch(() => null),
         storage.get("meta-api-roas-targets").catch(() => null),
+        storage.get("meta-api-product-names").catch(() => null),
       ]);
 
       if (accountIdRes && accountIdRes.value) setApiAccountId(accountIdRes.value);
@@ -1505,6 +1516,9 @@ function MetaAdsLedger() {
       }
       if (roasRes && roasRes.value) {
         try { setRoasTargets(JSON.parse(roasRes.value)); } catch { /* ignore malformed data */ }
+      }
+      if (productNamesRes && productNamesRes.value) {
+        try { setProductNames(JSON.parse(productNamesRes.value)); } catch { /* ignore malformed data */ }
       }
 
       let cleanedBrandsForAutoSelect = [];
@@ -1931,6 +1945,25 @@ function MetaAdsLedger() {
     }
     setRoasTargets(updated);
     storage.set("meta-api-roas-targets", JSON.stringify(updated)).catch(() => {});
+  }
+
+  // 產品代號本身沒辦法自動對應到「水光直播/水晶萃」這種中文名稱(廣告活動命名不夠固定,
+  // 抓不出乾淨的名稱),讓使用者自己設定一次,之後「投放成效」圖表跟表格會顯示成「代號(名稱)」。
+  function editProductName(brandId, code) {
+    const brandNames = productNames[brandId] || {};
+    const current = brandNames[code];
+    const input = window.prompt(`設定「${code}」這個代號的顯示名稱(例如「前台文/舒華」)——會顯示成「${code}(你填的名稱)」。\n留空白會清除,只顯示代號本身。`, current || "");
+    if (input === null) return;
+    const trimmed = input.trim();
+    const updatedBrandNames = { ...brandNames };
+    if (!trimmed) {
+      delete updatedBrandNames[code];
+    } else {
+      updatedBrandNames[code] = trimmed;
+    }
+    const updated = { ...productNames, [brandId]: updatedBrandNames };
+    setProductNames(updated);
+    storage.set("meta-api-product-names", JSON.stringify(updated)).catch(() => {});
   }
 
   async function saveCurrentAsBrand() {
@@ -3656,6 +3689,8 @@ function MetaAdsLedger() {
                   brands={brands}
                   activeBrandId={activeBrandId}
                   onEditRoasTarget={editRoasTarget}
+                  productNames={productNames[activeBrandId] || {}}
+                  onEditProductName={editProductName}
                   minSpend={MIN_AD_SPEND}
                 />
 
