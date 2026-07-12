@@ -1299,7 +1299,34 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
           </button>
         </div>
       </div>
-      {aiError && (
+      {(() => {
+        // 狀態標籤:比對整體ROAS對目標的比例,自動判定「超標/優於目標/未達標」——跟參考範例同一組標籤概念。
+        // 「超出預算」這個標籤沒有對應的「預算上限」資料可以比對(現有資料只有實際花費,沒有預算目標本身),
+        // 所以自動判定不會選到它,需要的話你自己看情況口頭補充,不強行套一個猜的結論上去。
+        const ratio = overallRoas !== null && roasTarget > 0 ? overallRoas / roasTarget : null;
+        const status = ratio === null ? null : ratio >= 1.5 ? "超標" : ratio >= 1 ? "優於目標" : "未達標";
+        const statusColor = { 超標: "var(--blue)", 優於目標: "var(--green)", 未達標: "var(--red)" };
+        const allTags = ["超出預算", "超標", "未達標", "優於目標"];
+        return (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "6px 0 4px" }}>
+            {allTags.map((tag) => (
+              <span
+                key={tag}
+                style={{
+                  fontSize: 12.5,
+                  padding: "2px 10px",
+                  borderRadius: 999,
+                  fontWeight: tag === status ? 700 : 400,
+                  background: tag === status ? statusColor[tag] : "transparent",
+                  color: tag === status ? "#fff" : "var(--ink-soft)",
+                }}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        );
+      })()}      {aiError && (
         <p style={{ fontSize: 12, color: "var(--red)", margin: "8px 0 0" }}>
           AI 分析失敗:{aiError}(下面繼續顯示規則統計版,不影響其他功能)
         </p>
