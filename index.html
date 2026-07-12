@@ -13,6 +13,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <style>
   :root {
     --paper: #FAF7F2;
@@ -101,8 +103,29 @@
   .mal-tab-active { border-color: var(--blue); color: #fff; background: var(--blue); }
   .mal-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 26px; }
   .mal-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 16px; padding: 18px 20px; box-shadow: 0 2px 10px rgba(60,55,51,0.04); }
+  .mal-card-highlight-good { background: #E8F1EA; border-color: #A9CDBA; }
+  .mal-roas-legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 14px 0 20px; font-size: 12px; color: var(--ink-soft); }
+  .mal-roas-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .mal-roas-legend-item i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .mal-insight-box { background: #FAF6EC; border: 1px solid #E8DFC6; border-radius: 12px; padding: 16px 18px; margin-top: 4px; }
+  .mal-insight-box-title { font-weight: 700; font-size: 13.5px; margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .mal-insight-box ul { margin: 0; padding-left: 20px; }
+  .mal-insight-box li { font-size: 13px; line-height: 1.8; }
   .mal-card-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
   .mal-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 23px; font-weight: 600; margin: 8px 0 9px; }
+  /* 週報表儀表板:整體ROAS卡片(達標時用綠底跟其他卡片區隔)、橫條圖、圖例。
+     顏色沿用全站既有色票(--green/--blue/--amber/--red),ROAS四級分色不額外造新顏色。 */
+  .mal-dash-card-roas { background: #EEF3EA; border-color: var(--green); }
+  .mal-dash-card-sub { font-size: 11.5px; color: var(--ink-soft); }
+  .mal-dash-barchart { margin-bottom: 22px; }
+  .mal-dash-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .mal-dash-bar-label { width: 52px; flex-shrink: 0; font-size: 12.5px; font-weight: 600; }
+  .mal-dash-bar-track { flex: 1; background: var(--rule); border-radius: 999px; height: 16px; overflow: hidden; }
+  .mal-dash-bar-fill { height: 100%; border-radius: 999px; transition: width 0.2s ease; }
+  .mal-dash-bar-value { width: 62px; flex-shrink: 0; text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; font-weight: 600; }
+  .mal-dash-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--ink-soft); }
+  .mal-dash-legend span { display: flex; align-items: center; gap: 6px; }
+  .mal-dash-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
   .mal-perf-card { display: block; width: 100%; text-align: left; font-family: inherit; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
   .mal-perf-card:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(60,55,51,0.09); }
   .mal-perf-card:disabled { cursor: default; opacity: 0.5; }
@@ -299,7 +322,7 @@ const WEEK_STORAGE_PREFIX = "metaads-week:";
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
-const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds"]);
+const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets"]);
 const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
@@ -975,6 +998,292 @@ function colorForIndex(i) {
   return `hsl(${hue.toFixed(0)}, 46%, 48%)`;
 }
 
+// ROAS 效率分級,四級跟參考範例(行銷週報 PDF)的圖例一致。
+const ROAS_TIERS = [
+  { min: 5, label: "優秀", color: "#3F7D4F" },
+  { min: 3, label: "穩健", color: "#3D6B92" },
+  { min: 2, label: "待優化", color: "#B8860B" },
+  { min: 0, label: "低效", color: "#A8607A" },
+];
+function roasTier(roas) {
+  if (roas === null || roas === undefined || !isFinite(roas)) return null;
+  return ROAS_TIERS.find((t) => roas >= t.min) || ROAS_TIERS[ROAS_TIERS.length - 1];
+}
+
+function HorizontalBarChart({ data, formatValue }) {
+  const max = Math.max(...data.map((d) => Math.max(0, d.value)), 0.0001);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+      {data.map((d) => (
+        <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 96, fontSize: 12.5, fontWeight: 600, flexShrink: 0, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.label}>
+            {d.label}
+          </div>
+          <div style={{ flex: 1, background: "#F0ECE2", borderRadius: 4, height: 20, position: "relative", minWidth: 60 }}>
+            <div style={{ width: `${Math.max(2, Math.min(100, (Math.max(0, d.value) / max) * 100))}%`, background: d.color, height: "100%", borderRadius: 4, transition: "width 0.2s ease" }} />
+          </div>
+          <div style={{ width: 56, fontSize: 12, fontFamily: "IBM Plex Mono, monospace", flexShrink: 0 }}>
+            {formatValue ? formatValue(d.value) : d.value}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 規則式自動摘要——不是真的 AI(Claude)生成的文字,是根據數字用固定規則組句子,
+// 風格模仿範例報表的 🏆/⚠️/📌 條列重點,但本質是統計規則,不是語言模型理解數據後寫出來的。
+// 如果之後要換成真的 Claude 生成的分析,需要後台設定 Anthropic API 金鑰,現在還沒有。
+function generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget) {
+  if (!rows.length) return [];
+  const insights = [];
+  const overallRoas = totalSpend > 0 ? totalRevenue / totalSpend : null;
+  const withRoas = rows.filter((r) => r.spend > 0).map((r) => ({ ...r, roas: r.revenue / r.spend }));
+  if (overallRoas !== null) {
+    insights.push({
+      icon: overallRoas >= roasTarget ? "🏆" : "⚠️",
+      text: `整體 ROAS ${overallRoas.toFixed(2)}x,${overallRoas >= roasTarget ? "達標" : "未達標"}(目標 ${roasTarget}x)。`,
+    });
+  }
+  if (withRoas.length) {
+    const best = [...withRoas].sort((a, b) => b.roas - a.roas)[0];
+    insights.push({ icon: "🏆", text: `${best.code} 系列 ROAS ${best.roas.toFixed(2)}x,本期效率最高。` });
+  }
+  const lowRoasRows = withRoas.filter((r) => r.roas < 2).sort((a, b) => a.roas - b.roas);
+  if (lowRoasRows.length) {
+    insights.push({
+      icon: "⚠️",
+      text: `${lowRoasRows.map((r) => r.code).join("、")} ROAS 低於 2x,屬於低效等級,建議檢視素材或調整預算。`,
+    });
+  }
+  const highestSpend = [...rows].sort((a, b) => b.spend - a.spend)[0];
+  if (highestSpend) {
+    insights.push({ icon: "📌", text: `${highestSpend.code} 花費佔比最高(${highestSpend.spendShare.toFixed(1)}%),是本期主要花費項目。` });
+  }
+  return insights;
+}
+
+// 匯出「投放成效」報告成 Word 檔——用瀏覽器版的 docx 套件(CDN載入,不用後端),
+// 圖表(長條圖)在 Word 裡不好還原,所以匯出版本只保留卡片數字、明細表格、圖例文字、自動摘要,
+// 這些才是會議上真的要看/要編輯的內容,長條圖本身在畫面上看就好。
+async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, totalConversions, overallRoas, roasTarget, periodLabel, currencyCode, brandName, insights }) {
+  const D = window.docx;
+  if (!D || !window.saveAs) {
+    window.alert("Word 匯出套件還沒載入完成,請重新整理頁面再試一次。");
+    return;
+  }
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, HeadingLevel, ShadingType } = D;
+
+  function cardCell(label, value) {
+    return new TableCell({
+      width: { size: 25, type: WidthType.PERCENTAGE },
+      shading: { type: ShadingType.CLEAR, fill: "F7F5EF" },
+      margins: { top: 120, bottom: 120, left: 150, right: 150 },
+      children: [
+        new Paragraph({ children: [new TextRun({ text: label, size: 18, color: "6B6459" })] }),
+        new Paragraph({ children: [new TextRun({ text: value, size: 26, bold: true })] }),
+      ],
+    });
+  }
+  function headerCell(text) {
+    return new TableCell({
+      shading: { type: ShadingType.CLEAR, fill: "1F3A3D" },
+      children: [new Paragraph({ children: [new TextRun({ text, color: "FFFFFF", bold: true, size: 18 })] })],
+    });
+  }
+  function dataCell(text, color) {
+    return new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text, size: 18, ...(color ? { color: color.replace("#", ""), bold: true } : {}) })] })],
+    });
+  }
+
+  const doc = new Document({
+    sections: [
+      {
+        children: [
+          new Paragraph({ heading: HeadingLevel.HEADING_1, text: `投放成效${periodLabel ? `(${periodLabel})` : ""}` }),
+          ...(brandName ? [new Paragraph({ text: brandName, spacing: { after: 200 } })] : []),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [
+              new TableRow({
+                children: [
+                  cardCell("總花費", fmtMoney(totalSpend, currencyCode)),
+                  cardCell("總業績", fmtMoney(totalRevenue, currencyCode)),
+                  cardCell("成交筆數", fmtInt(totalConversions)),
+                  cardCell("整體 ROAS", overallRoas !== null ? `${overallRoas.toFixed(2)}x(目標 ${roasTarget}x)` : "—"),
+                ],
+              }),
+            ],
+          }),
+          new Paragraph({ text: "", spacing: { after: 200 } }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [
+              new TableRow({ children: ["系列", "花費", "業績", "ROAS", "成交數", "平均CPA", "花費佔比"].map(headerCell) }),
+              ...rows.map((r) => {
+                const roas = r.spend > 0 ? r.revenue / r.spend : null;
+                const cpa = r.conversions > 0 ? r.spend / r.conversions : null;
+                const tier = roasTier(roas);
+                return new TableRow({
+                  children: [
+                    dataCell(r.code),
+                    dataCell(fmtMoney(r.spend, currencyCode)),
+                    dataCell(fmtMoney(r.revenue, currencyCode)),
+                    dataCell(roas !== null ? `${roas.toFixed(2)}x` : "—", tier && tier.color),
+                    dataCell(fmtInt(r.conversions)),
+                    dataCell(cpa !== null ? fmtMoney(cpa, currencyCode) : "—"),
+                    dataCell(`${r.spendShare.toFixed(1)}%`),
+                  ],
+                });
+              }),
+            ],
+          }),
+          new Paragraph({ text: "", spacing: { after: 100 } }),
+          new Paragraph({
+            children: [new TextRun({ text: "圖例:ROAS ≥5 優秀 / 3-5 穩健 / 2-3 待優化 / <2 低效", size: 16, color: "8A8478", italics: true })],
+            spacing: { after: 300 },
+          }),
+          new Paragraph({ heading: HeadingLevel.HEADING_2, text: "自動摘要重點" }),
+          new Paragraph({
+            children: [new TextRun({ text: "(依統計規則產生,不是 AI 生成的分析文字)", size: 16, color: "8A8478", italics: true })],
+            spacing: { after: 150 },
+          }),
+          ...insights.map(
+            (ins) => new Paragraph({ bullet: { level: 0 }, spacing: { after: 80 }, children: [new TextRun({ text: `${ins.icon} ${ins.text}`, size: 20 })] })
+          ),
+        ],
+      },
+    ],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  window.saveAs(blob, `投放成效報告${periodLabel ? `_${periodLabel}` : ""}.docx`);
+}
+
+// 這支元件原本(另一個對話 session)漏掉了函式宣告那一行,只有內文沒有包起來,會直接造成語法錯誤。
+// 補回宣告——這支元件寫在最外層(跟 roasTier/HorizontalBarChart/exportAdPerformanceToWord 同一層),
+// 不在主 App 元件裡面,所以拿不到 brands/activeBrandId 這些畫面狀態,要透過 props 傳進來,不能用 closure 讀。
+function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget }) {
+  const reportRef = useRef(null);
+  const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads, MIN_AD_SPEND);
+  if (!rows.length) {
+    return <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>目前還沒有足夠的資料可以產生投放成效報告。</p>;
+  }
+  const totalConversions = rows.reduce((s, r) => s + r.conversions, 0);
+  const overallRoas = totalSpend > 0 ? totalRevenue / totalSpend : null;
+  const chartRows = [...rows].sort((a, b) => (b.spend > 0 ? b.revenue / b.spend : 0) - (a.spend > 0 ? a.revenue / a.spend : 0));
+  const chartData = chartRows.map((r) => {
+    const roas = r.spend > 0 ? r.revenue / r.spend : 0;
+    const tier = roasTier(roas);
+    return { label: r.code, value: roas, color: tier ? tier.color : "var(--ink-soft)" };
+  });
+  const insights = generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget);
+  return (
+    <div ref={reportRef} className="mal-ad-perf-report">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <h2 className="mal-section-title" style={{ marginBottom: 0 }}>投放成效{periodLabel ? `(${periodLabel})` : ""}</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="mal-icon-btn" onClick={() => onEditRoasTarget && onEditRoasTarget(activeBrandId)}>
+            ✎ ROAS目標
+          </button>
+          <button
+            className="mal-icon-btn"
+            onClick={() =>
+              exportAdPerformanceToWord({
+                rows, totalRevenue, totalSpend, totalConversions, overallRoas, roasTarget, periodLabel, currencyCode, insights,
+                brandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "",
+              })
+            }
+          >
+            📝 匯出 Word
+          </button>
+        </div>
+      </div>
+      <div className="mal-cards" style={{ marginBottom: 20 }}>
+        <div className="mal-card">
+          <div className="mal-card-label">總花費</div>
+          <div className="mal-card-value">{fmtMoney(totalSpend, currencyCode)}</div>
+        </div>
+        <div className="mal-card">
+          <div className="mal-card-label">總業績</div>
+          <div className="mal-card-value">{fmtMoney(totalRevenue, currencyCode)}</div>
+        </div>
+        <div className="mal-card">
+          <div className="mal-card-label">成交筆數</div>
+          <div className="mal-card-value">{fmtInt(totalConversions)}</div>
+        </div>
+        <div className={`mal-card ${overallRoas !== null && overallRoas >= roasTarget ? "mal-card-highlight-good" : ""}`}>
+          <div className="mal-card-label">整體 ROAS</div>
+          <div className="mal-card-value">{overallRoas !== null ? `${overallRoas.toFixed(2)}x` : "—"}</div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 2 }}>目標 {roasTarget}x</div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 22 }}>
+        <HorizontalBarChart data={chartData} formatValue={(v) => `${v.toFixed(1)}x`} />
+      </div>
+
+      <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+        <table className="mal-table">
+          <thead>
+            <tr>
+              <th>系列</th><th>花費</th><th>業績</th><th>ROAS</th><th>成交數</th><th>平均CPA</th><th>花費佔比</th>
+            </tr>
+          </thead>
+          <tbody>
+            {chartRows.map((r) => {
+              const roas = r.spend > 0 ? r.revenue / r.spend : null;
+              const cpa = r.conversions > 0 ? r.spend / r.conversions : null;
+              const tier = roasTier(roas);
+              return (
+                <tr key={r.code}>
+                  <td>{r.code}</td>
+                  <td>{fmtMoney(r.spend, currencyCode)}</td>
+                  <td>{fmtMoney(r.revenue, currencyCode)}</td>
+                  <td style={tier ? { color: tier.color, fontWeight: 700 } : undefined}>{roas !== null ? `${roas.toFixed(2)}x` : "—"}</td>
+                  <td>{fmtInt(r.conversions)}</td>
+                  <td>{cpa !== null ? fmtMoney(cpa, currencyCode) : "—"}</td>
+                  <td>{r.spendShare.toFixed(1)}%</td>
+                </tr>
+              );
+            })}
+            <tr>
+              <td className="mal-row-month">總計</td>
+              <td className="mal-row-month">{fmtMoney(totalSpend, currencyCode)}</td>
+              <td className="mal-row-month">{fmtMoney(totalRevenue, currencyCode)}</td>
+              <td className="mal-row-month">{overallRoas !== null ? `${overallRoas.toFixed(2)}x` : "—"}</td>
+              <td className="mal-row-month">{fmtInt(totalConversions)}</td>
+              <td className="mal-row-month">{totalConversions > 0 ? fmtMoney(totalSpend / totalConversions, currencyCode) : "—"}</td>
+              <td className="mal-row-month">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mal-roas-legend">
+        {ROAS_TIERS.map((t) => (
+          <span key={t.label} className="mal-roas-legend-item">
+            <i style={{ background: t.color }}></i>
+            ROAS {t.label === "低效" ? "< 2" : t.label === "待優化" ? "2-3" : t.label === "穩健" ? "3-5" : "≥ 5"}({t.label})
+          </span>
+        ))}
+      </div>
+
+      {insights.length > 0 && (
+        <div className="mal-insight-box">
+          <div className="mal-insight-box-title">📋 自動摘要重點<span style={{ fontWeight: 400, fontSize: 11, color: "var(--ink-soft)" }}>(規則統計產生,非 AI 生成文字)</span></div>
+          <ul>
+            {insights.map((ins, i) => (
+              <li key={i}><span style={{ marginRight: 6 }}>{ins.icon}</span>{ins.text}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DonutChart({ data, size = 176, thickness = 30 }) {
   const total = data.reduce((s, d) => s + Math.max(0, d.value), 0);
   const r = size / 2;
@@ -1042,6 +1351,7 @@ function MetaAdsLedger() {
   const [activeBrandId, setActiveBrandId] = useState("");
   const [cpaThresholds, setCpaThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「CPA 過高」標準
   const [adRatioThresholds, setAdRatioThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「廣告費佔比過高」標準(百分比數字,例如 30 代表 30%)
+  const [roasTargets, setRoasTargets] = useState({}); // { [brandId]: number } 每個品牌各自的「投放成效報告」ROAS 目標倍數,預設 3
   const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
   const [batchProgress, setBatchProgress] = useState(null);
   const [weekInfo, setWeekInfo] = useState(getLastWeekRange());
@@ -1080,13 +1390,14 @@ function MetaAdsLedger() {
 
   useEffect(() => {
     async function loadInitialConfig() {
-      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes, adRatioRes] = await Promise.all([
+      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes, adRatioRes, roasRes] = await Promise.all([
         storage.get("meta-api-account-id").catch(() => null),
         storage.get("meta-api-brands").catch(() => null),
         storage.get("meta-api-remember-token").catch(() => null),
         storage.get("meta-api-autosync").catch(() => null),
         storage.get("meta-api-cpa-thresholds").catch(() => null),
         storage.get("meta-api-adratio-thresholds").catch(() => null),
+        storage.get("meta-api-roas-targets").catch(() => null),
       ]);
 
       if (accountIdRes && accountIdRes.value) setApiAccountId(accountIdRes.value);
@@ -1096,6 +1407,9 @@ function MetaAdsLedger() {
       }
       if (adRatioRes && adRatioRes.value) {
         try { setAdRatioThresholds(JSON.parse(adRatioRes.value)); } catch { /* ignore malformed data */ }
+      }
+      if (roasRes && roasRes.value) {
+        try { setRoasTargets(JSON.parse(roasRes.value)); } catch { /* ignore malformed data */ }
       }
 
       let cleanedBrandsForAutoSelect = [];
@@ -1496,6 +1810,32 @@ function MetaAdsLedger() {
     }
     setAdRatioThresholds(updated);
     storage.set("meta-api-adratio-thresholds", JSON.stringify(updated)).catch(() => {});
+  }
+
+  // 跟 editAdRatioThreshold 同一套模式:「投放成效報告」(週報表/月報表裡的卡片+長條圖+分級表格)
+  // 用的 ROAS 目標倍數,沒設定的話預設 3(對應範例報表的「目標 3.0x」)。
+  function editRoasTarget(brandId) {
+    const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
+    const current = roasTargets[brandId];
+    const input = window.prompt(
+      `設定「${brandName}」投放成效報告的 ROAS 目標倍數——用來判斷整體是否達標、每個代號屬於哪個效率等級(優秀/穩健/待優化/低效)。\n留空白會用預設值 3。`,
+      current != null ? String(current) : ""
+    );
+    if (input === null) return;
+    const trimmed = input.trim();
+    const updated = { ...roasTargets };
+    if (!trimmed) {
+      delete updated[brandId];
+    } else {
+      const num = parseFloat(trimmed);
+      if (isNaN(num) || num <= 0) {
+        setApiError("ROAS 目標請輸入一個大於 0 的數字。");
+        return;
+      }
+      updated[brandId] = num;
+    }
+    setRoasTargets(updated);
+    storage.set("meta-api-roas-targets", JSON.stringify(updated)).catch(() => {});
   }
 
   async function saveCurrentAsBrand() {
@@ -3257,16 +3597,18 @@ function MetaAdsLedger() {
                 <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
                 <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
 
-                <h2 className="mal-section-title">
-                  {weekLabel(focusWeek)} 業績比例分析<span className="mal-section-count">(依行銷活動名稱最前面的產品代號自動歸類)</span>
-                </h2>
-                <ProductShareBreakdown
+                <AdPerformanceReport
                   ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
                   currencyCode={focusWeekData.currency}
-                  prevAds={prevWeekData ? filterAdsByStatus(prevWeekData.ads, adStatusFilter, adSearchKeyword) : null}
-                  comparisonLabel="上週"
-                  ledgerAgg={focusWeek ? aggregateLedgerRange(ledgerByMonth, weekDateRange(focusWeek).since, weekDateRange(focusWeek).until) : null}
-                  prevLedgerAgg={focusWeekIdx > 0 ? aggregateLedgerRange(ledgerByMonth, weekDateRange(sortedWeekKeys[focusWeekIdx - 1]).since, weekDateRange(sortedWeekKeys[focusWeekIdx - 1]).until) : null}
+                  periodLabel={(() => {
+                    const r = weekDateRange(focusWeek);
+                    const fmtMD = (iso) => { const [, m, d] = iso.split("-"); return `${Number(m)}/${Number(d)}`; };
+                    return `${fmtMD(r.since)} - ${fmtMD(r.until)}`;
+                  })()}
+                  roasTarget={roasTargets[activeBrandId]}
+                  brands={brands}
+                  activeBrandId={activeBrandId}
+                  onEditRoasTarget={editRoasTarget}
                 />
 
                 <div className="mal-modal-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
