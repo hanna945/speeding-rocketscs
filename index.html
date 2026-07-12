@@ -3643,6 +3643,22 @@ function MetaAdsLedger() {
                   periodLabel="週"
                 />
 
+                <AdPerformanceReport
+                  key={`${activeBrandId}::${focusWeek}`}
+                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
+                  currencyCode={focusWeekData.currency}
+                  periodLabel={(() => {
+                    const r = weekDateRange(focusWeek);
+                    const fmtMD = (iso) => { const [, m, d] = iso.split("-"); return `${Number(m)}/${Number(d)}`; };
+                    return `${fmtMD(r.since)} - ${fmtMD(r.until)}`;
+                  })()}
+                  roasTarget={roasTargets[activeBrandId]}
+                  brands={brands}
+                  activeBrandId={activeBrandId}
+                  onEditRoasTarget={editRoasTarget}
+                  minSpend={MIN_AD_SPEND}
+                />
+
                 {focusWeekData.ads && focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND).length > 0 && (
                   <StatusFilterButtons statusValue={adStatusFilter} onStatusChange={setAdStatusFilter} keyword={adSearchKeyword} onKeywordChange={setAdSearchKeyword} />
                 )}
@@ -3691,21 +3707,6 @@ function MetaAdsLedger() {
 
                 <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
                 <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
-
-                <AdPerformanceReport
-                  key={`${activeBrandId}::${focusWeek}`}
-                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
-                  currencyCode={focusWeekData.currency}
-                  periodLabel={(() => {
-                    const r = weekDateRange(focusWeek);
-                    const fmtMD = (iso) => { const [, m, d] = iso.split("-"); return `${Number(m)}/${Number(d)}`; };
-                    return `${fmtMD(r.since)} - ${fmtMD(r.until)}`;
-                  })()}
-                  roasTarget={roasTargets[activeBrandId]}
-                  brands={brands}
-                  activeBrandId={activeBrandId}
-                  onEditRoasTarget={editRoasTarget}
-                />
 
                 <div className="mal-modal-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
                   <button
