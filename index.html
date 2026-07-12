@@ -656,18 +656,26 @@ function parseLedgerSheet(matrix, year) {
     if ((row2[c] || "").toString().trim() === "帳面營業額") {
       const code = (row1[c] || "").toString().trim().toUpperCase();
       if (!code) continue;
+      // 蝦皮、MOMO 這兩個代號沒有「平均客單價」這一欄,導致後面欄位整批往左遞補一格,
+      // 固定位移量在這兩個代號上會直接抓錯欄——平均客單價/廣告費/帳面利潤/稅後淨利全部改用文字比對定位。
       const SEARCH_LIMIT = 12;
+      let colAov = null;
+      let colSpend = null;
       let colProfit = null;
       let colNetProfit = null;
       for (let k = c + 1; k < c + SEARCH_LIMIT; k++) {
         const label = (row2[k] || "").toString().trim();
+        if (colAov === null && label === "平均客單價") colAov = k;
+        if (colSpend === null && label === "廣告費") colSpend = k;
         if (colProfit === null && label === "帳面利潤") colProfit = k;
         if (colNetProfit === null && (label === "稅後淨利" || label.startsWith("實際利潤"))) colNetProfit = k;
       }
       blocks.push({
         code,
         name: (row1[c + 1] || "").toString().trim(),
-        colRevenue: c, colAov: c + 1, colSpend: c + 2,
+        colRevenue: c,
+        colAov: colAov,
+        colSpend: colSpend !== null ? colSpend : c + 2,
         colProfit: colProfit !== null ? colProfit : c + 4,
         colNetProfit: colNetProfit !== null ? colNetProfit : c + 6,
       });
