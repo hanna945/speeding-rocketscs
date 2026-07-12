@@ -1,21 +1,14 @@
 // POST /api/ai/analysis
-// 改用 Vertex AI(不是 AI Studio 的 Gemini API)——原本用 GEMINI_API_KEY(AI Studio 核發的 AQ. 格式金鑰)
-// 在 Google 那邊撞到一個目前還沒解決的已知 bug(官方論壇上有多筆一模一樣的錯誤回報:
-// "Expected OAuth 2 access token"),換一條路,直接沿用讀 Google Sheet 那把服務帳號金鑰
-// (GOOGLE_SERVICE_ACCOUNT_KEY,已經在用、穩定),用 OAuth2 換 access token 打 Vertex AI,
-// 不再需要另外申請/維護一組 AI Studio 金鑰。
+// 改用 OpenAI(不是 Gemini/Vertex AI)——Gemini 那條路先後撞到 AI Studio 的 AQ. 金鑰格式問題
+// (Google 那邊未解決的已知 bug)、又牽涉到 Google Cloud 專案/IAM 權限設定,太複雜。
+// OpenAI 的 API Key 是單純的靜態金鑰(sk- 開頭),申請流程跟這邊呼叫方式都簡單很多。
 //
 // 回傳格式維持跟規則統計版一樣(JSON 陣列,每條 {icon, text}),前端渲染邏輯不用動。
 //
-// 需要在 Cloudflare Pages 專案設定 → 變數與機密 額外加一個(不用是 Secret,一般變數即可):
-//   GOOGLE_CLOUD_PROJECT_ID = 這把服務帳號所屬的 Google Cloud 專案 ID
-// GOOGLE_SERVICE_ACCOUNT_KEY 沿用現有的(讀 Sheet 那把),但這把服務帳號的 Google Cloud 專案
-// 需要額外「啟用 Vertex AI API」,並且這個服務帳號要有 Vertex AI 的存取權限(角色:Vertex AI User)。
+// 需要在 Cloudflare Pages 專案設定 → 變數與機密 新增一個 Secret:
+//   OPENAI_API_KEY = 去 platform.openai.com/api-keys 申請的金鑰(sk- 開頭)
 
-import { getGoogleAccessToken } from "../../_shared/googleAuth.js";
-
-const VERTEX_MODEL = "gemini-3.5-flash";
-const VERTEX_LOCATION = "global";
+const OPENAI_MODEL = "gpt-5.6-terra"; // 輕量/低成本款,這個任務不需要用到旗艦推理模型。
 
 function jsonResponse(data, status) {
   return new Response(JSON.stringify(data), { status: status || 200, headers: { "Content-Type": "application/json" } });
@@ -34,12 +27,11 @@ ${rowLines}
 
 寫4到6條重點觀察,每條開頭挑一個最貼切的emoji(🏆表現最突出、⚠️需要留意或表現下滑、📌值得標注的事實或建議、💪整體達標值得鼓舞),文字精簡(每條30-50字內),直接點出誰表現最好/最差、有沒有異常花費、有沒有值得加碼或該控制預算的地方——不是逐條複述數字,是給出判斷。
 
-只回傳 JSON 陣列,格式範例:[{"icon":"🏆","text":"..."}],不要包在 markdown 程式碼區塊裡,不要有其他文字。`;
+只回傳 JSON,格式:{"insights":[{"icon":"🏆","text":"..."}]},不要有其他文字。`;
 }
 
 export async function onRequestPost({ request, env }) {
-  if (!env.GOOGLE_SERVICE_ACCOUNT_KEY) return jsonResponse({ error: "尚未設定 GOOGLE_SERVICE_ACCOUNT_KEY。" }, 500);
-  if (!env.GOOGLE_CLOUD_PROJECT_ID) return jsonResponse({ error: "尚未設定 GOOGLE_CLOUD_PROJECT_ID。" }, 500);
+  if (!env.OPENAI_API_KEY) return jsonResponse({ error: "尚未設定 OPENAI_API_KEY。" }, 500);
 
   let body;
   try {
@@ -52,60 +44,43 @@ export async function onRequestPost({ request, env }) {
     return jsonResponse({ error: "缺少 totals 或 rows,無法產生分析。" }, 400);
   }
 
-  let serviceAccount;
-  try {
-    serviceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_KEY);
-  } catch {
-    return jsonResponse({ error: "GOOGLE_SERVICE_ACCOUNT_KEY 不是合法的 JSON。" }, 500);
-  }
-
-  let accessToken;
-  try {
-    accessToken = await getGoogleAccessToken(serviceAccount, "https://www.googleapis.com/auth/cloud-platform");
-  } catch (e) {
-    return jsonResponse({ error: "跟 Google 驗證失敗:" + e.message }, 502);
-  }
-
   const prompt = buildPrompt({ brandName, periodLabel, roasTarget: roasTarget || 3, totals, rows });
-  const url = `https://aiplatform.googleapis.com/v1/projects/${env.GOOGLE_CLOUD_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_MODEL}:generateContent`;
 
-  let vertexRes;
+  let openaiRes;
   try {
-    vertexRes = await fetch(url, {
+    openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }] }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+      }),
     });
   } catch (e) {
-    return jsonResponse({ error: "呼叫 Vertex AI 網路請求失敗:" + e.message }, 502);
+    return jsonResponse({ error: "呼叫 OpenAI API 網路請求失敗:" + e.message }, 502);
   }
 
-  const vertexJson = await vertexRes.json().catch(() => null);
-  if (!vertexRes.ok || !vertexJson) {
-    const msg = (vertexJson && vertexJson.error && vertexJson.error.message) || `HTTP ${vertexRes.status}`;
-    return jsonResponse({ error: "Vertex AI 回應錯誤:" + msg }, 502);
+  const openaiJson = await openaiRes.json().catch(() => null);
+  if (!openaiRes.ok || !openaiJson) {
+    const msg = (openaiJson && openaiJson.error && openaiJson.error.message) || `HTTP ${openaiRes.status}`;
+    return jsonResponse({ error: "OpenAI API 回應錯誤:" + msg }, 502);
   }
 
-  const rawText = ((vertexJson.candidates || [])[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
-  if (!rawText) return jsonResponse({ error: "Vertex AI 沒有回傳任何內容(可能被安全設定擋下)。" }, 502);
+  const rawText = (openaiJson.choices && openaiJson.choices[0] && openaiJson.choices[0].message && openaiJson.choices[0].message.content) || "";
+  if (!rawText.trim()) return jsonResponse({ error: "OpenAI 沒有回傳任何內容。" }, 502);
 
   const cleaned = rawText.replace(/^```json\s*|^```\s*|```$/g, "").trim();
-  let insights;
+  let parsed;
   try {
-    insights = JSON.parse(cleaned);
+    parsed = JSON.parse(cleaned);
   } catch {
-    const match = cleaned.match(/\[[\s\S]*\]/);
-    if (match) {
-      try {
-        insights = JSON.parse(match[0]);
-      } catch {
-        return jsonResponse({ error: "Vertex AI 回應不是合法 JSON,原始內容:" + cleaned.slice(0, 300) }, 502);
-      }
-    } else {
-      return jsonResponse({ error: "Vertex AI 回應不是合法 JSON,原始內容:" + cleaned.slice(0, 300) }, 502);
-    }
+    return jsonResponse({ error: "OpenAI 回應不是合法 JSON,原始內容:" + cleaned.slice(0, 300) }, 502);
   }
-  if (!Array.isArray(insights)) return jsonResponse({ error: "Vertex AI 回應格式不是陣列。" }, 502);
+  // 要求的是 {"insights":[...]} 這個形狀(OpenAI 的 json_object 模式要求最外層一定是物件,不能直接是陣列),
+  // 但保留萬一模型還是直接回傳陣列的容錯。
+  const insights = Array.isArray(parsed) ? parsed : parsed.insights;
+  if (!Array.isArray(insights)) return jsonResponse({ error: "OpenAI 回應格式不是陣列。" }, 502);
 
   return jsonResponse({ insights });
 }
