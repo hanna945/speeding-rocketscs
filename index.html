@@ -184,6 +184,11 @@
   .mal-matrix-group-start { border-left: 3px solid var(--ink) !important; }
   .mal-matrix-group-a-header { background: #A9CDBA !important; }
   .mal-matrix-group-b-header { background: #E3A9C0 !important; }
+  /* 「後台實際數據」區塊——刻意用金色調,跟矩陣表格裡代號分組的綠/粉紅是完全不同的視覺語言,
+     不會讓人誤會兩者是同一套系統;這裡要表達的是「這欄是可信的後台真實數字」,不是分組用途。 */
+  .mal-backend-group-header { background: #D4A537 !important; color: #3A2E0A; font-weight: 700; border-left: 3px solid #8A6D1F !important; }
+  .mal-backend-group { background: #FBF0D6; }
+  .mal-backend-group-start { border-left: 3px solid #8A6D1F !important; }
   .mal-ad-count { color: var(--ink-soft); font-style: italic; margin-left: 4px; }
   .mal-synced-at { color: var(--ink-soft); font-size: 12px; margin: -6px 0 16px; font-family: 'IBM Plex Mono', monospace; }
   .mal-ad-stats { display: flex; gap: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; flex-shrink: 0; }
@@ -758,6 +763,10 @@ function monthDateRange(monthKey) {
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const until = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
   return { since, until };
+}
+// 週的 key 本身就是那一週的起始日(例如 "2026-06-29"),固定跨 7 天,加 6 天就是週末最後一天。
+function weekDateRange(weekKey) {
+  return { since: weekKey, until: addDaysISO(weekKey, 6) };
 }
 // 用 UTC 運算來加減天數,避免瀏覽器時區造成日期字串位移。
 function addDaysISO(iso, days) {
@@ -2127,7 +2136,7 @@ function MetaAdsLedger() {
     );
   }
 
-  function ProductShareBreakdown({ ads, currencyCode, prevAds, comparisonLabel = "上期" }) {
+  function ProductShareBreakdown({ ads, currencyCode, prevAds, comparisonLabel = "上期", ledgerAgg, prevLedgerAgg }) {
     if (!ads || !ads.length) {
       return <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>目前還沒有足夠的資料可以分析業績比例。</p>;
     }
@@ -2144,7 +2153,14 @@ function MetaAdsLedger() {
         </div>
       );
     }
-    // 上一期(上個月/上週)每個產品代號的營業額,用來算「與上期比」——兩期的營業額都是直接取用 Meta 回報的數字,沒有另外加工計算。
+    // 後台(帳本)每個產品代號的實際營業額——跟 Meta 回報的營業額是兩回事,Meta 是廣告平台自己的歸因統計,
+    // 帳本是實際入帳的營業額,兩者通常對不上。有帳本資料的話,「與{comparisonLabel}比」改成比帳本營業額,
+    // 不再比 Meta 回報的數字,比較才有意義(Meta 回報常常因為歸因方式改變而忽高忽低,不是真的業績變化)。
+    const hasLedger = !!ledgerAgg;
+    const backendRevenueByCode = hasLedger ? ledgerAgg.byCode : {};
+    const prevBackendRevenueByCode = prevLedgerAgg ? prevLedgerAgg.byCode : {};
+    const hasPrevBackend = !!prevLedgerAgg;
+    // 沒有帳本資料時,退回原本的做法:用 Meta 回報營業額比較上一期。
     const prevBreakdown = prevAds && prevAds.length ? buildProductBreakdown(prevAds, MIN_AD_SPEND) : null;
     const prevRevenueByCode = {};
     if (prevBreakdown) prevBreakdown.rows.forEach((r) => { prevRevenueByCode[r.code] = r.revenue; });
@@ -2166,34 +2182,73 @@ function MetaAdsLedger() {
             ))}
           </div>
         </div>
+        {!hasLedger && (
+          <p style={{ fontSize: 12, color: "var(--ink-soft)", margin: "0 0 10px" }}>
+            這個品牌目前沒有綁定每日收益表(帳本),下面只看得到 Meta 回報的數字,沒有後台實際數據可以對照。
+          </p>
+        )}
         <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
           <table className="mal-table">
             <thead>
               <tr>
-                <th>產品代號</th><th>廣告數</th><th>營業額(Meta 回報)</th><th>與{comparisonLabel}比</th>
-                <th>廣告費</th><th>廣告費／營業額比</th>
+                <th rowSpan={hasLedger ? 2 : 1}>產品代號</th>
+                <th rowSpan={hasLedger ? 2 : 1}>廣告數</th>
+                <th rowSpan={hasLedger ? 2 : 1}>營業額(Meta 回報)</th>
+                <th rowSpan={hasLedger ? 2 : 1}>廣告費</th>
+                <th rowSpan={hasLedger ? 2 : 1}>廣告費／營業額比</th>
+                {hasLedger ? (
+                  <th colSpan={2} className="mal-backend-group-header" style={{ textAlign: "center" }}>🏦 後台實際數據</th>
+                ) : (
+                  <th rowSpan={1}>與{comparisonLabel}比</th>
+                )}
               </tr>
+              {hasLedger && (
+                <tr>
+                  <th className="mal-backend-group mal-backend-group-start">帳面營業額(後台)</th>
+                  <th className="mal-backend-group">與{comparisonLabel}比(後台)</th>
+                </tr>
+              )}
             </thead>
             <tbody>
               {rows.map((r) => {
                 const prevRevenue = hasPrevData ? prevRevenueByCode[r.code] : undefined;
                 const isNewCode = hasPrevData && prevRevenue === undefined;
+                const backend = backendRevenueByCode[r.code];
+                const prevBackend = prevBackendRevenueByCode[r.code];
+                const isNewBackendCode = hasPrevBackend && backend && prevBackend === undefined;
                 return (
                   <tr key={r.code}>
                     <td>{r.code}</td>
                     <td>{r.count}</td>
                     <td>{fmtMoney(r.revenue, currencyCode)}</td>
-                    <td>
-                      {!hasPrevData ? (
-                        "—"
-                      ) : isNewCode ? (
-                        <span style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>新代號</span>
-                      ) : (
-                        <DeltaBadge value={pctChange(r.revenue, prevRevenue)} />
-                      )}
-                    </td>
                     <td>{fmtMoney(r.spend, currencyCode)}</td>
                     <td>{r.costRatio !== null ? `${r.costRatio.toFixed(0)}%` : "—"}</td>
+                    {hasLedger ? (
+                      <>
+                        <td className="mal-backend-group mal-backend-group-start">{backend ? fmtMoney(backend.revenue, currencyCode) : "—"}</td>
+                        <td className="mal-backend-group">
+                          {!backend ? (
+                            "—"
+                          ) : !hasPrevBackend ? (
+                            "—"
+                          ) : isNewBackendCode ? (
+                            <span style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>新代號</span>
+                          ) : (
+                            <DeltaBadge value={pctChange(backend.revenue, prevBackend ? prevBackend.revenue : undefined)} />
+                          )}
+                        </td>
+                      </>
+                    ) : (
+                      <td>
+                        {!hasPrevData ? (
+                          "—"
+                        ) : isNewCode ? (
+                          <span style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>新代號</span>
+                        ) : (
+                          <DeltaBadge value={pctChange(r.revenue, prevRevenue)} />
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -2201,9 +2256,18 @@ function MetaAdsLedger() {
                 <td className="mal-row-month">合計</td>
                 <td></td>
                 <td>{fmtMoney(totalRevenue, currencyCode)}</td>
-                <td>{hasPrevData ? <DeltaBadge value={pctChange(totalRevenue, prevBreakdown.totalRevenue)} /> : "—"}</td>
                 <td>{fmtMoney(totalSpend, currencyCode)}</td>
                 <td>{totalRevenue > 0 ? `${((totalSpend / totalRevenue) * 100).toFixed(0)}%` : "—"}</td>
+                {hasLedger ? (
+                  <>
+                    <td className="mal-backend-group mal-backend-group-start">{fmtMoney(ledgerAgg.overall.revenue, currencyCode)}</td>
+                    <td className="mal-backend-group">
+                      {hasPrevBackend ? <DeltaBadge value={pctChange(ledgerAgg.overall.revenue, prevLedgerAgg.overall.revenue)} /> : "—"}
+                    </td>
+                  </>
+                ) : (
+                  <td>{hasPrevData ? <DeltaBadge value={pctChange(totalRevenue, prevBreakdown.totalRevenue)} /> : "—"}</td>
+                )}
               </tr>
             </tbody>
           </table>
@@ -2609,6 +2673,8 @@ function MetaAdsLedger() {
     ? todayParts.dateKey
     : (sortedDailyDays.length ? sortedDailyDays[sortedDailyDays.length - 1].date : null);
   const focusDayRecord = activeFocusDay ? sortedDailyDays.find((d) => d.date === activeFocusDay) : null;
+  const focusDayIdx = activeFocusDay ? sortedDailyDays.findIndex((d) => d.date === activeFocusDay) : -1;
+  const prevDayRecord = focusDayIdx > 0 ? sortedDailyDays[focusDayIdx - 1] : null;
   const dailyMatrixCodes = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
   // threshold 有給且超過時,回傳標紅、加驚嘆號的樣式;沒給 threshold 或沒超過,就是原本的樣式。
   const AD_RATIO_CRITICAL_PCT = 30; // 廣告費佔比超過這個數字,不管有沒有設定門檻,一律標紅(比黃字警示更嚴重的等級)
@@ -3040,6 +3106,8 @@ function MetaAdsLedger() {
                 currencyCode={focusData.currency}
                 prevAds={prevData ? filterAdsByStatus(prevData.ads, adStatusFilter, adSearchKeyword) : null}
                 comparisonLabel="上月"
+                ledgerAgg={focusMonth ? aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until) : null}
+                prevLedgerAgg={focusIdx > 0 ? aggregateLedgerRange(ledgerByMonth, monthDateRange(sortedKeys[focusIdx - 1]).since, monthDateRange(sortedKeys[focusIdx - 1]).until) : null}
               />
             </>
           )}
@@ -3197,6 +3265,8 @@ function MetaAdsLedger() {
                   currencyCode={focusWeekData.currency}
                   prevAds={prevWeekData ? filterAdsByStatus(prevWeekData.ads, adStatusFilter, adSearchKeyword) : null}
                   comparisonLabel="上週"
+                  ledgerAgg={focusWeek ? aggregateLedgerRange(ledgerByMonth, weekDateRange(focusWeek).since, weekDateRange(focusWeek).until) : null}
+                  prevLedgerAgg={focusWeekIdx > 0 ? aggregateLedgerRange(ledgerByMonth, weekDateRange(sortedWeekKeys[focusWeekIdx - 1]).since, weekDateRange(sortedWeekKeys[focusWeekIdx - 1]).until) : null}
                 />
 
                 <div className="mal-modal-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
@@ -3249,6 +3319,8 @@ function MetaAdsLedger() {
                   currencyCode={focusData.currency}
                   prevAds={prevData ? prevData.ads : null}
                   comparisonLabel="上月"
+                  ledgerAgg={focusMonth ? aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until) : null}
+                  prevLedgerAgg={focusIdx > 0 ? aggregateLedgerRange(ledgerByMonth, monthDateRange(sortedKeys[focusIdx - 1]).since, monthDateRange(sortedKeys[focusIdx - 1]).until) : null}
                 />
               </>
             )}
@@ -3405,31 +3477,66 @@ function MetaAdsLedger() {
                     </div>
 
                     <h2 className="mal-section-title">
-                      {activeFocusDay} 各產品代號明細
-                      <span className="mal-section-count">(依當日營收由高到低排序)</span>
+                      {activeFocusDay} 業績比例分析
+                      <span className="mal-section-count">(後台實際數據,依當日營收由高到低排序)</span>
                     </h2>
+                    {(() => {
+                      const dayCodes = Object.entries(focusDayRecord.byCode).sort((a, b) => b[1].revenue - a[1].revenue);
+                      const dayTotalRevenue = dayCodes.reduce((sum, [, v]) => sum + v.revenue, 0);
+                      const dayChartData = dayCodes.map(([code, v], i) => ({ label: code, value: v.revenue, color: colorForIndex(i) }));
+                      return (
+                        <div className="mal-chart-box" style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
+                          <DonutChart data={dayChartData} />
+                          <div style={{ flex: 1, minWidth: 200 }}>
+                            {dayChartData.map((d) => (
+                              <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 7 }}>
+                                <i className="mal-chart-dot" style={{ background: d.color, width: 10, height: 10, flexShrink: 0 }}></i>
+                                <span style={{ fontWeight: 600 }}>{d.label}</span>
+                                <span style={{ color: "var(--ink-soft)", marginLeft: "auto", fontFamily: "IBM Plex Mono, monospace" }}>
+                                  {dayTotalRevenue > 0 ? ((d.value / dayTotalRevenue) * 100).toFixed(0) : 0}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
                       <table className="mal-table">
                         <thead>
                           <tr>
-                            <th>代號</th><th>營收</th><th>廣告費</th><th>廣告費佔比</th><th>淨利潤</th>
+                            <th>代號</th><th>營收(後台)</th><th>與前一天比(後台)</th><th>廣告費</th><th>廣告費佔比</th><th>淨利潤</th>
                           </tr>
                         </thead>
                         <tbody>
                           {Object.entries(focusDayRecord.byCode)
                             .sort((a, b) => b[1].revenue - a[1].revenue)
-                            .map(([code, v]) => (
-                              <tr key={code}>
-                                <td>{code}</td>
-                                <td>{fmtMoney(v.revenue)}</td>
-                                <td>{fmtMoney(v.spend)}</td>
-                                <td>{adPct(v.spend, v.revenue, adRatioThresholds[activeBrandId])}</td>
-                                <td>{netProfitCell(v.netProfit)}</td>
-                              </tr>
-                            ))}
+                            .map(([code, v]) => {
+                              const prev = prevDayRecord ? prevDayRecord.byCode[code] : undefined;
+                              const isNewCode = !!prevDayRecord && prev === undefined;
+                              return (
+                                <tr key={code}>
+                                  <td>{code}</td>
+                                  <td>{fmtMoney(v.revenue)}</td>
+                                  <td>
+                                    {!prevDayRecord ? "—" : isNewCode ? (
+                                      <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>新代號</span>
+                                    ) : (
+                                      <DeltaBadge value={pctChange(v.revenue, prev.revenue)} />
+                                    )}
+                                  </td>
+                                  <td>{fmtMoney(v.spend)}</td>
+                                  <td>{adPct(v.spend, v.revenue, adRatioThresholds[activeBrandId])}</td>
+                                  <td>{netProfitCell(v.netProfit)}</td>
+                                </tr>
+                              );
+                            })}
                           <tr>
                             <td className="mal-row-month">🏬 全店合計</td>
                             <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.revenue)}</td>
+                            <td className="mal-row-month">
+                              {prevDayRecord ? <DeltaBadge value={pctChange(focusDayRecord.overall.revenue, prevDayRecord.overall.revenue)} /> : "—"}
+                            </td>
                             <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.adSpend)}</td>
                             <td className="mal-row-month">{adPct(focusDayRecord.overall.adSpend, focusDayRecord.overall.revenue, adRatioThresholds[activeBrandId])}</td>
                             <td className="mal-row-month">{netProfitCell(focusDayRecord.overall.netProfit)}</td>
@@ -3439,6 +3546,7 @@ function MetaAdsLedger() {
                     </div>
                     <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "8px 0 0" }}>
                       🏬 全店合計取自後台每日收益表本身的總表欄位(不是加總各代號估算的),各代號明細加總起來如果對不上,通常是因為部分業績沒有掛在任何一個產品代號底下(例如混合購物車訂單)。
+                      每日報表沒有 Meta 廣告回報數字可以對照——Meta 只抓整週/整月的彙總,沒有拆到單日,這裡看到的都是後台帳本本身的數據。
                     </p>
                   </>
                 ) : (
