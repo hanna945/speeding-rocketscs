@@ -1170,14 +1170,14 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 這支元件原本(另一個對話 session)漏掉了函式宣告那一行,只有內文沒有包起來,會直接造成語法錯誤。
 // 補回宣告——這支元件寫在最外層(跟 roasTier/HorizontalBarChart/exportAdPerformanceToWord 同一層),
 // 不在主 App 元件裡面,所以拿不到 brands/activeBrandId 這些畫面狀態,要透過 props 傳進來,不能用 closure 讀。
-function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget }) {
+function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, minSpend = 500 }) {
   const reportRef = useRef(null);
   const [aiInsights, setAiInsights] = useState(null); // null = 還沒生成過,顯示規則統計版當預設
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [isEditingInsights, setIsEditingInsights] = useState(false);
   const [editText, setEditText] = useState("");
-  const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads, MIN_AD_SPEND);
+  const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads, minSpend);
   if (!rows.length) {
     return <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>目前還沒有足夠的資料可以產生投放成效報告。</p>;
   }
