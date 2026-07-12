@@ -1,15 +1,21 @@
 // POST /api/ai/analysis
-// 用 Gemini API 針對這期的廣告成效數據寫重點觀察,取代原本規則統計產生的「自動摘要重點」。
-// 回傳格式刻意跟原本規則版一樣(JSON 陣列,每條 {icon, text}),前端不用另外改渲染邏輯,
-// 兩種來源可以無縫替換——沒有 GEMINI_API_KEY 或呼叫失敗時,前端會自動退回規則版,不會整個報表壞掉。
+// 改用 Vertex AI(不是 AI Studio 的 Gemini API)——原本用 GEMINI_API_KEY(AI Studio 核發的 AQ. 格式金鑰)
+// 在 Google 那邊撞到一個目前還沒解決的已知 bug(官方論壇上有多筆一模一樣的錯誤回報:
+// "Expected OAuth 2 access token"),換一條路,直接沿用讀 Google Sheet 那把服務帳號金鑰
+// (GOOGLE_SERVICE_ACCOUNT_KEY,已經在用、穩定),用 OAuth2 換 access token 打 Vertex AI,
+// 不再需要另外申請/維護一組 AI Studio 金鑰。
 //
-// 需要在 Cloudflare Pages 專案設定 → 變數與機密 加一個 Secret:GEMINI_API_KEY。
+// 回傳格式維持跟規則統計版一樣(JSON 陣列,每條 {icon, text}),前端渲染邏輯不用動。
 //
-// 呼叫方式(需要帶 X-Team-Key 驗證,跟 /api/sheets 同一組):
-//   POST /api/ai/analysis
-//   body: { brandName, periodLabel, roasTarget, totals: {spend,revenue,conversions,roas}, rows: [{code,spend,revenue,roas,conversions,spendShare}] }
+// 需要在 Cloudflare Pages 專案設定 → 變數與機密 額外加一個(不用是 Secret,一般變數即可):
+//   GOOGLE_CLOUD_PROJECT_ID = 這把服務帳號所屬的 Google Cloud 專案 ID
+// GOOGLE_SERVICE_ACCOUNT_KEY 沿用現有的(讀 Sheet 那把),但這把服務帳號的 Google Cloud 專案
+// 需要額外「啟用 Vertex AI API」,並且這個服務帳號要有 Vertex AI 的存取權限(角色:Vertex AI User)。
 
-const GEMINI_MODEL = "gemini-3.5-flash";
+import { getGoogleAccessToken } from "../../_shared/googleAuth.js";
+
+const VERTEX_MODEL = "gemini-3.5-flash";
+const VERTEX_LOCATION = "global";
 
 function jsonResponse(data, status) {
   return new Response(JSON.stringify(data), { status: status || 200, headers: { "Content-Type": "application/json" } });
@@ -32,7 +38,8 @@ ${rowLines}
 }
 
 export async function onRequestPost({ request, env }) {
-  if (!env.GEMINI_API_KEY) return jsonResponse({ error: "尚未設定 GEMINI_API_KEY。" }, 500);
+  if (!env.GOOGLE_SERVICE_ACCOUNT_KEY) return jsonResponse({ error: "尚未設定 GOOGLE_SERVICE_ACCOUNT_KEY。" }, 500);
+  if (!env.GOOGLE_CLOUD_PROJECT_ID) return jsonResponse({ error: "尚未設定 GOOGLE_CLOUD_PROJECT_ID。" }, 500);
 
   let body;
   try {
@@ -45,29 +52,43 @@ export async function onRequestPost({ request, env }) {
     return jsonResponse({ error: "缺少 totals 或 rows,無法產生分析。" }, 400);
   }
 
-  const prompt = buildPrompt({ brandName, periodLabel, roasTarget: roasTarget || 3, totals, rows });
-
-  let geminiRes;
+  let serviceAccount;
   try {
-    geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+    serviceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_KEY);
+  } catch {
+    return jsonResponse({ error: "GOOGLE_SERVICE_ACCOUNT_KEY 不是合法的 JSON。" }, 500);
+  }
+
+  let accessToken;
+  try {
+    accessToken = await getGoogleAccessToken(serviceAccount, "https://www.googleapis.com/auth/cloud-platform");
+  } catch (e) {
+    return jsonResponse({ error: "跟 Google 驗證失敗:" + e.message }, 502);
+  }
+
+  const prompt = buildPrompt({ brandName, periodLabel, roasTarget: roasTarget || 3, totals, rows });
+  const url = `https://aiplatform.googleapis.com/v1/projects/${env.GOOGLE_CLOUD_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_MODEL}:generateContent`;
+
+  let vertexRes;
+  try {
+    vertexRes = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }] }),
     });
   } catch (e) {
-    return jsonResponse({ error: "呼叫 Gemini API 網路請求失敗:" + e.message }, 502);
+    return jsonResponse({ error: "呼叫 Vertex AI 網路請求失敗:" + e.message }, 502);
   }
 
-  const geminiJson = await geminiRes.json().catch(() => null);
-  if (!geminiRes.ok || !geminiJson) {
-    const msg = (geminiJson && geminiJson.error && geminiJson.error.message) || `HTTP ${geminiRes.status}`;
-    return jsonResponse({ error: "Gemini API 回應錯誤:" + msg }, 502);
+  const vertexJson = await vertexRes.json().catch(() => null);
+  if (!vertexRes.ok || !vertexJson) {
+    const msg = (vertexJson && vertexJson.error && vertexJson.error.message) || `HTTP ${vertexRes.status}`;
+    return jsonResponse({ error: "Vertex AI 回應錯誤:" + msg }, 502);
   }
 
-  const rawText = ((geminiJson.candidates || [])[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
-  if (!rawText) return jsonResponse({ error: "Gemini 沒有回傳任何內容(可能被安全設定擋下)。" }, 502);
+  const rawText = ((vertexJson.candidates || [])[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+  if (!rawText) return jsonResponse({ error: "Vertex AI 沒有回傳任何內容(可能被安全設定擋下)。" }, 502);
 
-  // Gemini 偶爾還是會包一層 ```json ... ``` 或前後多打幾個字,這裡盡量寬容地把純 JSON 陣列部分抓出來。
   const cleaned = rawText.replace(/^```json\s*|^```\s*|```$/g, "").trim();
   let insights;
   try {
@@ -78,13 +99,13 @@ export async function onRequestPost({ request, env }) {
       try {
         insights = JSON.parse(match[0]);
       } catch {
-        return jsonResponse({ error: "Gemini 回應不是合法 JSON,原始內容:" + cleaned.slice(0, 300) }, 502);
+        return jsonResponse({ error: "Vertex AI 回應不是合法 JSON,原始內容:" + cleaned.slice(0, 300) }, 502);
       }
     } else {
-      return jsonResponse({ error: "Gemini 回應不是合法 JSON,原始內容:" + cleaned.slice(0, 300) }, 502);
+      return jsonResponse({ error: "Vertex AI 回應不是合法 JSON,原始內容:" + cleaned.slice(0, 300) }, 502);
     }
   }
-  if (!Array.isArray(insights)) return jsonResponse({ error: "Gemini 回應格式不是陣列。" }, 502);
+  if (!Array.isArray(insights)) return jsonResponse({ error: "Vertex AI 回應格式不是陣列。" }, 502);
 
   return jsonResponse({ insights });
 }
