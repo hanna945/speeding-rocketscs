@@ -1219,6 +1219,7 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [isEditingInsights, setIsEditingInsights] = useState(false);
+  const [rowJudgments, setRowJudgments] = useState({}); // { 代號: {icon, label} } AI生成的逐代號短判斷,跟insights同一次呼叫產生
   const [editText, setEditText] = useState("");
   const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads, minSpend);
   if (!rows.length) {
@@ -1261,6 +1262,7 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
       if (!res.ok || !data || data.error) throw new Error((data && data.error) || `狀態碼 ${res.status}`);
       if (!Array.isArray(data.insights) || !data.insights.length) throw new Error("AI 沒有回傳有效的分析內容。");
       setAiInsights(data.insights);
+      setRowJudgments(data.rowJudgments || {});
       setIsEditingInsights(false);
     } catch (e) {
       setAiError(e.message || String(e));
@@ -1281,6 +1283,23 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
     });
     setAiInsights(parsed);
     setIsEditingInsights(false);
+  }
+  function editRowJudgment(code) {
+    const current = rowJudgments[code];
+    const input = window.prompt(
+      `設定「${code}」的判斷標籤(格式建議:emoji + 短標籤,例如「🟢 主力成交」「🔴 成本偏高,需重做素材」)。\n留空白會清除這個代號的判斷。`,
+      current ? `${current.icon} ${current.label}` : ""
+    );
+    if (input === null) return;
+    const trimmed = input.trim();
+    if (!trimmed) {
+      const updated = { ...rowJudgments };
+      delete updated[code];
+      setRowJudgments(updated);
+      return;
+    }
+    const m = trimmed.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F?)\s*(.*)$/u);
+    setRowJudgments({ ...rowJudgments, [code]: m ? { icon: m[1], label: m[2] } : { icon: "🟢", label: trimmed } });
   }
   return (
     <div ref={reportRef} className="mal-ad-perf-report">
@@ -1367,7 +1386,7 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
         <table className="mal-table">
           <thead>
             <tr>
-              <th>系列</th><th>花費</th><th>業績</th><th>ROAS</th><th>成交數</th><th>平均CPA</th><th>花費佔比</th>
+              <th>系列</th><th>花費</th><th>業績</th><th>ROAS</th><th>成交數</th><th>平均CPA</th><th>花費佔比</th><th>判斷</th>
             </tr>
           </thead>
           <tbody>
@@ -1390,6 +1409,9 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
                   <td>{fmtInt(r.conversions)}</td>
                   <td>{cpa !== null ? fmtMoney(cpa, currencyCode) : "—"}</td>
                   <td>{r.spendShare.toFixed(1)}%</td>
+                  <td style={{ cursor: "pointer" }} title="點一下可以設定/編輯這個代號的判斷" onClick={() => editRowJudgment(r.code)}>
+                    {rowJudgments[r.code] ? `${rowJudgments[r.code].icon} ${rowJudgments[r.code].label}` : <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>+ 加判斷</span>}
+                  </td>
                 </tr>
               );
             })}
@@ -1401,6 +1423,7 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
               <td className="mal-row-month">{fmtInt(totalConversions)}</td>
               <td className="mal-row-month">{totalConversions > 0 ? fmtMoney(totalSpend / totalConversions, currencyCode) : "—"}</td>
               <td className="mal-row-month">100%</td>
+              <td className="mal-row-month"></td>
             </tr>
           </tbody>
         </table>

@@ -3,7 +3,9 @@
 // (Google 那邊未解決的已知 bug)、又牽涉到 Google Cloud 專案/IAM 權限設定,太複雜。
 // OpenAI 的 API Key 是單純的靜態金鑰(sk- 開頭),申請流程跟這邊呼叫方式都簡單很多。
 //
-// 回傳格式維持跟規則統計版一樣(JSON 陣列,每條 {icon, text}),前端渲染邏輯不用動。
+// 回傳格式:{ insights: [...4條固定結構重點觀察], rowJudgments: { 代號: {icon, label} } }
+// rowJudgments 是逐代號的短判斷(參考H&J週報「各品類投放結構」表格的判斷欄位風格),
+// 前端拿來當「投放成效」表格裡新增的一欄,可以編輯。
 //
 // 需要在 Cloudflare Pages 專案設定 → 變數與機密 新增一個 Secret:
 //   OPENAI_API_KEY = 去 platform.openai.com/api-keys 申請的金鑰(sk- 開頭)
@@ -25,7 +27,7 @@ function buildPrompt({ brandName, periodLabel, roasTarget, totals, rows }) {
 各系列:
 ${rowLines}
 
-固定寫「剛好4條」,順序、角色都固定成這樣(對齊參考的週報格式),不要多也不要少:
+【第一部分:重點觀察】固定寫「剛好4條」,順序、角色都固定成這樣(對齊參考的週報格式),不要多也不要少:
 1. 🏆 開頭:點名 ROAS 最高的系列,說明它花費/業績表現,給一個像「本週絕對黑馬」這種強烈評價。
 2. 💪 開頭:整體 ROAS 對比目標倍數的達標評價(達標就正面肯定,沒達標就點出差距)。
 3. ⚠️ 開頭:點名 ROAS 最低、或明顯落後其他系列的那個(如果全部都表現不錯,改成點出「相對最需要留意」的那個),給具體建議(控制預算/優化素材/停損等)。
@@ -33,7 +35,9 @@ ${rowLines}
 
 每條文字精簡(每條30-50字內),不是逐條複述數字,是給出判斷。每條裡最關鍵的判斷/結論那幾個字,用 **文字** 包起來強調(例如「...是本週絕對黑馬」寫成「...是**本週絕對黑馬**」),不要整句都包,只包最核心那一小段。
 
-只回傳 JSON,格式:{"insights":[{"icon":"🏆","text":"..."},{"icon":"💪","text":"..."},{"icon":"⚠️","text":"..."},{"icon":"📌","text":"..."}]},剛好4個元素,順序就是上面1-4的順序,不要有其他文字。`;
+【第二部分:逐代號判斷】針對「各系列」清單裡的每一個代號,各給一個簡短判斷(參考範例週報「各品類投放結構」表格的判斷欄位風格),格式是「emoji + 4到8字左右的短標籤」,例如「主力成交」「高效率」「有潛力,素材待加強」「成本偏高,需重做素材」——emoji 用 🟢(表現健康/可持續)、🟡(有疑慮但還行/待觀察)、🔴(明顯需要處理)三選一,不要用其他emoji,每個代號都要有,不能漏。
+
+只回傳 JSON,格式:{"insights":[{"icon":"🏆","text":"..."},{"icon":"💪","text":"..."},{"icon":"⚠️","text":"..."},{"icon":"📌","text":"..."}],"rowJudgments":{"代號1":{"icon":"🟢","label":"..."},"代號2":{"icon":"🔴","label":"..."}}},insights剛好4個元素、順序就是1-4的順序,rowJudgments要包含上面列出的每一個代號,不要有其他文字。`;
 }
 
 export async function onRequestPost({ request, env }) {
@@ -83,10 +87,11 @@ export async function onRequestPost({ request, env }) {
   } catch {
     return jsonResponse({ error: "OpenAI 回應不是合法 JSON,原始內容:" + cleaned.slice(0, 300) }, 502);
   }
-  // 要求的是 {"insights":[...]} 這個形狀(OpenAI 的 json_object 模式要求最外層一定是物件,不能直接是陣列),
-  // 但保留萬一模型還是直接回傳陣列的容錯。
+  // 要求的是 {"insights":[...],"rowJudgments":{...}} 這個形狀,但保留萬一模型只回傳陣列的容錯
+  // (退回沒有 rowJudgments 的狀態,前端那欄會是空的,不會整個功能壞掉)。
   const insights = Array.isArray(parsed) ? parsed : parsed.insights;
+  const rowJudgments = Array.isArray(parsed) ? {} : (parsed.rowJudgments || {});
   if (!Array.isArray(insights)) return jsonResponse({ error: "OpenAI 回應格式不是陣列。" }, 502);
 
-  return jsonResponse({ insights });
+  return jsonResponse({ insights, rowJudgments });
 }
