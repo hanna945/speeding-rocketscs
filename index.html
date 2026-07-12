@@ -850,6 +850,18 @@ function DeltaBadge({ value, invert = false }) {
   return <span className={`mal-delta ${cls}`}>{arrow} {Math.abs(value).toFixed(1)}%</span>;
 }
 
+// AI 生成的重點觀察裡,關鍵結論會用 **文字** 標記強調(對齊參考PDF範例裡加粗的效果)——
+// 這裡把這種簡易 markdown 語法解析成真正的粗體,不是整段輸出 **字面上的星號**。
+function renderBoldText(text) {
+  const parts = String(text || "").split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return part ? <React.Fragment key={i}>{part}</React.Fragment> : null;
+  });
+}
+
 function AdThumb({ src, alt }) {
   const [errored, setErrored] = useState(false);
   if (!src || errored) return <div className="mal-thumb mal-thumb-fallback">🖼</div>;
@@ -1040,32 +1052,38 @@ function HorizontalBarChart({ data, formatValue }) {
 // 規則式自動摘要——不是真的 AI(Claude)生成的文字,是根據數字用固定規則組句子,
 // 風格模仿範例報表的 🏆/⚠️/📌 條列重點,但本質是統計規則,不是語言模型理解數據後寫出來的。
 // 如果之後要換成真的 Claude 生成的分析,需要後台設定 Anthropic API 金鑰,現在還沒有。
+// 固定產出「剛好4條」,順序、角色固定(對齊參考的週報格式,也對齊 AI 版prompt的結構),
+// 不是原本那種依條件增減的做法——AI 失敗時退回這版,畫面看起來的結構要跟AI版一致,不會忽長忽短。
 function generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget) {
   if (!rows.length) return [];
-  const insights = [];
   const overallRoas = totalSpend > 0 ? totalRevenue / totalSpend : null;
   const withRoas = rows.filter((r) => r.spend > 0).map((r) => ({ ...r, roas: r.revenue / r.spend }));
-  if (overallRoas !== null) {
-    insights.push({
-      icon: overallRoas >= roasTarget ? "🏆" : "⚠️",
-      text: `整體 ROAS ${overallRoas.toFixed(2)}x,${overallRoas >= roasTarget ? "達標" : "未達標"}(目標 ${roasTarget}x)。`,
-    });
-  }
-  if (withRoas.length) {
-    const best = [...withRoas].sort((a, b) => b.roas - a.roas)[0];
-    insights.push({ icon: "🏆", text: `${best.code} 系列 ROAS ${best.roas.toFixed(2)}x,本期效率最高。` });
-  }
-  const lowRoasRows = withRoas.filter((r) => r.roas < 2).sort((a, b) => a.roas - b.roas);
-  if (lowRoasRows.length) {
-    insights.push({
-      icon: "⚠️",
-      text: `${lowRoasRows.map((r) => r.code).join("、")} ROAS 低於 2x,屬於低效等級,建議檢視素材或調整預算。`,
-    });
-  }
+  const sortedByRoas = [...withRoas].sort((a, b) => b.roas - a.roas);
+  const best = sortedByRoas[0];
+  const worst = sortedByRoas[sortedByRoas.length - 1];
   const highestSpend = [...rows].sort((a, b) => b.spend - a.spend)[0];
-  if (highestSpend) {
-    insights.push({ icon: "📌", text: `${highestSpend.code} 花費佔比最高(${highestSpend.spendShare.toFixed(1)}%),是本期主要花費項目。` });
-  }
+
+  const insights = [];
+  insights.push({
+    icon: "🏆",
+    text: best ? `${best.code} ROAS ${best.roas.toFixed(2)}x,本期**效率最高的系列**。` : "本期沒有可計算 ROAS 的系列資料。",
+  });
+  insights.push({
+    icon: "💪",
+    text: overallRoas !== null
+      ? `整體 ROAS ${overallRoas.toFixed(2)}x,${overallRoas >= roasTarget ? `**達標**(目標 ${roasTarget}x)` : `**未達標**(目標 ${roasTarget}x)`}。`
+      : "本期沒有足夠花費計算整體 ROAS。",
+  });
+  insights.push({
+    icon: "⚠️",
+    text: worst && (!best || worst.code !== best.code)
+      ? `${worst.code} ROAS ${worst.roas.toFixed(2)}x,相對**最需要留意**,建議檢視素材或調整預算。`
+      : "本期各系列表現相對平均,沒有特別需要留意的落後系列。",
+  });
+  insights.push({
+    icon: "📌",
+    text: highestSpend ? `${highestSpend.code} 花費佔比最高(${highestSpend.spendShare.toFixed(1)}%),是**本期主要花費項目**。` : "本期沒有花費資料。",
+  });
   return insights;
 }
 
@@ -1079,6 +1097,18 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
     return;
   }
   const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, HeadingLevel, ShadingType } = D;
+
+  // Word 的 TextRun 不支援行內 markdown,把 **粗體** 標記拆成多段 TextRun,標記的部分給 bold:true。
+  function boldTextRuns(text, size) {
+    return String(text || "")
+      .split(/(\*\*[^*]+\*\*)/g)
+      .filter(Boolean)
+      .map((part) =>
+        part.startsWith("**") && part.endsWith("**")
+          ? new TextRun({ text: part.slice(2, -2), size, bold: true })
+          : new TextRun({ text: part, size })
+      );
+  }
 
   function cardCell(label, value) {
     return new TableCell({
@@ -1156,7 +1186,11 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
             spacing: { after: 150 },
           }),
           ...insights.map(
-            (ins) => new Paragraph({ bullet: { level: 0 }, spacing: { after: 80 }, children: [new TextRun({ text: `${ins.icon} ${ins.text}`, size: 20 })] })
+            (ins) => new Paragraph({
+              bullet: { level: 0 },
+              spacing: { after: 80 },
+              children: [new TextRun({ text: `${ins.icon} `, size: 20 }), ...boldTextRuns(ins.text, 20)],
+            })
           ),
         ],
       },
@@ -1377,7 +1411,7 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
           ) : (
             <ul>
               {displayInsights.map((ins, i) => (
-                <li key={i}><span style={{ marginRight: 6 }}>{ins.icon}</span>{ins.text}</li>
+                <li key={i}><span style={{ marginRight: 6 }}>{ins.icon}</span>{renderBoldText(ins.text)}</li>
               ))}
             </ul>
           )}
