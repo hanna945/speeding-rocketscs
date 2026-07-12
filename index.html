@@ -111,6 +111,10 @@
   .mal-insight-box-title { font-weight: 700; font-size: 13.5px; margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .mal-insight-box ul { margin: 0; padding-left: 20px; }
   .mal-insight-box li { font-size: 13px; line-height: 1.8; }
+  .mal-insight-edit-textarea {
+    width: 100%; box-sizing: border-box; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; line-height: 1.8;
+    padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-raised); resize: vertical;
+  }
   .mal-card-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
   .mal-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 23px; font-weight: 600; margin: 8px 0 9px; }
   /* 週報表儀表板:整體ROAS卡片(達標時用綠底跟其他卡片區隔)、橫條圖、圖例。
@@ -158,6 +162,8 @@
   .mal-row-month { font-family: 'Noto Sans TC', sans-serif; font-weight: 600; }
   .mal-icon-btn { background: none; border: none; cursor: pointer; color: var(--ink-soft); padding: 4px; font-size: 14px; }
   .mal-icon-btn:hover { color: var(--red); }
+  .mal-icon-btn:disabled { opacity: 0.5; cursor: default; }
+  .mal-icon-btn:disabled:hover { color: var(--ink-soft); }
   .mal-ad-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
   .mal-ad-row { display: flex; align-items: center; gap: 14px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 14px; padding: 12px 16px; transition: box-shadow 0.15s ease; }
   .mal-ad-row:hover { box-shadow: 0 3px 12px rgba(60,55,51,0.06); }
@@ -1166,6 +1172,11 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 不在主 App 元件裡面,所以拿不到 brands/activeBrandId 這些畫面狀態,要透過 props 傳進來,不能用 closure 讀。
 function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget }) {
   const reportRef = useRef(null);
+  const [aiInsights, setAiInsights] = useState(null); // null = 還沒生成過,顯示規則統計版當預設
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [isEditingInsights, setIsEditingInsights] = useState(false);
+  const [editText, setEditText] = useState("");
   const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads, MIN_AD_SPEND);
   if (!rows.length) {
     return <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>目前還沒有足夠的資料可以產生投放成效報告。</p>;
@@ -1179,19 +1190,71 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
     return { label: r.code, value: roas, color: tier ? tier.color : "var(--ink-soft)" };
   });
   const insights = generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget);
+  const displayInsights = aiInsights || insights; // 生成過AI版本就顯示AI版,不然退回規則統計版,永遠有東西可以看。
+
+  async function generateAiInsights() {
+    setAiLoading(true);
+    setAiError("");
+    try {
+      const res = await fetch("/api/ai/analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...teamKeyHeaders() },
+        body: JSON.stringify({
+          brandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "",
+          periodLabel,
+          roasTarget,
+          totals: { spend: totalSpend, revenue: totalRevenue, conversions: totalConversions, roas: overallRoas },
+          rows: chartRows.map((r) => ({
+            code: r.code,
+            spend: r.spend,
+            revenue: r.revenue,
+            roas: r.spend > 0 ? r.revenue / r.spend : null,
+            conversions: r.conversions,
+            spendShare: r.spendShare,
+          })),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data || data.error) throw new Error((data && data.error) || `狀態碼 ${res.status}`);
+      if (!Array.isArray(data.insights) || !data.insights.length) throw new Error("Gemini 沒有回傳有效的分析內容。");
+      setAiInsights(data.insights);
+      setIsEditingInsights(false);
+    } catch (e) {
+      setAiError(e.message || String(e));
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function startEditingInsights() {
+    setEditText(displayInsights.map((ins) => `${ins.icon || ""} ${ins.text || ""}`.trim()).join("\n"));
+    setIsEditingInsights(true);
+  }
+  function saveEditedInsights() {
+    const lines = editText.split("\n").map((l) => l.trim()).filter(Boolean);
+    const parsed = lines.map((line) => {
+      const m = line.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F?)\s*(.*)$/u);
+      return m ? { icon: m[1], text: m[2] } : { icon: "📌", text: line };
+    });
+    setAiInsights(parsed);
+    setIsEditingInsights(false);
+  }
   return (
     <div ref={reportRef} className="mal-ad-perf-report">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
         <h2 className="mal-section-title" style={{ marginBottom: 0 }}>投放成效{periodLabel ? `(${periodLabel})` : ""}</h2>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button className="mal-icon-btn" onClick={() => onEditRoasTarget && onEditRoasTarget(activeBrandId)}>
             ✎ ROAS目標
+          </button>
+          <button className="mal-icon-btn" onClick={generateAiInsights} disabled={aiLoading}>
+            {aiLoading ? "🤖 生成中…" : "🤖 AI 分析"}
           </button>
           <button
             className="mal-icon-btn"
             onClick={() =>
               exportAdPerformanceToWord({
-                rows, totalRevenue, totalSpend, totalConversions, overallRoas, roasTarget, periodLabel, currencyCode, insights,
+                rows, totalRevenue, totalSpend, totalConversions, overallRoas, roasTarget, periodLabel, currencyCode, insights: displayInsights,
                 brandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "",
               })
             }
@@ -1200,6 +1263,11 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
           </button>
         </div>
       </div>
+      {aiError && (
+        <p style={{ fontSize: 12, color: "var(--red)", margin: "8px 0 0" }}>
+          AI 分析失敗:{aiError}(下面繼續顯示規則統計版,不影響其他功能)
+        </p>
+      )}
       <div className="mal-cards" style={{ marginBottom: 20 }}>
         <div className="mal-card">
           <div className="mal-card-label">總花費</div>
@@ -1270,14 +1338,41 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
         ))}
       </div>
 
-      {insights.length > 0 && (
+      {displayInsights.length > 0 && (
         <div className="mal-insight-box">
-          <div className="mal-insight-box-title">📋 自動摘要重點<span style={{ fontWeight: 400, fontSize: 11, color: "var(--ink-soft)" }}>(規則統計產生,非 AI 生成文字)</span></div>
-          <ul>
-            {insights.map((ins, i) => (
-              <li key={i}><span style={{ marginRight: 6 }}>{ins.icon}</span>{ins.text}</li>
-            ))}
-          </ul>
+          <div className="mal-insight-box-title">
+            📋 重點觀察
+            <span style={{ fontWeight: 400, fontSize: 11, color: "var(--ink-soft)" }}>
+              ({aiInsights ? "Gemini AI 生成" : "規則統計產生,非 AI 生成文字"})
+            </span>
+            <button
+              className="mal-icon-btn"
+              style={{ marginLeft: "auto", fontSize: 11, padding: "3px 10px" }}
+              onClick={() => (isEditingInsights ? saveEditedInsights() : startEditingInsights())}
+            >
+              {isEditingInsights ? "💾 儲存" : "✎ 編輯"}
+            </button>
+            {isEditingInsights && (
+              <button className="mal-icon-btn" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => setIsEditingInsights(false)}>
+                取消
+              </button>
+            )}
+          </div>
+          {isEditingInsights ? (
+            <textarea
+              className="mal-insight-edit-textarea"
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              rows={Math.max(4, displayInsights.length + 1)}
+              placeholder="一行一條重點,開頭可以打emoji(例如 🏆 xxx),不打也沒關係。"
+            />
+          ) : (
+            <ul>
+              {displayInsights.map((ins, i) => (
+                <li key={i}><span style={{ marginRight: 6 }}>{ins.icon}</span>{ins.text}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>
@@ -3598,6 +3693,7 @@ function MetaAdsLedger() {
                 <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
 
                 <AdPerformanceReport
+                  key={`${activeBrandId}::${focusWeek}`}
                   ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
                   currencyCode={focusWeekData.currency}
                   periodLabel={(() => {
