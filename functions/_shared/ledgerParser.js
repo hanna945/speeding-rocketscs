@@ -36,9 +36,14 @@ export function parseLedgerSheet(matrix, year) {
       for (let k = c + 1; k < c + SEARCH_LIMIT; k++) {
         const label = (row2[k] || "").toString().trim();
         if (colAov === null && label === "平均客單價") colAov = k;
-        if (colSpend === null && label === "廣告費") colSpend = k;
-        if (colProfit === null && label === "帳面利潤") colProfit = k;
-        if (colNetProfit === null && (label === "稅後淨利" || label.startsWith("實際利潤"))) colNetProfit = k;
+        // 廣告費/帳面利潤,原本用精確比對,MOMO、LINE禮物的欄名其實是「廣告費(平台抽成)」,
+        // 門市、經銷的利潤欄名是「帳面利潤:扣貨物成本」「帳面利潤:貨物成本」這種帶冒號後綴的寫法,
+        // 精確比對全部對不上、會落到後面的固定位移量保底(而保底位移量對這幾個代號來說是錯的,
+        // 通常會抓到旁邊的百分比顯示欄,數字很小但不是0,不會被『沒資料』的判斷擋下來)。
+        // 改成 startsWith,只要開頭是這幾個字就算數,涵蓋全部後綴變體。
+        if (colSpend === null && label.startsWith("廣告費")) colSpend = k;
+        if (colProfit === null && label.startsWith("帳面利潤")) colProfit = k;
+        if (colNetProfit === null && (label === "稅後淨利" || label.startsWith("實際利潤") || label.startsWith("真實利潤"))) colNetProfit = k;
       }
       blocks.push({
         code,
