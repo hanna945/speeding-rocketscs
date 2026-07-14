@@ -17,3 +17,4 @@ id = "d283e1d9fa8f4ec1b1a64f2818649cb0"
 # 選用:Google 服務帳號的 JSON 金鑰,設定後可以直接從 Google 試算表同步後台每日收益表(試算表不用公開)。
 # 一定要用「Secret」類型設定,不要寫在這個檔案裡明碼儲存。詳見 README「步驟 7」。
 # GOOGLE_SERVICE_ACCOUNT_KEY 請到 Cloudflare Dashboard 網頁介面設定,不要寫在這裡。
+# touch: 觸發重新部署,套用宥凱(光速代操)的 TEAM_CREDENTIALS
