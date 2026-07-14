@@ -540,9 +540,17 @@ function fbAdsManagerLink(accountId, adIds) {
 // (前台使用者看到的畫面),跟上面 fbAdsManagerLink 那個「後台管理頁」是兩回事。
 // 只對「還在投放中」的廣告顯示這個連結:已停止的一般商業廣告(非政治類)在檔案庫裡不會留檔,連結打開會是空的。
 // 如果這張卡片是合併多支廣告顯示的(UTM 相同、素材不同),只能連到其中第一支的廣告 ID。
-function fbAdLibraryLink(adIds) {
-  if (!adIds || !adIds.length) return null;
-  return `https://www.facebook.com/ads/library/?id=${adIds[0]}`;
+// 之前這裡誤用「Meta 廣告檔案庫」(Ad Library)搜尋廣告ID,連過去常常找不到——
+// 廣告檔案庫用的是它自己一套內部ID系統,不一定跟我們查成效用的廣告ID(ad_id)對得上,
+// 而且原本只在廣告「投放中」才顯示連結(檔案庫通常只收錄目前還在跑的廣告,已停止的一般商業廣告
+// 在檔案庫裡不會留檔,連結打開會是空的)。改用貼文的 effective_object_story_id(格式「粉專ID_貼文ID」,
+// 後端 shopline-proxy 早就有算出來存在 ad.postId,只是前端一直沒有用到)直接組出貼文連結,
+// 不受廣告是否還在投放中影響,呼叫端不用再判斷 active 狀態——跟 H-J repo 的實作對齊,同一套邏輯。
+function fbPostLink(postId) {
+  if (!postId) return null;
+  const parts = postId.split("_");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  return `https://www.facebook.com/${parts[0]}/posts/${parts[1]}`;
 }
 
 // 依「投放中 / 已停止」篩選廣告清單。若資料沒有狀態資訊(active 是 undefined),
@@ -2364,12 +2372,13 @@ function MetaAdsLedger() {
       const isActive = statusMap[row.ad_id] === "ACTIVE";
       const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::" + (isActive ? "on" : "off");
       if (!grouped[groupKey]) {
-        grouped[groupKey] = { utm, names: new Set(), image: "", spend: 0, conversions: 0, revenue: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
+        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
       }
       const g = grouped[groupKey];
       g.names.add(adName);
       g.spend += spend; g.conversions += conversions; g.revenue += revenue;
       if (!g.image && thumbMap[row.ad_id]) g.image = thumbMap[row.ad_id];
+      if (!g.postId && storyIdMap[row.ad_id]) g.postId = storyIdMap[row.ad_id];
       if (campaignMap[row.ad_id]) g.campaigns.add(campaignMap[row.ad_id]);
       if (row.ad_id) g.adIds.add(row.ad_id);
       // 如果這個群組是合併了好幾支廣告(同一個 UTM 追蹤代碼),投放起始時間取「最早」的那個,
@@ -2394,7 +2403,7 @@ function MetaAdsLedger() {
         const campaignList = [...g.campaigns];
         const campaign = campaignList.length ? campaignList.join(" / ") : "(未分類活動)";
         return {
-          name, utm: g.utm, image: g.image, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
+          name, utm: g.utm, image: g.image, postId: g.postId, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
           adCount, rawNames: nameList, active: g.active, campaign, adIds: [...g.adIds], startDate: g.startDate,
           postPublishDate: g.postPublishDate,
         };
@@ -2964,7 +2973,7 @@ function MetaAdsLedger() {
                     const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                     const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                     const fbLink = fbAdsManagerLink(accountId, ad.adIds);
-                    const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
+                    const fbLibLink = fbPostLink(ad.postId);
                     return (
                       <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
                         <AdThumb src={ad.image} alt={ad.name} />
@@ -3663,7 +3672,7 @@ function MetaAdsLedger() {
                   const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                   const names = ad.rawNames && ad.rawNames.length ? ad.rawNames : [ad.name];
                   const resolvedImage = ad.image || "";
-                  const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
+                  const fbLibLink = fbPostLink(ad.postId);
                   const fbLink = fbAdsManagerLink(focusData.accountId, ad.adIds);
                   return (
                     <React.Fragment key={ad.name + i}>
@@ -3837,7 +3846,7 @@ function MetaAdsLedger() {
                     <div className="mal-ad-list">
                       {filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter, adSearchKeyword).slice(0, 10).map((ad, i) => {
                         const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
-                        const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
+                        const fbLibLink = fbPostLink(ad.postId);
                         const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                         const fbLink = fbAdsManagerLink(focusWeekData.accountId, ad.adIds);
                         return (
@@ -3993,7 +4002,7 @@ function MetaAdsLedger() {
                 </div>
                 <div className="mal-ad-list">
                   {m.ads.map((ad, i) => {
-                  const fbLibLink = ad.active !== false ? fbAdLibraryLink(ad.adIds) : null;
+                  const fbLibLink = fbPostLink(ad.postId);
                     const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                     const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
                     const fbLink = fbAdsManagerLink(months[m.monthKey].accountId, ad.adIds);
