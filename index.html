@@ -3612,6 +3612,19 @@ function MetaAdsLedger() {
                 onOpenImport={() => setShowLedgerModal(true)}
                 periodLabel="月份"
               />
+              <AdPerformanceReport
+                key={`${activeBrandId}::${focusMonth}`}
+                ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
+                currencyCode={focusData.currency}
+                periodLabel={monthLabel(focusMonth)}
+                roasTarget={roasTargets[activeBrandId]}
+                brands={brands}
+                activeBrandId={activeBrandId}
+                onEditRoasTarget={editRoasTarget}
+                minSpend={MIN_AD_SPEND}
+                productNames={productNames[activeBrandId] || {}}
+                onEditProductName={editProductName}
+              />
             </>
           )}
 
@@ -3697,18 +3710,6 @@ function MetaAdsLedger() {
 
               <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
               <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
-
-              <h2 className="mal-section-title">
-                {monthLabel(focusMonth)} 業績比例分析<span className="mal-section-count">(依行銷活動名稱最前面的產品代號自動歸類)</span>
-              </h2>
-              <ProductShareBreakdown
-                ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
-                currencyCode={focusData.currency}
-                prevAds={prevData ? filterAdsByStatus(prevData.ads, adStatusFilter, adSearchKeyword) : null}
-                comparisonLabel="上月"
-                ledgerAgg={focusMonth ? aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until) : null}
-                prevLedgerAgg={focusIdx > 0 ? aggregateLedgerRange(ledgerByMonth, monthDateRange(sortedKeys[focusIdx - 1]).since, monthDateRange(sortedKeys[focusIdx - 1]).until) : null}
-              />
             </>
           )}
 
