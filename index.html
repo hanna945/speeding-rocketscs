@@ -2745,167 +2745,6 @@ function MetaAdsLedger() {
     );
   }
 
-  function ProductShareBreakdown({ ads, currencyCode, prevAds, comparisonLabel = "上期", ledgerAgg, prevLedgerAgg }) {
-    if (!ads || !ads.length) {
-      return <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>目前還沒有足夠的資料可以分析業績比例。</p>;
-    }
-    const { rows, unresolved, excludedTestCount, lowSpendCount, lowSpendAmount, totalRevenue, totalSpend } =
-      buildProductBreakdown(ads, MIN_AD_SPEND);
-    if (!rows.length) {
-      return (
-        <div className="mal-empty">
-          <p>目前的行銷活動名稱前面沒有辨識出「【產品代號】」,系統沒辦法自動統計各產品的業績比例。</p>
-          <p style={{ fontSize: 12.5 }}>
-            建議在行銷活動名稱最前面加上代號,例如「【RS】A+SC｜價值｜圖+影｜空間噴霧｜CPA」,
-            之後新增產品也會自動被抓進來,不需要另外設定。
-          </p>
-        </div>
-      );
-    }
-    // 後台(帳本)每個產品代號的實際營業額——跟 Meta 回報的營業額是兩回事,Meta 是廣告平台自己的歸因統計,
-    // 帳本是實際入帳的營業額,兩者通常對不上。有帳本資料的話,「與{comparisonLabel}比」改成比帳本營業額,
-    // 不再比 Meta 回報的數字,比較才有意義(Meta 回報常常因為歸因方式改變而忽高忽低,不是真的業績變化)。
-    const hasLedger = !!ledgerAgg;
-    const backendRevenueByCode = hasLedger ? ledgerAgg.byCode : {};
-    const prevBackendRevenueByCode = prevLedgerAgg ? prevLedgerAgg.byCode : {};
-    const hasPrevBackend = !!prevLedgerAgg;
-    // 沒有帳本資料時,退回原本的做法:用 Meta 回報營業額比較上一期。
-    const prevBreakdown = prevAds && prevAds.length ? buildProductBreakdown(prevAds, MIN_AD_SPEND) : null;
-    const prevRevenueByCode = {};
-    if (prevBreakdown) prevBreakdown.rows.forEach((r) => { prevRevenueByCode[r.code] = r.revenue; });
-    const hasPrevData = !!prevBreakdown;
-    const chartData = rows.map((r, i) => ({ label: r.code, value: r.revenue, color: colorForIndex(i) }));
-    return (
-      <>
-        <div className="mal-chart-box" style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" }}>
-          <DonutChart data={chartData} />
-          <div style={{ flex: 1, minWidth: 200 }}>
-            {chartData.map((d) => (
-              <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 7 }}>
-                <i className="mal-chart-dot" style={{ background: d.color, width: 10, height: 10, flexShrink: 0 }}></i>
-                <span style={{ fontWeight: 600 }}>{d.label}</span>
-                <span style={{ color: "var(--ink-soft)", marginLeft: "auto", fontFamily: "IBM Plex Mono, monospace" }}>
-                  {totalRevenue > 0 ? ((d.value / totalRevenue) * 100).toFixed(0) : 0}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-        {!hasLedger && (
-          <p style={{ fontSize: 12, color: "var(--ink-soft)", margin: "0 0 10px" }}>
-            這個品牌目前沒有綁定每日收益表(帳本),下面只看得到 Meta 回報的數字,沒有後台實際數據可以對照。
-          </p>
-        )}
-        <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
-          <table className="mal-table">
-            <thead>
-              <tr>
-                <th rowSpan={hasLedger ? 2 : 1}>產品代號</th>
-                <th rowSpan={hasLedger ? 2 : 1}>廣告數</th>
-                <th rowSpan={hasLedger ? 2 : 1}>營業額(Meta 回報)</th>
-                <th rowSpan={hasLedger ? 2 : 1}>廣告費</th>
-                <th rowSpan={hasLedger ? 2 : 1}>廣告費／營業額比</th>
-                {hasLedger ? (
-                  <th colSpan={2} className="mal-backend-group-header" style={{ textAlign: "center" }}>🏦 後台實際數據</th>
-                ) : (
-                  <th rowSpan={1}>與{comparisonLabel}比</th>
-                )}
-              </tr>
-              {hasLedger && (
-                <tr>
-                  <th className="mal-backend-group mal-backend-group-start">帳面營業額(後台)</th>
-                  <th className="mal-backend-group">與{comparisonLabel}比(後台)</th>
-                </tr>
-              )}
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const prevRevenue = hasPrevData ? prevRevenueByCode[r.code] : undefined;
-                const isNewCode = hasPrevData && prevRevenue === undefined;
-                const backend = backendRevenueByCode[r.code];
-                const prevBackend = prevBackendRevenueByCode[r.code];
-                const isNewBackendCode = hasPrevBackend && backend && prevBackend === undefined;
-                return (
-                  <tr key={r.code}>
-                    <td>{r.code}</td>
-                    <td>{r.count}</td>
-                    <td>{fmtMoney(r.revenue, currencyCode)}</td>
-                    <td>{fmtMoney(r.spend, currencyCode)}</td>
-                    <td>{r.costRatio !== null ? `${r.costRatio.toFixed(0)}%` : "—"}</td>
-                    {hasLedger ? (
-                      <>
-                        <td className="mal-backend-group mal-backend-group-start">{backend ? fmtMoney(backend.revenue, currencyCode) : "—"}</td>
-                        <td className="mal-backend-group">
-                          {!backend ? (
-                            "—"
-                          ) : !hasPrevBackend ? (
-                            "—"
-                          ) : isNewBackendCode ? (
-                            <span style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>新代號</span>
-                          ) : (
-                            <DeltaBadge value={pctChange(backend.revenue, prevBackend ? prevBackend.revenue : undefined)} />
-                          )}
-                        </td>
-                      </>
-                    ) : (
-                      <td>
-                        {!hasPrevData ? (
-                          "—"
-                        ) : isNewCode ? (
-                          <span style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>新代號</span>
-                        ) : (
-                          <DeltaBadge value={pctChange(r.revenue, prevRevenue)} />
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-              <tr>
-                <td className="mal-row-month">合計</td>
-                <td></td>
-                <td>{fmtMoney(totalRevenue, currencyCode)}</td>
-                <td>{fmtMoney(totalSpend, currencyCode)}</td>
-                <td>{totalRevenue > 0 ? `${((totalSpend / totalRevenue) * 100).toFixed(0)}%` : "—"}</td>
-                {hasLedger ? (
-                  <>
-                    <td className="mal-backend-group mal-backend-group-start">{fmtMoney(ledgerAgg.overall.revenue, currencyCode)}</td>
-                    <td className="mal-backend-group">
-                      {hasPrevBackend ? <DeltaBadge value={pctChange(ledgerAgg.overall.revenue, prevLedgerAgg.overall.revenue)} /> : "—"}
-                    </td>
-                  </>
-                ) : (
-                  <td>{hasPrevData ? <DeltaBadge value={pctChange(totalRevenue, prevBreakdown.totalRevenue)} /> : "—"}</td>
-                )}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        {(unresolved > 0 || excludedTestCount > 0 || lowSpendCount > 0) && (
-          <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 8, lineHeight: 1.8 }}>
-            {unresolved > 0 && (
-              <p style={{ margin: "4px 0" }}>
-                另外有 {unresolved} 支廣告所屬的行銷活動名稱前面沒有加上「【產品代號】」,沒有被算進上面的分析。
-              </p>
-            )}
-            {excludedTestCount > 0 && (
-              <p style={{ margin: "4px 0" }}>
-                另外有 {excludedTestCount} 支廣告所屬的行銷活動代號含有「test / 測試」字樣,判斷為測試活動,不算進上面的分析。
-              </p>
-            )}
-            {lowSpendCount > 0 && (
-              <p style={{ margin: "4px 0" }}>
-                另外有 {lowSpendCount} 支廣告花費低於 {fmtMoney(MIN_AD_SPEND, currencyCode)} 且沒有轉單金額
-                (合計 {fmtMoney(lowSpendAmount, currencyCode)}),為了避免資料量過大拖慢讀取,沒有算進上面的分析——
-                這是合計金額跟頁面最上方總花費卡片對不起來的原因。
-              </p>
-            )}
-          </div>
-        )}
-      </>
-    );
-  }
-
   function PerformanceBreakdown({ ads, currencyCode, accountId }) {
     const { qualifyingAds, buckets } = groupAdsByPerformance(ads);
     // 預設先把每一組收起來(不然「成效好」動輒上百支廣告,頁面會很長),
@@ -3531,20 +3370,17 @@ function MetaAdsLedger() {
       {apiError && <div className="mal-error">⚠ {apiError}</div>}
 
       <div className="mal-viewmode-switch">
-        <button className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("month")}>
-          📅 每月報表
-        </button>
         <button className={`mal-viewmode-btn ${viewMode === "week" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("week")}>
           🗓 每週報表
         </button>
-        <button className={`mal-viewmode-btn ${viewMode === "insight" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("insight")}>
-          📦 業績比例分析
-        </button>
-        <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
-          🎤 業配分析
+        <button className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("month")}>
+          📅 每月報表
         </button>
         <button className={`mal-viewmode-btn ${viewMode === "daily" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("daily")}>
           📆 每日報表
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
+          🎤 業配分析
         </button>
       </div>
 
@@ -3611,16 +3447,6 @@ function MetaAdsLedger() {
 
           {focusData && (
             <>
-              <h2 className="mal-section-title">
-                {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
-              </h2>
-              <LedgerVsMetaComparison
-                ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
-                currencyCode={focusData.currency}
-                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
-                onOpenImport={() => setShowLedgerModal(true)}
-                periodLabel="月份"
-              />
               <AdPerformanceReport
                 key={`${activeBrandId}::${focusMonth}`}
                 ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
@@ -3634,6 +3460,8 @@ function MetaAdsLedger() {
                 productNames={productNames[activeBrandId] || {}}
                 onEditProductName={editProductName}
               />
+              <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
+              <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
             </>
           )}
 
@@ -3716,9 +3544,21 @@ function MetaAdsLedger() {
                   {showAllAds ? "▲ 收合" : `▼ 顯示全部 ${visibleAds.length} 支廣告`}
                 </button>
               )}
+            </>
+          )}
 
-              <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
-              <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
+          {focusData && (
+            <>
+              <h2 className="mal-section-title">
+                {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
+              </h2>
+              <LedgerVsMetaComparison
+                ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
+                currencyCode={focusData.currency}
+                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+                onOpenImport={() => setShowLedgerModal(true)}
+                periodLabel="月份"
+              />
             </>
           )}
 
@@ -3807,17 +3647,6 @@ function MetaAdsLedger() {
                   </ul>
                 </div>
 
-                <h2 className="mal-section-title">
-                  {weekLabel(focusWeek)} 一頁式正確業績(後台實際 vs Meta 回報)
-                </h2>
-                <LedgerVsMetaComparison
-                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
-                  currencyCode={focusWeekData.currency}
-                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
-                  onOpenImport={() => setShowLedgerModal(true)}
-                  periodLabel="週"
-                />
-
                 <AdPerformanceReport
                   key={`${activeBrandId}::${focusWeek}`}
                   ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
@@ -3835,6 +3664,9 @@ function MetaAdsLedger() {
                   onEditProductName={editProductName}
                   minSpend={MIN_AD_SPEND}
                 />
+
+                <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
+                <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
 
                 {focusWeekData.ads && focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND).length > 0 && (
                   <StatusFilterButtons statusValue={adStatusFilter} onStatusChange={setAdStatusFilter} keyword={adSearchKeyword} onKeywordChange={setAdSearchKeyword} />
@@ -3882,8 +3714,16 @@ function MetaAdsLedger() {
                   </>
                 )}
 
-                <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
-                <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
+                <h2 className="mal-section-title">
+                  {weekLabel(focusWeek)} 一頁式正確業績(後台實際 vs Meta 回報)
+                </h2>
+                <LedgerVsMetaComparison
+                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
+                  currencyCode={focusWeekData.currency}
+                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
+                  onOpenImport={() => setShowLedgerModal(true)}
+                  periodLabel="週"
+                />
 
                 <div className="mal-modal-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
                   <button
@@ -3897,47 +3737,6 @@ function MetaAdsLedger() {
                     🗑 刪除這週資料
                   </button>
                 </div>
-              </>
-            )}
-          </>
-        )
-      )}
-
-      {viewMode === "insight" && (
-        loading ? <p style={{ color: "var(--ink-soft)" }}>載入帳本中…</p> : sortedKeys.length === 0 ? (
-          <div className="mal-empty">
-            <div style={{ fontSize: 30 }}>📦</div>
-            <h3 style={{ fontFamily: "'Noto Serif KR', serif", margin: "12px 0 0" }}>還沒有任何月報表資料</h3>
-            <p>請先連接 Meta API 抓取資料,才能進行業績比例分析。</p>
-          </div>
-        ) : (
-          <>
-            <div className="mal-tabs">
-              {sortedKeys.map((mk) => (
-                <div key={mk} className={`mal-tab ${mk === focusMonth ? "mal-tab-active" : ""}`} onClick={() => setFocusMonth(mk)}>{monthLabel(mk)}</div>
-              ))}
-            </div>
-            {focusData && (
-              <>
-                <h2 className="mal-section-title">
-                  {monthLabel(focusMonth)} 業績比例分析
-                  <span className="mal-section-count">(依行銷活動名稱最前面的產品代號自動歸類)</span>
-                </h2>
-                <p style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: -6, marginBottom: 18, lineHeight: 1.6 }}>
-                  這個分析是根據每支廣告所屬的「行銷活動名稱」最前面的「【產品代號】」做統計比對(例如「【SR】A+SC｜…」會歸類到「SR」),
-                  不是真的看懂圖片/影片內容或文案寫了什麼。產品可以隨時新增,只要行銷活動的命名規則不變(代號放在名稱最前面的括號裡),
-                  新代號會自動被抓出來,不需要手動維護產品清單;如果活動名稱前面沒有加上代號,會顯示「無法辨識」,
-                  不會硬套錯誤的分類——建議統一命名方式,分析才會準確。代號裡含有「test / 測試」字樣的活動會自動排除,不當成產品;
-                  花費低於 {MIN_AD_SPEND} 元且沒有轉單金額的廣告也會排除,避免資料量過大拖慢讀取——這兩種排除都會在下方單獨列出數量。
-                </p>
-                <ProductShareBreakdown
-                  ads={focusData.ads}
-                  currencyCode={focusData.currency}
-                  prevAds={prevData ? prevData.ads : null}
-                  comparisonLabel="上月"
-                  ledgerAgg={focusMonth ? aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until) : null}
-                  prevLedgerAgg={focusIdx > 0 ? aggregateLedgerRange(ledgerByMonth, monthDateRange(sortedKeys[focusIdx - 1]).since, monthDateRange(sortedKeys[focusIdx - 1]).until) : null}
-                />
               </>
             )}
           </>
