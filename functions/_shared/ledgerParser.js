@@ -22,8 +22,14 @@ export function parseLedgerSheet(matrix, year) {
   const row1 = matrix[0] || [];
   const row2 = matrix[1] || [];
   const blocks = [];
-  for (let c = LEDGER_PRODUCT_BLOCK_START_COL; c < Math.max(row1.length, row2.length); c += 1) {
+  // 不再寫死從T欄(index19)開始掃描——這個假設對某些品牌是錯的(例如宥凱的整體總表只到第8欄,
+  // 產品代號第9欄就開始了,寫死19會把前面的代號整批跳過)。改成從第1欄開始逐欄掃描,
+  // 但「帳面營業額」第一次出現一定是整體/全店總表本身(不是產品代號),要跳過不當成代號,
+  // 從第二次出現開始才是真正的產品代號區塊——不管整體總表實際多寬,都能正確定位。
+  let skippedOverall = false;
+  for (let c = 1; c < Math.max(row1.length, row2.length); c += 1) {
     if ((row2[c] || "").toString().trim() === "帳面營業額") {
+      if (!skippedOverall) { skippedOverall = true; continue; }
       const code = (row1[c] || "").toString().trim().toUpperCase();
       if (!code) continue;
       // 蝦皮、MOMO 這兩個代號沒有「平均客單價」這一欄,導致後面欄位整批往左遞補一格,
