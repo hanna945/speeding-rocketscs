@@ -1677,9 +1677,22 @@ function MetaAdsLedger() {
     document.addEventListener("wheel", handleWheel, { passive: false });
     return () => document.removeEventListener("wheel", handleWheel);
   }, []);
-  useEffect(() => { loadAll(activeBrandId); }, [activeBrandId]);
-  useEffect(() => { setWeekInfo(getLastWeekRange()); loadAllWeeks(activeBrandId); }, [activeBrandId]);
-  useEffect(() => { loadLedger(activeBrandId); }, [activeBrandId]);
+  useEffect(() => {
+    let cancelled = false;
+    loadAll(activeBrandId, () => cancelled);
+    return () => { cancelled = true; };
+  }, [activeBrandId]);
+  useEffect(() => {
+    setWeekInfo(getLastWeekRange());
+    let cancelled = false;
+    loadAllWeeks(activeBrandId, () => cancelled);
+    return () => { cancelled = true; };
+  }, [activeBrandId]);
+  useEffect(() => {
+    let cancelled = false;
+    loadLedger(activeBrandId, () => cancelled);
+    return () => { cancelled = true; }; // 品牌再度切換,或元件卸載時,讓這次還沒跑完的請求作廢
+  }, [activeBrandId]);
   useEffect(() => {
     if (HAS_SHARED_STORAGE) return; // Claude Artifact 已經有共用儲存,不需要再測 Cloudflare API
     probeCloud(true).then((status) => {
@@ -1750,15 +1763,17 @@ function MetaAdsLedger() {
     }
   }, [apiToken, rememberToken]);
 
-  async function loadAllWeeks(brandId) {
+  async function loadAllWeeks(brandId, isStale) {
     try {
       const listRes = await storage.list(WEEK_STORAGE_PREFIX);
+      if (isStale && isStale()) return;
       const keys = ((listRes && listRes.keys) || []).filter((k) => {
         const rest = k.slice(WEEK_STORAGE_PREFIX.length);
         return brandId ? rest.startsWith(brandId + "::") : !rest.includes("::");
       });
       const entries = {};
       for (const k of keys) {
+        if (isStale && isStale()) return;
         const res = await storage.get(k);
         if (res && res.value) {
           const rest = k.slice(WEEK_STORAGE_PREFIX.length);
@@ -1766,24 +1781,29 @@ function MetaAdsLedger() {
           entries[wk] = JSON.parse(res.value);
         }
       }
+      if (isStale && isStale()) return;
       setWeeksData(entries);
       const sorted = Object.keys(entries).sort();
       setFocusWeek(sorted.length ? sorted[sorted.length - 1] : null);
     } catch {
-      setWeeksData({});
-      setFocusWeek(null);
+      if (!(isStale && isStale())) {
+        setWeeksData({});
+        setFocusWeek(null);
+      }
     }
   }
 
-  async function loadLedger(brandId) {
+  async function loadLedger(brandId, isStale) {
     try {
       const listRes = await storage.list(LEDGER_STORAGE_PREFIX);
+      if (isStale && isStale()) return; // 品牌已經切換了,這次請求過期,不要再往下做白工
       const keys = ((listRes && listRes.keys) || []).filter((k) => {
         const rest = k.slice(LEDGER_STORAGE_PREFIX.length);
         return brandId ? rest.startsWith(brandId + "::") : !rest.includes("::");
       });
       const entries = {};
       for (const k of keys) {
+        if (isStale && isStale()) return; // 迴圈裡每一輪都檢查,盡早中止
         const res = await storage.get(k);
         if (res && res.value) {
           const rest = k.slice(LEDGER_STORAGE_PREFIX.length);
@@ -1791,9 +1811,13 @@ function MetaAdsLedger() {
           entries[mk] = JSON.parse(res.value);
         }
       }
+      // 最關鍵的一道防線:寫回畫面之前再檢查一次是不是過期了——這支是 async function,
+      // 中間打了好幾次 KV(月份多、代號多的品牌尤其慢),如果使用者這段時間切換了品牌,
+      // 這次撈到的是「舊品牌」的資料,絕對不能在切換之後才寫回去蓋掉新品牌已經載入的畫面。
+      if (isStale && isStale()) return;
       setLedgerByMonth(entries);
     } catch {
-      setLedgerByMonth({});
+      if (!(isStale && isStale())) setLedgerByMonth({});
     }
   }
 
@@ -1852,16 +1876,18 @@ function MetaAdsLedger() {
     }
   }
 
-  async function loadAll(brandId) {
+  async function loadAll(brandId, isStale) {
     setLoading(true); setError(null);
     try {
       const listRes = await storage.list(STORAGE_PREFIX);
+      if (isStale && isStale()) return; // 品牌已經切換了,這次請求過期
       const keys = ((listRes && listRes.keys) || []).filter((k) => {
         const rest = k.slice(STORAGE_PREFIX.length);
         return brandId ? rest.startsWith(brandId + "::") : !rest.includes("::");
       });
       const entries = {};
       for (const k of keys) {
+        if (isStale && isStale()) return;
         const res = await storage.get(k);
         if (res && res.value) {
           const rest = k.slice(STORAGE_PREFIX.length);
@@ -1869,12 +1895,15 @@ function MetaAdsLedger() {
           entries[mk] = JSON.parse(res.value);
         }
       }
+      if (isStale && isStale()) return; // 寫回畫面前最後一道防線,避免切換品牌後被舊資料蓋回去
       setMonths(entries);
       const sorted = Object.keys(entries).sort();
       setFocusMonth(sorted.length ? sorted[sorted.length - 1] : null);
     } catch (e) {
-      setError("讀取先前資料時發生問題,先從空白帳本開始。");
-    } finally { setLoading(false); }
+      if (!(isStale && isStale())) setError("讀取先前資料時發生問題,先從空白帳本開始。");
+    } finally {
+      if (!(isStale && isStale())) setLoading(false);
+    }
   }
 
   async function deleteMonth(mk) {
