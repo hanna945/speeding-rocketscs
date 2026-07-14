@@ -557,9 +557,28 @@ function fbPostLink(postId) {
 // 「純後台廣告」)時,退回連到 Meta 廣告檔案庫用廣告ID查詢——不保證每次都準,因為廣告檔案庫
 // 用的是它自己一套內部ID系統,不一定跟這裡的廣告ID(ad_id)對得上,而且只收錄目前還在投放中
 // 的一般商業廣告,已停止的查不到。只在真的沒有更好的連結可用時,才顯示這個當作備用選項。
-function fbAdLibraryFallbackLink(adIds) {
-  if (!adIds || !adIds.length) return null;
-  return `https://www.facebook.com/ads/library/?id=${adIds[0]}`;
+// 查證後發現:Meta廣告檔案庫的 ?id= 參數用的是它自己一套「Library ID」(ad_archive_id),
+// 跟這裡拿到的廣告ID(Marketing API 的 ad_id)是完全不同的兩套編號系統,設計上本來就對不上,
+// 不是猜錯或抓錯。改成連到「這個粉專在檔案庫裡的所有廣告」(view_all_page_id 參數,用粉專ID,
+// 不是單一廣告ID)——只要同一批廣告資料裡任何一支能查到對應貼文,就能反推出粉專ID沿用,
+// 可靠很多,不用碰到每支廣告各自不同、對不上的廣告ID。
+// pageId 由呼叫端從「同一批廣告資料裡,任何一支有 postId 的」反推出來,傳進來共用。
+function fbAdLibraryFallbackLink(pageId) {
+  if (!pageId) return null;
+  return `https://www.facebook.com/ads/library/?view_all_page_id=${pageId}`;
+}
+
+// 從一批廣告資料裡,找出「任何一支」有 postId 的,取出粉專ID那一段——用來當同一批廣告裡
+// 沒有 postId 的廣告的「廣告檔案庫」備用連結基礎(同一批廣告通常是同一個粉專投放的)。
+function derivePageIdFromAds(ads) {
+  if (!ads || !ads.length) return null;
+  for (const ad of ads) {
+    if (ad.postId) {
+      const pageId = ad.postId.split("_")[0];
+      if (pageId) return pageId;
+    }
+  }
+  return null;
 }
 
 // 依「投放中 / 已停止」篩選廣告清單。若資料沒有狀態資訊(active 是 undefined),
@@ -2756,6 +2775,7 @@ function MetaAdsLedger() {
 
   function PerformanceBreakdown({ ads, currencyCode, accountId }) {
     const { qualifyingAds, buckets } = groupAdsByPerformance(ads);
+    const brandPageId = derivePageIdFromAds(ads);
     // 預設先把每一組收起來(不然「成效好」動輒上百支廣告,頁面會很長),
     // 點卡片跳過去的時候,才把該組展開,同時捲動過去。
     const [collapsed, setCollapsed] = useState({ good: true, normal: true, poor: true, learning: true });
@@ -2837,7 +2857,7 @@ function MetaAdsLedger() {
                           {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
                           {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
                           {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
-                        {!fbLibLink && fbAdLibraryFallbackLink(ad.adIds) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(ad.adIds)} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
+                        {!fbLibLink && fbAdLibraryFallbackLink(brandPageId) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(brandPageId)} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
                         </div>
                         <div className="mal-ad-stats">
                           <div><span>廣告費</span>{fmtMoney(ad.spend, currencyCode)}</div>
@@ -3535,7 +3555,7 @@ function MetaAdsLedger() {
                         {ad.postPublishDate && <span className="mal-ad-startdate">📰 {fmtStartDate(ad.postPublishDate)} 前台發表</span>}
                         {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
                         {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
-                        {!fbLibLink && fbAdLibraryFallbackLink(ad.adIds) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(ad.adIds)} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
+                        {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(focusData.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(focusData.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
                       </div>
                       <div className="mal-ad-stats">
                         <div><span>廣告費</span>{fmtMoney(ad.spend, focusData.currency)}</div>
@@ -3710,7 +3730,7 @@ function MetaAdsLedger() {
                               {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
                               {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
                               {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
-                        {!fbLibLink && fbAdLibraryFallbackLink(ad.adIds) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(ad.adIds)} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
+                        {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(focusWeekData.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(focusWeekData.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
                             </div>
                             <div className="mal-ad-stats">
                               <div><span>廣告費</span>{fmtMoney(ad.spend, focusWeekData.currency)}</div>
@@ -3828,10 +3848,7 @@ function MetaAdsLedger() {
                           {ad.startDate && <span className="mal-ad-startdate">🗓 {fmtStartDate(ad.startDate)} 開始投放</span>}
                           {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
                           {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
-                        {!fbLibLink && fbAdLibraryFallbackLink(ad.adIds) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(ad.adIds)} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
-                        </div>
-                        <div className="mal-ad-stats">
-                          <div><span>廣告費</span>{fmtMoney(ad.spend, currency)}</div>
+                          {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(m.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(m.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
                           <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
                           <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, currency) : "—"}</div>
                           <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, currency) : "—"}</div>
