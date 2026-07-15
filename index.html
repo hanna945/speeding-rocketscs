@@ -80,6 +80,10 @@
   .mal-plan-savestatus { font-family: 'Noto Sans TC', sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
   .mal-plan-block { margin-bottom: 24px; }
   .mal-plan-block-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--blue-deep, var(--blue)); }
+  .mal-plan-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .mal-plan-block-header .mal-plan-block-title { margin-bottom: 0; }
+  .mal-plan-input-category { width: 76px; flex-shrink: 0; text-align: center; }
+  .mal-plan-ai-error { font-size: 12.5px; color: var(--red); background: #F3E4E9; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
   .mal-plan-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
   .mal-plan-card-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .mal-plan-index { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: var(--ink-soft); flex-shrink: 0; width: 20px; }
@@ -2683,9 +2687,11 @@ function MetaAdsLedger() {
   // 專案進度(負責人/預定完成日/進度/狀態燈號/說明)、素材調整方向(狀態燈號+標題+內容)。
   // 900ms 防抖自動儲存,不用按「儲存」按鈕,跟這裡其他設定(ROAS目標等)是不同的儲存模式——
   // 那些是「跳出視窗一次填完」,這裡是「持續編輯的長文字內容」,debounce autosave 比較適合。
-  function WeeklyPlanningSection({ storageKey }) {
+  function WeeklyPlanningSection({ storageKey, ads, currencyCode, roasTarget, periodLabel, brandName, minSpend }) {
     const [data, setData] = useState(null); // null = 載入中
     const [saveStatus, setSaveStatus] = useState("");
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiError, setAiError] = useState("");
     const saveTimerRef = useRef(null);
 
     useEffect(() => {
@@ -2716,6 +2722,58 @@ function MetaAdsLedger() {
       }, 900);
     }
 
+    // AI分析:沿用「投放成效」同一套 buildProductBreakdown 邏輯算出逐代號數據,
+    // 送去跟「投放成效」共用同一支 OpenAI 金鑰的另一支後端(material-issues.js,職責不同、金鑰共用),
+    // 請AI挑出「值得下週特別調整」的系列,寫成標題+數據佐證+建議方向。是「新增建議草稿」進現有清單,
+    // 不會清掉使用者已經手動寫好/編輯過的項目,AI生成的項目使用者一樣可以編輯或刪除。
+    async function runAiMaterialAnalysis() {
+      if (!data) return;
+      setAiLoading(true);
+      setAiError("");
+      try {
+        const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads || [], minSpend || 500);
+        if (!rows.length) throw new Error("目前沒有足夠的資料可以分析。");
+        const totalConversions = rows.reduce((s, r) => s + r.conversions, 0);
+        const res = await fetch("/api/ai/material-issues", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...teamKeyHeaders() },
+          body: JSON.stringify({
+            brandName: brandName || "",
+            periodLabel,
+            roasTarget: roasTarget || 3,
+            totals: { spend: totalSpend, revenue: totalRevenue, conversions: totalConversions, roas: totalSpend > 0 ? totalRevenue / totalSpend : null },
+            rows: rows.map((r) => ({
+              code: r.code,
+              spend: r.spend,
+              revenue: r.revenue,
+              roas: r.spend > 0 && r.revenue > 0 ? r.revenue / r.spend : null,
+              conversions: r.conversions,
+              spendShare: totalSpend > 0 ? (r.spend / totalSpend) * 100 : 0,
+            })),
+          }),
+        });
+        const resData = await res.json().catch(() => null);
+        if (!res.ok || !resData || resData.error) throw new Error((resData && resData.error) || `狀態碼 ${res.status}`);
+        if (!Array.isArray(resData.materialIssues)) throw new Error("AI 沒有回傳有效的分析內容。");
+        if (!resData.materialIssues.length) {
+          setAiError("這段期間沒有挑出特別需要調整的系列,可能整體表現都還算健康。");
+          return;
+        }
+        const newItems = resData.materialIssues.map((it) => ({
+          id: Date.now() + Math.random(),
+          title: it.title || "",
+          status: it.status === "red" || it.status === "yellow" || it.status === "green" ? it.status : "red",
+          category: it.category || "",
+          content: it.content || "",
+        }));
+        scheduleSave({ ...data, materialIssues: [...data.materialIssues, ...newItems] });
+      } catch (e) {
+        setAiError(e.message || String(e));
+      } finally {
+        setAiLoading(false);
+      }
+    }
+
     if (!data) return <p style={{ color: "var(--ink-soft)", fontSize: 13, marginTop: 32 }}>載入報告中…</p>;
 
     const STATUS_OPTIONS = [
@@ -2743,7 +2801,7 @@ function MetaAdsLedger() {
       scheduleSave({ ...data, projects: data.projects.filter((it) => it.id !== id) });
     }
     function addMaterialIssue() {
-      scheduleSave({ ...data, materialIssues: [...data.materialIssues, { id: Date.now(), title: "", status: "red", content: "" }] });
+      scheduleSave({ ...data, materialIssues: [...data.materialIssues, { id: Date.now(), title: "", status: "red", category: "", content: "" }] });
     }
     function updateMaterialIssue(id, field, value) {
       scheduleSave({ ...data, materialIssues: data.materialIssues.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
@@ -2796,13 +2854,20 @@ function MetaAdsLedger() {
         </div>
 
         <div className="mal-plan-block">
-          <div className="mal-plan-block-title">素材調整方向</div>
+          <div className="mal-plan-block-header">
+            <div className="mal-plan-block-title">素材調整方向</div>
+            <button className="mal-icon-btn" onClick={runAiMaterialAnalysis} disabled={aiLoading || !ads}>
+              {aiLoading ? "🤖 分析中…" : "🤖 AI 分析"}
+            </button>
+          </div>
+          {aiError && <p className="mal-plan-ai-error">⚠ {aiError}</p>}
           {data.materialIssues.map((m) => (
             <div className="mal-plan-card" key={m.id}>
               <div className="mal-plan-card-row">
                 <select className="mal-plan-select" value={m.status} onChange={(e) => updateMaterialIssue(m.id, "status", e.target.value)}>
                   {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
+                <input className="mal-plan-input mal-plan-input-category" placeholder="分類" value={m.category || ""} onChange={(e) => updateMaterialIssue(m.id, "category", e.target.value)} />
                 <input className="mal-plan-input mal-plan-input-title" placeholder="標題(例如:SR涼感衣吃掉最大預算,CPA偏高)" value={m.title} onChange={(e) => updateMaterialIssue(m.id, "title", e.target.value)} />
                 <button className="mal-plan-remove" onClick={() => removeMaterialIssue(m.id)} title="刪除">✕</button>
               </div>
@@ -3763,7 +3828,16 @@ function MetaAdsLedger() {
                 onOpenImport={() => setShowLedgerModal(true)}
                 periodLabel="月份"
               />
-              <WeeklyPlanningSection storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`} key={`monthplan::${activeBrandId}::${focusMonth}`} />
+              <WeeklyPlanningSection
+                storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`}
+                key={`monthplan::${activeBrandId}::${focusMonth}`}
+                ads={focusData.ads}
+                currencyCode={focusData.currency}
+                roasTarget={roasTargets[activeBrandId]}
+                periodLabel={monthLabel(focusMonth)}
+                brandName={(brands.find((b) => b.id === activeBrandId) || {}).name || ""}
+                minSpend={MIN_AD_SPEND}
+              />
             </>
           )}
 
@@ -3930,7 +4004,20 @@ function MetaAdsLedger() {
                   onOpenImport={() => setShowLedgerModal(true)}
                   periodLabel="週"
                 />
-                <WeeklyPlanningSection storageKey={`weekly-plan:${activeBrandId}::${focusWeek}`} key={`weekplan::${activeBrandId}::${focusWeek}`} />
+                <WeeklyPlanningSection
+                  storageKey={`weekly-plan:${activeBrandId}::${focusWeek}`}
+                  key={`weekplan::${activeBrandId}::${focusWeek}`}
+                  ads={focusWeekData.ads}
+                  currencyCode={focusWeekData.currency}
+                  roasTarget={roasTargets[activeBrandId]}
+                  periodLabel={(() => {
+                    const r = weekDateRange(focusWeek);
+                    const fmtMD = (iso) => { const [, m, d] = iso.split("-"); return `${Number(m)}/${Number(d)}`; };
+                    return `${fmtMD(r.since)} - ${fmtMD(r.until)}`;
+                  })()}
+                  brandName={(brands.find((b) => b.id === activeBrandId) || {}).name || ""}
+                  minSpend={MIN_AD_SPEND}
+                />
 
                 <div className="mal-modal-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
                   <button
