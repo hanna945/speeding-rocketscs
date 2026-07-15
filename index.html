@@ -77,6 +77,23 @@
   .mal-notice { background: #EEF1E4; border: 1px solid #D8E0C8; color: #5C6B41; font-size: 13px; padding: 10px 16px; border-radius: 10px; margin-bottom: 16px; }
   .mal-error { background: #F3E4E9; border: 1px solid #E3C3D0; color: #8B4A63; font-size: 13px; padding: 10px 16px; border-radius: 10px; margin-bottom: 16px; }
   .mal-empty { border: 1.5px dashed var(--rule); border-radius: 16px; padding: 56px 24px; text-align: center; background: var(--paper-raised); }
+  .mal-plan-savestatus { font-family: 'Noto Sans TC', sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
+  .mal-plan-block { margin-bottom: 24px; }
+  .mal-plan-block-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--blue-deep, var(--blue)); }
+  .mal-plan-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+  .mal-plan-card-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .mal-plan-index { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: var(--ink-soft); flex-shrink: 0; width: 20px; }
+  .mal-plan-input { font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); }
+  .mal-plan-input-title { flex: 1; font-weight: 600; }
+  .mal-plan-select { font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; padding: 7px 8px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); flex-shrink: 0; }
+  .mal-plan-remove { flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; font-size: 12px; }
+  .mal-plan-remove:hover { background: #F3E4E9; border-color: var(--red); color: var(--red); }
+  .mal-plan-card-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 8px; }
+  .mal-plan-textarea { width: 100%; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); resize: vertical; box-sizing: border-box; line-height: 1.6; }
+  @media (max-width: 560px) {
+    .mal-plan-card-row { flex-wrap: wrap; }
+    .mal-plan-input-title { width: 100%; order: -1; margin-bottom: 4px; }
+  }
   .mal-empty p { color: var(--ink-soft); font-size: 14px; max-width: 440px; margin: 10px auto 20px; line-height: 1.6; }
   .mal-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 20px; }
   .mal-brand-switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -2661,6 +2678,143 @@ function MetaAdsLedger() {
   // 產品代號完全依實際行銷活動名稱動態產生——新增產品時只要照同一套命名規則建立行銷活動,
   // 不需要在系統裡手動登記新產品,代號就會自動出現在分析裡。
   // 「一頁式正確業績」比對區塊:後台每日收益表匯入後的實際營收/廣告費,vs. Meta 回報的轉單金額,依產品代號逐一比對落差。
+  // 週報告 / 下週規劃區塊——每個品牌、每個週期(週/月)各自獨立一份,存在KV,使用者自己編輯,
+  // 不是系統自動產生的。三個子區塊對應 Hanna 提供的範例格式:下週操作方向(編號+標題+說明)、
+  // 專案進度(負責人/預定完成日/進度/狀態燈號/說明)、素材調整方向(狀態燈號+標題+內容)。
+  // 900ms 防抖自動儲存,不用按「儲存」按鈕,跟這裡其他設定(ROAS目標等)是不同的儲存模式——
+  // 那些是「跳出視窗一次填完」,這裡是「持續編輯的長文字內容」,debounce autosave 比較適合。
+  function WeeklyPlanningSection({ storageKey }) {
+    const [data, setData] = useState(null); // null = 載入中
+    const [saveStatus, setSaveStatus] = useState("");
+    const saveTimerRef = useRef(null);
+
+    useEffect(() => {
+      let cancelled = false;
+      setData(null);
+      (async () => {
+        const res = await storage.get(storageKey).catch(() => null);
+        if (cancelled) return;
+        if (res && res.value) {
+          try {
+            setData(JSON.parse(res.value));
+            return;
+          } catch {}
+        }
+        setData({ actionItems: [], projects: [], materialIssues: [] });
+      })();
+      return () => { cancelled = true; };
+    }, [storageKey]);
+
+    function scheduleSave(next) {
+      setData(next);
+      setSaveStatus("編輯中…");
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(async () => {
+        await storage.set(storageKey, JSON.stringify(next)).catch(() => {});
+        setSaveStatus("已儲存 ✓");
+        setTimeout(() => setSaveStatus(""), 2000);
+      }, 900);
+    }
+
+    if (!data) return <p style={{ color: "var(--ink-soft)", fontSize: 13, marginTop: 32 }}>載入報告中…</p>;
+
+    const STATUS_OPTIONS = [
+      { value: "green", label: "🟢 照計畫" },
+      { value: "yellow", label: "🟡 有風險" },
+      { value: "red", label: "🔴 已落後/卡住" },
+    ];
+
+    function addActionItem() {
+      scheduleSave({ ...data, actionItems: [...data.actionItems, { id: Date.now(), title: "", description: "" }] });
+    }
+    function updateActionItem(id, field, value) {
+      scheduleSave({ ...data, actionItems: data.actionItems.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
+    }
+    function removeActionItem(id) {
+      scheduleSave({ ...data, actionItems: data.actionItems.filter((it) => it.id !== id) });
+    }
+    function addProject() {
+      scheduleSave({ ...data, projects: [...data.projects, { id: Date.now(), name: "", owner: "", dueDate: "", progress: "", status: "green", description: "" }] });
+    }
+    function updateProject(id, field, value) {
+      scheduleSave({ ...data, projects: data.projects.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
+    }
+    function removeProject(id) {
+      scheduleSave({ ...data, projects: data.projects.filter((it) => it.id !== id) });
+    }
+    function addMaterialIssue() {
+      scheduleSave({ ...data, materialIssues: [...data.materialIssues, { id: Date.now(), title: "", status: "red", content: "" }] });
+    }
+    function updateMaterialIssue(id, field, value) {
+      scheduleSave({ ...data, materialIssues: data.materialIssues.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
+    }
+    function removeMaterialIssue(id) {
+      scheduleSave({ ...data, materialIssues: data.materialIssues.filter((it) => it.id !== id) });
+    }
+
+    return (
+      <>
+        <h2 className="mal-section-title">
+          📋 週報告{saveStatus && <span className="mal-plan-savestatus"> · {saveStatus}</span>}
+        </h2>
+
+        <div className="mal-plan-block">
+          <div className="mal-plan-block-title">下週操作方向</div>
+          {data.actionItems.map((item, i) => (
+            <div className="mal-plan-card" key={item.id}>
+              <div className="mal-plan-card-row">
+                <span className="mal-plan-index">{String(i + 1).padStart(2, "0")}</span>
+                <input className="mal-plan-input mal-plan-input-title" placeholder="標題(例如:預算優先轉往價值型)" value={item.title} onChange={(e) => updateActionItem(item.id, "title", e.target.value)} />
+                <button className="mal-plan-remove" onClick={() => removeActionItem(item.id)} title="刪除">✕</button>
+              </div>
+              <textarea className="mal-plan-textarea" placeholder="說明…" rows={2} value={item.description} onChange={(e) => updateActionItem(item.id, "description", e.target.value)} />
+            </div>
+          ))}
+          <button className="mal-btn" onClick={addActionItem}>+ 新增方向</button>
+        </div>
+
+        <div className="mal-plan-block">
+          <div className="mal-plan-block-title">專案進度</div>
+          {data.projects.map((p, i) => (
+            <div className="mal-plan-card" key={p.id}>
+              <div className="mal-plan-card-row">
+                <input className="mal-plan-input mal-plan-input-title" placeholder={`項目 ${i + 1}｜例如:廣告投放重新調整`} value={p.name} onChange={(e) => updateProject(p.id, "name", e.target.value)} />
+                <select className="mal-plan-select" value={p.status} onChange={(e) => updateProject(p.id, "status", e.target.value)}>
+                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+                <button className="mal-plan-remove" onClick={() => removeProject(p.id)} title="刪除">✕</button>
+              </div>
+              <div className="mal-plan-card-fields">
+                <input className="mal-plan-input" placeholder="負責人" value={p.owner} onChange={(e) => updateProject(p.id, "owner", e.target.value)} />
+                <input className="mal-plan-input" placeholder="預定完成日" value={p.dueDate} onChange={(e) => updateProject(p.id, "dueDate", e.target.value)} />
+                <input className="mal-plan-input" placeholder="目前進度(例如:100% 或 第一階段完成)" value={p.progress} onChange={(e) => updateProject(p.id, "progress", e.target.value)} />
+              </div>
+              <textarea className="mal-plan-textarea" placeholder="說明…" rows={2} value={p.description} onChange={(e) => updateProject(p.id, "description", e.target.value)} />
+            </div>
+          ))}
+          <button className="mal-btn" onClick={addProject}>+ 新增專案項目</button>
+        </div>
+
+        <div className="mal-plan-block">
+          <div className="mal-plan-block-title">素材調整方向</div>
+          {data.materialIssues.map((m) => (
+            <div className="mal-plan-card" key={m.id}>
+              <div className="mal-plan-card-row">
+                <select className="mal-plan-select" value={m.status} onChange={(e) => updateMaterialIssue(m.id, "status", e.target.value)}>
+                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+                <input className="mal-plan-input mal-plan-input-title" placeholder="標題(例如:SR涼感衣吃掉最大預算,CPA偏高)" value={m.title} onChange={(e) => updateMaterialIssue(m.id, "title", e.target.value)} />
+                <button className="mal-plan-remove" onClick={() => removeMaterialIssue(m.id)} title="刪除">✕</button>
+              </div>
+              <textarea className="mal-plan-textarea" placeholder="數據、問題點、建議方向…(可以換行分段)" rows={4} value={m.content} onChange={(e) => updateMaterialIssue(m.id, "content", e.target.value)} />
+            </div>
+          ))}
+          <button className="mal-btn" onClick={addMaterialIssue}>+ 新增素材問題</button>
+        </div>
+      </>
+    );
+  }
+
   function LedgerVsMetaComparison({ ads, currencyCode, ledgerAgg, onOpenImport, periodLabel }) {
     if (!ledgerAgg) {
       return (
@@ -3609,6 +3763,7 @@ function MetaAdsLedger() {
                 onOpenImport={() => setShowLedgerModal(true)}
                 periodLabel="月份"
               />
+              <WeeklyPlanningSection storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`} key={`monthplan::${activeBrandId}::${focusMonth}`} />
             </>
           )}
 
@@ -3775,6 +3930,7 @@ function MetaAdsLedger() {
                   onOpenImport={() => setShowLedgerModal(true)}
                   periodLabel="週"
                 />
+                <WeeklyPlanningSection storageKey={`weekly-plan:${activeBrandId}::${focusWeek}`} key={`weekplan::${activeBrandId}::${focusWeek}`} />
 
                 <div className="mal-modal-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
                   <button
