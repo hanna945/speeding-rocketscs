@@ -2726,6 +2726,8 @@ function MetaAdsLedger() {
     // 送去跟「投放成效」共用同一支 OpenAI 金鑰的另一支後端(material-issues.js,職責不同、金鑰共用),
     // 請AI挑出「值得下週特別調整」的系列,寫成標題+數據佐證+建議方向。是「新增建議草稿」進現有清單,
     // 不會清掉使用者已經手動寫好/編輯過的項目,AI生成的項目使用者一樣可以編輯或刪除。
+    // 「下週操作方向」「素材調整方向」兩個子區塊的AI按鈕都呼叫這同一個函式——同一份期間數據,
+    // 沒必要因為使用者按了兩個不同按鈕就打兩次OpenAI,拿到回應後兩個子區塊會一起更新。
     async function runAiMaterialAnalysis() {
       if (!data) return;
       setAiLoading(true);
@@ -2754,19 +2756,30 @@ function MetaAdsLedger() {
         });
         const resData = await res.json().catch(() => null);
         if (!res.ok || !resData || resData.error) throw new Error((resData && resData.error) || `狀態碼 ${res.status}`);
-        if (!Array.isArray(resData.materialIssues)) throw new Error("AI 沒有回傳有效的分析內容。");
-        if (!resData.materialIssues.length) {
-          setAiError("這段期間沒有挑出特別需要調整的系列,可能整體表現都還算健康。");
+        const newActionItems = Array.isArray(resData.actionItems)
+          ? resData.actionItems.map((it) => ({ id: Date.now() + Math.random(), title: it.title || "", description: it.description || "" }))
+          : [];
+        const newMaterialIssues = Array.isArray(resData.materialIssues)
+          ? resData.materialIssues.map((it) => ({
+              id: Date.now() + Math.random(),
+              title: it.title || "",
+              status: it.status === "red" || it.status === "yellow" || it.status === "green" ? it.status : "red",
+              category: it.category || "",
+              content: it.content || "",
+            }))
+          : [];
+        if (!newActionItems.length && !newMaterialIssues.length) {
+          setAiError("AI 沒有回傳有效的分析內容,可能是資料量不足,可以稍後再試。");
           return;
         }
-        const newItems = resData.materialIssues.map((it) => ({
-          id: Date.now() + Math.random(),
-          title: it.title || "",
-          status: it.status === "red" || it.status === "yellow" || it.status === "green" ? it.status : "red",
-          category: it.category || "",
-          content: it.content || "",
-        }));
-        scheduleSave({ ...data, materialIssues: [...data.materialIssues, ...newItems] });
+        scheduleSave({
+          ...data,
+          actionItems: [...data.actionItems, ...newActionItems],
+          materialIssues: [...data.materialIssues, ...newMaterialIssues],
+        });
+        if (!newMaterialIssues.length) {
+          setAiError("這段期間沒有挑出特別需要調整的系列(素材調整方向沒有新增項目),可能整體表現都還算健康——下週操作方向已經正常生成。");
+        }
       } catch (e) {
         setAiError(e.message || String(e));
       } finally {
@@ -2815,9 +2828,38 @@ function MetaAdsLedger() {
         <h2 className="mal-section-title">
           📋 週報告{saveStatus && <span className="mal-plan-savestatus"> · {saveStatus}</span>}
         </h2>
+        {aiError && <p className="mal-plan-ai-error">⚠ {aiError}</p>}
 
         <div className="mal-plan-block">
-          <div className="mal-plan-block-title">下週操作方向</div>
+          <div className="mal-plan-block-header">
+            <div className="mal-plan-block-title">素材調整方向</div>
+            <button className="mal-icon-btn" onClick={runAiMaterialAnalysis} disabled={aiLoading || !ads}>
+              {aiLoading ? "🤖 分析中…" : "🤖 AI 分析"}
+            </button>
+          </div>
+          {data.materialIssues.map((m) => (
+            <div className="mal-plan-card" key={m.id}>
+              <div className="mal-plan-card-row">
+                <select className="mal-plan-select" value={m.status} onChange={(e) => updateMaterialIssue(m.id, "status", e.target.value)}>
+                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+                <input className="mal-plan-input mal-plan-input-category" placeholder="分類" value={m.category || ""} onChange={(e) => updateMaterialIssue(m.id, "category", e.target.value)} />
+                <input className="mal-plan-input mal-plan-input-title" placeholder="標題(例如:SR涼感衣吃掉最大預算,CPA偏高)" value={m.title} onChange={(e) => updateMaterialIssue(m.id, "title", e.target.value)} />
+                <button className="mal-plan-remove" onClick={() => removeMaterialIssue(m.id)} title="刪除">✕</button>
+              </div>
+              <textarea className="mal-plan-textarea" placeholder="數據、問題點、建議方向…(可以換行分段)" rows={4} value={m.content} onChange={(e) => updateMaterialIssue(m.id, "content", e.target.value)} />
+            </div>
+          ))}
+          <button className="mal-btn" onClick={addMaterialIssue}>+ 新增素材問題</button>
+        </div>
+
+        <div className="mal-plan-block">
+          <div className="mal-plan-block-header">
+            <div className="mal-plan-block-title">下週操作方向</div>
+            <button className="mal-icon-btn" onClick={runAiMaterialAnalysis} disabled={aiLoading || !ads}>
+              {aiLoading ? "🤖 分析中…" : "🤖 AI 分析"}
+            </button>
+          </div>
           {data.actionItems.map((item, i) => (
             <div className="mal-plan-card" key={item.id}>
               <div className="mal-plan-card-row">
@@ -2851,30 +2893,6 @@ function MetaAdsLedger() {
             </div>
           ))}
           <button className="mal-btn" onClick={addProject}>+ 新增專案項目</button>
-        </div>
-
-        <div className="mal-plan-block">
-          <div className="mal-plan-block-header">
-            <div className="mal-plan-block-title">素材調整方向</div>
-            <button className="mal-icon-btn" onClick={runAiMaterialAnalysis} disabled={aiLoading || !ads}>
-              {aiLoading ? "🤖 分析中…" : "🤖 AI 分析"}
-            </button>
-          </div>
-          {aiError && <p className="mal-plan-ai-error">⚠ {aiError}</p>}
-          {data.materialIssues.map((m) => (
-            <div className="mal-plan-card" key={m.id}>
-              <div className="mal-plan-card-row">
-                <select className="mal-plan-select" value={m.status} onChange={(e) => updateMaterialIssue(m.id, "status", e.target.value)}>
-                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-                <input className="mal-plan-input mal-plan-input-category" placeholder="分類" value={m.category || ""} onChange={(e) => updateMaterialIssue(m.id, "category", e.target.value)} />
-                <input className="mal-plan-input mal-plan-input-title" placeholder="標題(例如:SR涼感衣吃掉最大預算,CPA偏高)" value={m.title} onChange={(e) => updateMaterialIssue(m.id, "title", e.target.value)} />
-                <button className="mal-plan-remove" onClick={() => removeMaterialIssue(m.id)} title="刪除">✕</button>
-              </div>
-              <textarea className="mal-plan-textarea" placeholder="數據、問題點、建議方向…(可以換行分段)" rows={4} value={m.content} onChange={(e) => updateMaterialIssue(m.id, "content", e.target.value)} />
-            </div>
-          ))}
-          <button className="mal-btn" onClick={addMaterialIssue}>+ 新增素材問題</button>
         </div>
       </>
     );
