@@ -367,10 +367,12 @@ const localOnlyStorage = {
 const STORAGE_PREFIX = "metaads-month:";
 const WEEK_STORAGE_PREFIX = "metaads-week:";
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
+const WEEKLY_PLAN_PREFIX = "weekly-plan:";
+const MONTHLY_PLAN_PREFIX = "monthly-plan:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
 const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-product-names"]);
-const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX];
+const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
   return SHARED_PREFIXES.some((p) => key.startsWith(p));
@@ -2720,6 +2722,23 @@ function MetaAdsLedger() {
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState("");
     const saveTimerRef = useRef(null);
+    // 待存檔的最新內容——跟 saveTimerRef 分開追蹤,是因為「立即存檔」(flush)要能在計時器
+    // 還沒觸發前,直接把這裡記著的最新資料送出去,不用等900ms。之前的版本只靠setTimeout,
+    // 使用者打完字後如果馬上切換品牌/週期/把App切到背景,計時器根本還沒觸發存檔動作就消失了,
+    // 資料就真的遺失——這是這次修正的根本原因。
+    const pendingSaveRef = useRef(null);
+
+    function flushPendingSave() {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      if (pendingSaveRef.current) {
+        const { key, value } = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        storage.set(key, value).catch(() => {});
+      }
+    }
 
     useEffect(() => {
       let cancelled = false;
@@ -2738,12 +2757,34 @@ function MetaAdsLedger() {
       return () => { cancelled = true; };
     }, [storageKey]);
 
+    // 三層保護,確保「還沒等到900ms就離開」的情境一定會把最新內容存下去:
+    // ①頁面被切到背景/分頁不可見(手機切App、鎖螢幕最常見)②使用者關閉分頁/離開網站
+    // ③這個元件本身被卸載(例如切換品牌或週期,key改變導致React整個重新建立元件實例)。
+    useEffect(() => {
+      function handleVisibilityChange() {
+        if (document.visibilityState === "hidden") flushPendingSave();
+      }
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("beforeunload", flushPendingSave);
+      window.addEventListener("pagehide", flushPendingSave);
+      return () => {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        window.removeEventListener("beforeunload", flushPendingSave);
+        window.removeEventListener("pagehide", flushPendingSave);
+        flushPendingSave();
+      };
+    }, []);
+
     function scheduleSave(next) {
       setData(next);
       setSaveStatus("編輯中…");
+      const value = JSON.stringify(next);
+      pendingSaveRef.current = { key: storageKey, value };
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(async () => {
-        await storage.set(storageKey, JSON.stringify(next)).catch(() => {});
+        saveTimerRef.current = null;
+        pendingSaveRef.current = null;
+        await storage.set(storageKey, value).catch(() => {});
         setSaveStatus("已儲存 ✓");
         setTimeout(() => setSaveStatus(""), 2000);
       }, 900);
