@@ -84,6 +84,7 @@
   .mal-plan-block-header .mal-plan-block-title { margin-bottom: 0; }
   .mal-plan-input-category { width: 76px; flex-shrink: 0; text-align: center; }
   .mal-plan-ai-error { font-size: 12.5px; color: var(--red); background: #F3E4E9; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
+  .mal-combined-ai-row { margin-bottom: 20px; }
   .mal-plan-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
   .mal-plan-card-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .mal-plan-index { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: var(--ink-soft); flex-shrink: 0; width: 20px; }
@@ -334,7 +335,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useRef, useMemo, useImperativeHandle } = React;
 
 // ---------- 共用儲存(Claude Artifact 的 window.storage):團隊資料共用,機密資料(API金鑰等)只留在自己瀏覽器 ----------
 // 如果不是在 Claude Artifact 環境打開(例如直接把檔案存到電腦、用瀏覽器開啟),window.storage 不存在,
@@ -1299,7 +1300,14 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 這支元件原本(另一個對話 session)漏掉了函式宣告那一行,只有內文沒有包起來,會直接造成語法錯誤。
 // 補回宣告——這支元件寫在最外層(跟 roasTier/HorizontalBarChart/exportAdPerformanceToWord 同一層),
 // 不在主 App 元件裡面,所以拿不到 brands/activeBrandId 這些畫面狀態,要透過 props 傳進來,不能用 closure 讀。
-function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, minSpend = 500, productNames = {}, onEditProductName }) {
+// forwardRef + useImperativeHandle:讓外層(週報表/月報表主畫面)可以直接呼叫這個元件內部的
+// generateAiInsights,藉此做出「一個按鈕同時觸發投放成效+週報告兩邊AI分析」的效果——
+// 選這個做法是因為兩邊(這裡、WeeklyPlanningSection)原本各自的AI邏輯、loading/error狀態管理
+// 都已經測過沒問題,用ref讓外部觸發內部既有函式,比整個拆掉重寫、把狀態都提到最外層風險小很多。
+const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
+  { ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, minSpend = 500, productNames = {}, onEditProductName },
+  ref
+) {
   const displayName = (code) => (productNames[code] ? `${code}(${productNames[code]})` : code);
   const reportRef = useRef(null);
   const [aiInsights, setAiInsights] = useState(null); // null = 還沒生成過,顯示規則統計版當預設
@@ -1308,6 +1316,9 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
   const [isEditingInsights, setIsEditingInsights] = useState(false);
   const [rowJudgments, setRowJudgments] = useState({}); // { 代號: {icon, label} } AI生成的逐代號短判斷,跟insights同一次呼叫產生
   const [editText, setEditText] = useState("");
+  // 沒有依賴陣列,每次render都重新指定——保證外部透過ref呼叫時,拿到的一定是包著最新
+  // ads/props的那個版本的generateAiInsights,不會因為閉包捕捉到舊資料而分析錯期間。
+  useImperativeHandle(ref, () => ({ triggerAi: generateAiInsights }));
   const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads, minSpend);
   if (!rows.length) {
     return <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>目前還沒有足夠的資料可以產生投放成效報告。</p>;
@@ -1564,7 +1575,7 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, b
       )}
     </div>
   );
-}
+});
 
 function DonutChart({ data, size = 176, thickness = 30 }) {
   const total = data.reduce((s, d) => s + Math.max(0, d.value), 0);
@@ -1657,6 +1668,19 @@ function MetaAdsLedger() {
   const [autoSyncStatus, setAutoSyncStatus] = useState(null);
   const [ledgerByMonth, setLedgerByMonth] = useState({});
   const [showLedgerModal, setShowLedgerModal] = useState(false);
+  // 「一次AI分析」按鈕用的ref——月報表、週報表各自的「投放成效」「週報告」元件實例是分開的,
+  // 所以要各自一組ref,不能共用(月報表按了不該連動去觸發週報表那邊的分析)。
+  const monthlyAdReportRef = useRef(null);
+  const monthlyPlanRef = useRef(null);
+  const weeklyAdReportRef = useRef(null);
+  const weeklyPlanRef = useRef(null);
+  // 「一次AI分析」共用觸發函式——月報表、週報表的按鈕都呼叫這個,只是傳進來的ref組合不同。
+  // 用Promise.allSettled不是Promise.all:兩邊AI分析本來就是各自獨立的呼叫,其中一個失敗
+  // (例如額度用完)不該擋住另一個正常顯示結果,兩邊各自的loading/error狀態已經各自處理好了。
+  function triggerCombinedAi(adRef, planRef) {
+    if (adRef.current) adRef.current.triggerAi();
+    if (planRef.current) planRef.current.triggerAi();
+  }
   const [ledgerYear, setLedgerYear] = useState(new Date().getFullYear());
   const [ledgerImportLoading, setLedgerImportLoading] = useState(false);
   const [ledgerImportError, setLedgerImportError] = useState(null);
@@ -2687,7 +2711,10 @@ function MetaAdsLedger() {
   // 專案進度(負責人/預定完成日/進度/狀態燈號/說明)、素材調整方向(狀態燈號+標題+內容)。
   // 900ms 防抖自動儲存,不用按「儲存」按鈕,跟這裡其他設定(ROAS目標等)是不同的儲存模式——
   // 那些是「跳出視窗一次填完」,這裡是「持續編輯的長文字內容」,debounce autosave 比較適合。
-  function WeeklyPlanningSection({ storageKey, ads, currencyCode, roasTarget, periodLabel, brandName, minSpend }) {
+  const WeeklyPlanningSection = React.forwardRef(function WeeklyPlanningSection(
+    { storageKey, ads, currencyCode, roasTarget, periodLabel, brandName, minSpend },
+    planRef
+  ) {
     const [data, setData] = useState(null); // null = 載入中
     const [saveStatus, setSaveStatus] = useState("");
     const [aiLoading, setAiLoading] = useState(false);
@@ -2786,6 +2813,10 @@ function MetaAdsLedger() {
         setAiLoading(false);
       }
     }
+
+    // 沒有依賴陣列,每次render都重新指定,理由跟AdPerformanceReport那邊一樣——確保外部觸發時
+    // 拿到的一定是包著最新ads/props的版本。
+    useImperativeHandle(planRef, () => ({ triggerAi: runAiMaterialAnalysis }));
 
     if (!data) return <p style={{ color: "var(--ink-soft)", fontSize: 13, marginTop: 32 }}>載入報告中…</p>;
 
@@ -2896,7 +2927,7 @@ function MetaAdsLedger() {
         </div>
       </>
     );
-  }
+  });
 
   function LedgerVsMetaComparison({ ads, currencyCode, ledgerAgg, onOpenImport, periodLabel }) {
     if (!ledgerAgg) {
@@ -3733,7 +3764,13 @@ function MetaAdsLedger() {
 
           {focusData && (
             <>
+              <div className="mal-combined-ai-row">
+                <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(monthlyAdReportRef, monthlyPlanRef)}>
+                  🤖 一次 AI 分析(投放成效＋週報告)
+                </button>
+              </div>
               <AdPerformanceReport
+                ref={monthlyAdReportRef}
                 key={`${activeBrandId}::${focusMonth}`}
                 ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
                 currencyCode={focusData.currency}
@@ -3847,6 +3884,7 @@ function MetaAdsLedger() {
                 periodLabel="月份"
               />
               <WeeklyPlanningSection
+                ref={monthlyPlanRef}
                 storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`}
                 key={`monthplan::${activeBrandId}::${focusMonth}`}
                 ads={focusData.ads}
@@ -3944,7 +3982,14 @@ function MetaAdsLedger() {
                   </ul>
                 </div>
 
+                <div className="mal-combined-ai-row">
+                  <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(weeklyAdReportRef, weeklyPlanRef)}>
+                    🤖 一次 AI 分析(投放成效＋週報告)
+                  </button>
+                </div>
+
                 <AdPerformanceReport
+                  ref={weeklyAdReportRef}
                   key={`${activeBrandId}::${focusWeek}`}
                   ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
                   currencyCode={focusWeekData.currency}
@@ -4023,6 +4068,7 @@ function MetaAdsLedger() {
                   periodLabel="週"
                 />
                 <WeeklyPlanningSection
+                  ref={weeklyPlanRef}
                   storageKey={`weekly-plan:${activeBrandId}::${focusWeek}`}
                   key={`weekplan::${activeBrandId}::${focusWeek}`}
                   ads={focusWeekData.ads}
