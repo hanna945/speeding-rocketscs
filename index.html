@@ -3426,7 +3426,7 @@ function MetaAdsLedger() {
     if (successCount > 0) {
       setApiNotice(`已自動同步完成:成功更新 ${successCount} 筆資料${errorCount > 0 ? `,${errorCount} 筆失敗(可能是頻率限制,之後再手動抓一次即可)` : ""}。`);
     } else if (errorCount > 0) {
-      setApiError("自動同步失敗,請手動連接 Meta API 重新抓取一次。");
+      setApiError("瀏覽器裡存的個人Token可能已過期,這套前端自動同步失敗了——但這不影響報表資料本身,資料主要來源是後端排程(不需要Token),不用緊張。如果不想再看到這個訊息,可以把下面的「記住Token」「自動同步」關掉。");
     }
   }
 
