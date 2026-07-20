@@ -333,6 +333,32 @@
   body.mal-exporting .mal-perf-section-chevron {
     display: none !important;
   }
+  /* 週報告匯出成PDF/列印時,編輯用的控制項(新增/刪除/AI分析按鈕、存檔狀態文字、立即儲存按鈕)
+     不該出現在正式報告裡,直接隱藏;輸入框/下拉選單/文字框改成看起來像單純文字,不要有邊框跟
+     輸入框底色,不然PDF看起來會像一份還沒填完的表單,不像給老闆看的正式報告。 */
+  body.mal-exporting .mal-plan-remove,
+  body.mal-exporting .mal-plan-block > .mal-btn,
+  body.mal-exporting .mal-plan-title-row > .mal-btn,
+  body.mal-exporting .mal-plan-block-header > .mal-icon-btn,
+  body.mal-exporting .mal-plan-savestatus {
+    display: none !important;
+  }
+  body.mal-exporting .mal-plan-input,
+  body.mal-exporting .mal-plan-textarea,
+  body.mal-exporting .mal-plan-select {
+    border: none !important;
+    background: transparent !important;
+    padding: 2px 0 !important;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  body.mal-exporting .mal-plan-card-row {
+    flex-wrap: wrap;
+  }
+  body.mal-exporting .mal-plan-input-category {
+    width: auto !important;
+    font-weight: 700;
+  }
 </style>
 </head>
 <body>
