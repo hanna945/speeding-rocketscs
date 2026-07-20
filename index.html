@@ -80,6 +80,8 @@
   .mal-plan-savestatus { font-family: 'Noto Sans TC', sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
   .mal-plan-savestatus-error { color: var(--red); font-weight: 700; }
   .mal-plan-load-error { background: #F3E4E9; border: 1px solid #E3C3D0; border-radius: 12px; padding: 14px 16px; margin-top: 20px; color: var(--red); font-size: 13px; line-height: 1.6; }
+  .mal-plan-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 32px 0 16px; flex-wrap: wrap; }
+  .mal-plan-title-row .mal-section-title { margin: 0; }
   .mal-plan-block { margin-bottom: 24px; }
   .mal-plan-block-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--blue-deep, var(--blue)); }
   .mal-plan-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
@@ -2814,26 +2816,42 @@ function MetaAdsLedger() {
       };
     }, []);
 
+    async function performSave(next) {
+      const value = JSON.stringify(next);
+      pendingSaveRef.current = { key: storageKey, value };
+      try {
+        await storageSetStrict(storageKey, value);
+        pendingSaveRef.current = null;
+        setSaveStatus("已儲存 ✓");
+        setTimeout(() => setSaveStatus(""), 2000);
+      } catch (e) {
+        // 特意不清空 pendingSaveRef——存檔失敗時保留這筆待存資料,之後flushPendingSave
+        // (切換分頁/關閉頁面時)還有機會再試一次,不是失敗一次就徹底放棄這筆內容。
+        pendingSaveRef.current = { key: storageKey, value };
+        setSaveStatus(`⚠ 存檔失敗:${e.message || "未知錯誤"}(內容還留在畫面上,但還沒真的存進雲端,請勿關閉頁面,再按一次「立即儲存」重試)`);
+      }
+    }
+
     function scheduleSave(next) {
       setData(next);
       setSaveStatus("編輯中…");
-      const value = JSON.stringify(next);
-      pendingSaveRef.current = { key: storageKey, value };
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(async () => {
+      saveTimerRef.current = setTimeout(() => {
         saveTimerRef.current = null;
-        pendingSaveRef.current = null;
-        try {
-          await storageSetStrict(storageKey, value);
-          setSaveStatus("已儲存 ✓");
-          setTimeout(() => setSaveStatus(""), 2000);
-        } catch (e) {
-          // 特意不清空 pendingSaveRef——存檔失敗時保留這筆待存資料,之後flushPendingSave
-          // (切換分頁/關閉頁面時)還有機會再試一次,不是失敗一次就徹底放棄這筆內容。
-          pendingSaveRef.current = { key: storageKey, value };
-          setSaveStatus(`⚠ 存檔失敗:${e.message || "未知錯誤"}(內容還留在畫面上,但還沒真的存進雲端,請勿關閉頁面,截圖給開發者)`);
-        }
+        performSave(next);
       }, 900);
+    }
+
+    // 明確的「立即儲存」按鈕——跳過900ms的debounce等待,直接存,而且有清楚的成功/失敗畫面回饋。
+    // 自動存檔已經有debounce+分頁切換/關閉時的保護,這顆按鈕是給使用者「我現在就是想親眼確認存到了」
+    // 的明確操作,兩者不衝突,按下這顆的時候就算debounce計時器還在跑,也會被取消、直接用這次的結果。
+    function manualSave() {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      setSaveStatus("儲存中…");
+      performSave(data);
     }
 
     // AI分析:沿用「投放成效」同一套 buildProductBreakdown 邏輯算出逐代號數據,
@@ -2951,11 +2969,14 @@ function MetaAdsLedger() {
 
     return (
       <>
-        <h2 className="mal-section-title">
-          📋 週報告{saveStatus && (
-            <span className={saveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {saveStatus}</span>
-          )}
-        </h2>
+        <div className="mal-plan-title-row">
+          <h2 className="mal-section-title" style={{ margin: 0 }}>
+            📋 週報告{saveStatus && (
+              <span className={saveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {saveStatus}</span>
+            )}
+          </h2>
+          <button className="mal-btn" onClick={manualSave}>💾 立即儲存</button>
+        </div>
         {aiError && <p className="mal-plan-ai-error">⚠ {aiError}</p>}
 
         <div className="mal-plan-block">
