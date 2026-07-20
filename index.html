@@ -78,6 +78,8 @@
   .mal-error { background: #F3E4E9; border: 1px solid #E3C3D0; color: #8B4A63; font-size: 13px; padding: 10px 16px; border-radius: 10px; margin-bottom: 16px; }
   .mal-empty { border: 1.5px dashed var(--rule); border-radius: 16px; padding: 56px 24px; text-align: center; background: var(--paper-raised); }
   .mal-plan-savestatus { font-family: 'Noto Sans TC', sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
+  .mal-plan-savestatus-error { color: var(--red); font-weight: 700; }
+  .mal-plan-load-error { background: #F3E4E9; border: 1px solid #E3C3D0; border-radius: 12px; padding: 14px 16px; margin-top: 20px; color: var(--red); font-size: 13px; line-height: 1.6; }
   .mal-plan-block { margin-bottom: 24px; }
   .mal-plan-block-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--blue-deep, var(--blue)); }
   .mal-plan-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
@@ -459,6 +461,31 @@ const cloudStorage = {
     return await res.json();
   },
 };
+
+// 「嚴格版」存檔——跟上面 storage.set 的差異是:連不上雲端/雲端回錯,這裡會直接把錯誤丟出去,
+// 不會悄悄退回存到本機。只給「週報告」這種使用者主動打字、資料遺失會很有感的功能用;
+// 其他既有功能(月報表/週報表快取等)本來就是靠自動同步機制重新填滿,繼續沿用會悄悄退回本機
+// 的 storage.set,不改,降低這次修正波及其他既有功能的風險。
+async function storageSetStrict(key, value) {
+  if (!isSharedKey(key)) return localOnlyStorage.set(key, value);
+  if (HAS_SHARED_STORAGE) return await window.storage.set(key, value, true);
+  const status = await probeCloud();
+  if (status !== "connected") {
+    throw new Error(status === "unauthorized" ? "登入身份的金鑰不對,雲端拒絕存取。" : "目前連不上雲端資料庫。");
+  }
+  return await cloudStorage.set(key, value); // 特意不 catch——存檔失敗要讓呼叫端知道,不能悄悄吞掉
+}
+// 讀取版的「嚴格模式」,理由跟 storageSetStrict 一樣——原本 storage.get 連不上雲端時會悄悄退回讀本機
+// (通常是空的,尤其換裝置/換瀏覽器一定是空的),畫面看起來會像「資料真的不見了」,實際上只是連線問題。
+async function storageGetStrict(key) {
+  if (!isSharedKey(key)) return localOnlyStorage.get(key);
+  if (HAS_SHARED_STORAGE) return await window.storage.get(key, true);
+  const status = await probeCloud();
+  if (status !== "connected") {
+    throw new Error(status === "unauthorized" ? "登入身份的金鑰不對,雲端拒絕存取。" : "目前連不上雲端資料庫。");
+  }
+  return await cloudStorage.get(key);
+}
 
 const storage = {
   async get(key) {
@@ -2721,6 +2748,7 @@ function MetaAdsLedger() {
     const [saveStatus, setSaveStatus] = useState("");
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState("");
+    const [loadError, setLoadError] = useState("");
     const saveTimerRef = useRef(null);
     // 待存檔的最新內容——跟 saveTimerRef 分開追蹤,是因為「立即存檔」(flush)要能在計時器
     // 還沒觸發前,直接把這裡記著的最新資料送出去,不用等900ms。之前的版本只靠setTimeout,
@@ -2736,23 +2764,34 @@ function MetaAdsLedger() {
       if (pendingSaveRef.current) {
         const { key, value } = pendingSaveRef.current;
         pendingSaveRef.current = null;
-        storage.set(key, value).catch(() => {});
+        // 頁面即將關閉/離開時的最後嘗試,這裡沒辦法再跳UI提示了(頁面都要關了),
+        // 只能盡量送出去,送不出去也沒有更好的辦法,所以這裡維持吞掉錯誤。
+        storageSetStrict(key, value).catch(() => {});
       }
     }
 
     useEffect(() => {
       let cancelled = false;
       setData(null);
+      setLoadError("");
       (async () => {
-        const res = await storage.get(storageKey).catch(() => null);
-        if (cancelled) return;
-        if (res && res.value) {
-          try {
-            setData(JSON.parse(res.value));
-            return;
-          } catch {}
+        try {
+          const res = await storageGetStrict(storageKey);
+          if (cancelled) return;
+          if (res && res.value) {
+            try {
+              setData(JSON.parse(res.value));
+              return;
+            } catch {}
+          }
+          setData({ actionItems: [], projects: [], materialIssues: [] });
+        } catch (e) {
+          if (cancelled) return;
+          // 連不上雲端才會走到這裡(key不存在是正常回傳null,不會丟例外)——這時候不能顯示空白表單,
+          // 因為畫面看起來會像「這期沒資料」,但實際上是「不知道有沒有資料,因為根本連不上去查」,
+          // 兩者天差地遠,不能混為一談。
+          setLoadError(e.message || "連不上雲端資料庫,無法確認這期是否已有內容。");
         }
-        setData({ actionItems: [], projects: [], materialIssues: [] });
       })();
       return () => { cancelled = true; };
     }, [storageKey]);
@@ -2784,9 +2823,16 @@ function MetaAdsLedger() {
       saveTimerRef.current = setTimeout(async () => {
         saveTimerRef.current = null;
         pendingSaveRef.current = null;
-        await storage.set(storageKey, value).catch(() => {});
-        setSaveStatus("已儲存 ✓");
-        setTimeout(() => setSaveStatus(""), 2000);
+        try {
+          await storageSetStrict(storageKey, value);
+          setSaveStatus("已儲存 ✓");
+          setTimeout(() => setSaveStatus(""), 2000);
+        } catch (e) {
+          // 特意不清空 pendingSaveRef——存檔失敗時保留這筆待存資料,之後flushPendingSave
+          // (切換分頁/關閉頁面時)還有機會再試一次,不是失敗一次就徹底放棄這筆內容。
+          pendingSaveRef.current = { key: storageKey, value };
+          setSaveStatus(`⚠ 存檔失敗:${e.message || "未知錯誤"}(內容還留在畫面上,但還沒真的存進雲端,請勿關閉頁面,截圖給開發者)`);
+        }
       }, 900);
     }
 
@@ -2859,6 +2905,14 @@ function MetaAdsLedger() {
     // 拿到的一定是包著最新ads/props的版本。
     useImperativeHandle(planRef, () => ({ triggerAi: runAiMaterialAnalysis }));
 
+    if (loadError) {
+      return (
+        <div className="mal-plan-load-error">
+          <p>⚠ 週報告讀取失敗:{loadError}</p>
+          <p style={{ fontSize: 12, marginTop: 4 }}>這不代表資料不存在,是暫時連不上雲端資料庫確認——請勿在這個狀態下新增內容,以免蓋掉原本已經存在雲端的資料。稍後重新整理再試一次。</p>
+        </div>
+      );
+    }
     if (!data) return <p style={{ color: "var(--ink-soft)", fontSize: 13, marginTop: 32 }}>載入報告中…</p>;
 
     const STATUS_OPTIONS = [
@@ -2898,7 +2952,9 @@ function MetaAdsLedger() {
     return (
       <>
         <h2 className="mal-section-title">
-          📋 週報告{saveStatus && <span className="mal-plan-savestatus"> · {saveStatus}</span>}
+          📋 週報告{saveStatus && (
+            <span className={saveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {saveStatus}</span>
+          )}
         </h2>
         {aiError && <p className="mal-plan-ai-error">⚠ {aiError}</p>}
 
