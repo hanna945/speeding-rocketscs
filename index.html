@@ -3870,6 +3870,11 @@ function MetaAdsLedger() {
           {focusData && (
             <>
               <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
+              <BrandRevenueReport
+                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+                currencyCode={focusData.currency}
+                periodLabel={monthLabel(focusMonth)}
+              />
               <div className="mal-combined-ai-row">
                 <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(monthlyAdReportRef, monthlyPlanRef)}>
                   🤖 一次 AI 分析(投放成效＋週報告)
@@ -3979,24 +3984,17 @@ function MetaAdsLedger() {
           )}
 
           {focusData && (
-            <>
-              <BrandRevenueReport
-                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
-                currencyCode={focusData.currency}
-                periodLabel={monthLabel(focusMonth)}
-              />
-              <WeeklyPlanningSection
-                ref={monthlyPlanRef}
-                storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`}
-                key={`monthplan::${activeBrandId}::${focusMonth}`}
-                ads={focusData.ads}
-                currencyCode={focusData.currency}
-                roasTarget={roasTargets[activeBrandId]}
-                periodLabel={monthLabel(focusMonth)}
-                brandName={(brands.find((b) => b.id === activeBrandId) || {}).name || ""}
+            <WeeklyPlanningSection
+              ref={monthlyPlanRef}
+              storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`}
+              key={`monthplan::${activeBrandId}::${focusMonth}`}
+              ads={focusData.ads}
+              currencyCode={focusData.currency}
+              roasTarget={roasTargets[activeBrandId]}
+              periodLabel={monthLabel(focusMonth)}
+              brandName={(brands.find((b) => b.id === activeBrandId) || {}).name || ""}
                 minSpend={MIN_AD_SPEND}
               />
-            </>
           )}
 
           <h2 className="mal-section-title">每月明細</h2>
@@ -4085,6 +4083,12 @@ function MetaAdsLedger() {
                 </div>
 
                 <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
+                <BrandRevenueReport
+                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
+                  currencyCode={focusWeekData.currency}
+                  periodLabel={weekLabel(focusWeek)}
+                />
+
                 <div className="mal-combined-ai-row">
                   <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(weeklyAdReportRef, weeklyPlanRef)}>
                     🤖 一次 AI 分析(投放成效＋週報告)
@@ -4160,12 +4164,6 @@ function MetaAdsLedger() {
                     </div>
                   </>
                 )}
-
-                <BrandRevenueReport
-                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
-                  currencyCode={focusWeekData.currency}
-                  periodLabel={weekLabel(focusWeek)}
-                />
 
                 <WeeklyPlanningSection
                   ref={weeklyPlanRef}
