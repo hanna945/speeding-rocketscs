@@ -1331,7 +1331,7 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
-              new TableRow({ children: ["系列", "花費", "業績", "ROAS", "成交數", "平均CPA", "廣告佔比"].map(headerCell) }),
+              new TableRow({ children: ["系列", "業績", "花費", "ROAS", "廣告佔比", "平均CPA", "成交數"].map(headerCell) }),
               ...rows.map((r) => {
                 const roas = r.spend > 0 ? r.revenue / r.spend : null;
                 const cpa = r.conversions > 0 ? r.spend / r.conversions : null;
@@ -1340,12 +1340,12 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
                 return new TableRow({
                   children: [
                     dataCell(productNames[r.code] ? `${r.code}(${productNames[r.code]})` : r.code),
-                    dataCell(fmtMoney(r.spend, currencyCode)),
                     dataCell(fmtMoney(r.revenue, currencyCode)),
+                    dataCell(fmtMoney(r.spend, currencyCode)),
                     dataCell(roas !== null ? `${roas.toFixed(2)}x` : "—", tier && tier.color),
-                    dataCell(fmtInt(r.conversions)),
-                    dataCell(cpa !== null ? fmtMoney(cpa, currencyCode) : "—"),
                     dataCell(adRatioText),
+                    dataCell(cpa !== null ? fmtMoney(cpa, currencyCode) : "—"),
+                    dataCell(fmtInt(r.conversions)),
                   ],
                 });
               }),
@@ -1564,7 +1564,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         <table className="mal-table">
           <thead>
             <tr>
-              <th>系列</th><th>花費</th><th>業績</th><th>ROAS</th><th>成交數</th><th>平均CPA</th><th>廣告佔比</th><th>判斷</th>
+              <th>系列</th><th>業績</th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>平均CPA</th><th>成交數</th><th>判斷</th>
             </tr>
           </thead>
           <tbody>
@@ -1581,12 +1581,12 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
                   >
                     {displayName(r.code)}
                   </td>
+                  <td style={{ fontWeight: 700, fontSize: "1.08em" }}>{fmtMoney(r.revenue, currencyCode)}</td>
                   <td>{fmtMoney(r.spend, currencyCode)}</td>
-                  <td>{fmtMoney(r.revenue, currencyCode)}</td>
                   <td style={tier ? { color: tier.color, fontWeight: 700 } : undefined}>{roas !== null ? `${roas.toFixed(2)}x` : "—"}</td>
-                  <td>{fmtInt(r.conversions)}</td>
-                  <td>{cpa !== null ? fmtMoney(cpa, currencyCode) : "—"}</td>
                   <td>{adPct(r.spend, r.revenue, adRatioThreshold)}</td>
+                  <td>{cpa !== null ? fmtMoney(cpa, currencyCode) : "—"}</td>
+                  <td>{fmtInt(r.conversions)}</td>
                   <td style={{ cursor: "pointer" }} title="點一下可以設定/編輯這個代號的判斷" onClick={() => editRowJudgment(r.code)}>
                     {rowJudgments[r.code] ? `${rowJudgments[r.code].icon} ${rowJudgments[r.code].label}` : <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>+ 加判斷</span>}
                   </td>
