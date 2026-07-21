@@ -400,10 +400,12 @@ const WEEK_STORAGE_PREFIX = "metaads-week:";
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
 const WEEKLY_PLAN_PREFIX = "weekly-plan:";
 const MONTHLY_PLAN_PREFIX = "monthly-plan:";
+const ADPERF_AI_WEEK_PREFIX = "adperf-ai-week:";
+const ADPERF_AI_MONTH_PREFIX = "adperf-ai-month:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
 const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-product-names"]);
-const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX];
+const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
   return SHARED_PREFIXES.some((p) => key.startsWith(p));
@@ -1413,17 +1415,50 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 選這個做法是因為兩邊(這裡、WeeklyPlanningSection)原本各自的AI邏輯、loading/error狀態管理
 // 都已經測過沒問題,用ref讓外部觸發內部既有函式,比整個拆掉重寫、把狀態都提到最外層風險小很多。
 const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
-  { ledgerAgg, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, productNames = {}, onEditProductName, adRatioThreshold, onOpenImport },
+  { ledgerAgg, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, productNames = {}, onEditProductName, adRatioThreshold, onOpenImport, storageKey },
   ref
 ) {
   const displayName = (code) => (productNames[code] ? `${code}(${productNames[code]})` : code);
   const reportRef = useRef(null);
-  const [aiInsights, setAiInsights] = useState(null); // null = 還沒生成過,顯示規則統計版當預設
+  const [aiInsights, setAiInsights] = useState(null); // null = 還沒生成過(或還在讀取雲端存檔中),顯示規則統計版當預設
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [isEditingInsights, setIsEditingInsights] = useState(false);
   const [rowJudgments, setRowJudgments] = useState({}); // { 代號: {icon, label} } AI生成的逐代號短判斷,跟insights同一次呼叫產生
   const [editText, setEditText] = useState("");
+  const [aiSaveStatus, setAiSaveStatus] = useState("");
+  // AI分析結果(insights+逐代號判斷)存到雲端,不然重新整理/換裝置就不見了,每次都要重新生成——
+  // key跟「週報告」同一套設計,依品牌+週期分開存,彼此不會互相蓋掉。只讀不寫silent失敗:
+  // 讀取失敗就當作「還沒有存檔」處理,不會用錯誤訊息打斷使用者第一次打開頁面的體驗。
+  useEffect(() => {
+    if (!storageKey) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await storageGetStrict(storageKey);
+        if (cancelled || !res || !res.value) return;
+        const saved = JSON.parse(res.value);
+        if (saved.insights) setAiInsights(saved.insights);
+        if (saved.rowJudgments) setRowJudgments(saved.rowJudgments);
+      } catch {
+        /* 沒有存檔或讀取失敗,維持預設(規則統計版) */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [storageKey]);
+
+  async function persistAiState(nextInsights, nextJudgments) {
+    if (!storageKey) return;
+    setAiSaveStatus("儲存中…");
+    try {
+      await storageSetStrict(storageKey, JSON.stringify({ insights: nextInsights, rowJudgments: nextJudgments }));
+      setAiSaveStatus("已儲存 ✓");
+      setTimeout(() => setAiSaveStatus(""), 2000);
+    } catch (e) {
+      setAiSaveStatus(`⚠ 存檔失敗:${e.message || "未知錯誤"}`);
+    }
+  }
+
   // 沒有依賴陣列,每次render都重新指定——保證外部透過ref呼叫時,拿到的一定是包著最新
   // props的那個版本的generateAiInsights,不會因為閉包捕捉到舊資料而分析錯期間。
   useImperativeHandle(ref, () => ({ triggerAi: generateAiInsights }));
@@ -1483,6 +1518,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
       setAiInsights(data.insights);
       setRowJudgments(data.rowJudgments || {});
       setIsEditingInsights(false);
+      persistAiState(data.insights, data.rowJudgments || {});
     } catch (e) {
       setAiError(e.message || String(e));
     } finally {
@@ -1502,6 +1538,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
     });
     setAiInsights(parsed);
     setIsEditingInsights(false);
+    persistAiState(parsed, rowJudgments);
   }
   function editRowJudgment(code) {
     const current = rowJudgments[code];
@@ -1515,15 +1552,23 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
       const updated = { ...rowJudgments };
       delete updated[code];
       setRowJudgments(updated);
+      persistAiState(aiInsights, updated);
       return;
     }
     const m = trimmed.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F?)\s*(.*)$/u);
-    setRowJudgments({ ...rowJudgments, [code]: m ? { icon: m[1], label: m[2] } : { icon: "🟢", label: trimmed } });
+    const updated = { ...rowJudgments, [code]: m ? { icon: m[1], label: m[2] } : { icon: "🟢", label: trimmed } };
+    setRowJudgments(updated);
+    persistAiState(aiInsights, updated);
   }
   return (
     <div ref={reportRef} className="mal-ad-perf-report">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <h2 className="mal-section-title" style={{ marginBottom: 0 }}>投放成效{periodLabel ? `(${periodLabel})` : ""}</h2>
+        <h2 className="mal-section-title" style={{ marginBottom: 0 }}>
+          投放成效{periodLabel ? `(${periodLabel})` : ""}
+          {aiSaveStatus && (
+            <span className={aiSaveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {aiSaveStatus}</span>
+          )}
+        </h2>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button className="mal-icon-btn" onClick={() => onEditRoasTarget && onEditRoasTarget(activeBrandId)}>
             ✎ ROAS目標
@@ -2201,7 +2246,7 @@ function MetaAdsLedger() {
     document.body.classList.add("mal-exporting");
     try {
       const target = document.querySelector(".mal-shell");
-      const canvas = await window.html2canvas(target, { scale: 2, backgroundColor: "#FAF7F2", useCORS: true });
+      const canvas = await window.html2canvas(target, { scale: 2, backgroundColor: "#F5F2EC", useCORS: true });
       if (!canvas || !canvas.width || !canvas.height) {
         throw new Error("畫面擷取結果是空的(可能是字型或圖片跨網域限制導致),請重新整理頁面、等待字型與圖片都載入完成後再試一次。");
       }
@@ -3890,6 +3935,7 @@ function MetaAdsLedger() {
                 onEditProductName={editProductName}
                 adRatioThreshold={adRatioThresholds[activeBrandId]}
                 onOpenImport={() => setShowLedgerModal(true)}
+                storageKey={`adperf-ai-month:${activeBrandId}::${focusMonth}`}
               />
               <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
               <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
@@ -4104,6 +4150,7 @@ function MetaAdsLedger() {
                   onEditProductName={editProductName}
                   adRatioThreshold={adRatioThresholds[activeBrandId]}
                   onOpenImport={() => setShowLedgerModal(true)}
+                  storageKey={`adperf-ai-week:${activeBrandId}::${focusWeek}`}
                 />
 
                 <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />

@@ -43,7 +43,7 @@ export function resolveCredential(request, env) {
 // 格式："{prefix}{brandId}::{其餘部分}",例如 "metaads-month:2157995930925784::2026-06"。
 // 另外 sheet-map、last-sync-date 這兩種 key 沒有 "::",整段前綴之後就是完整的 accountId。
 // 回傳 null 代表這個 key 不屬於任何特定品牌(共用設定類的 key,例如 meta-api-brands)。
-const BRAND_SCOPED_DOUBLE_COLON_PREFIXES = ["metaads-month:", "metaads-week:", "metaads-ledger:", "weekly-plan:", "monthly-plan:"];
+const BRAND_SCOPED_DOUBLE_COLON_PREFIXES = ["metaads-month:", "metaads-week:", "metaads-ledger:", "weekly-plan:", "monthly-plan:", "adperf-ai-week:", "adperf-ai-month:"];
 const BRAND_SCOPED_DIRECT_PREFIXES = ["sheet-map:", "last-sync-date:"];
 
 export function extractBrandFromKey(key) {
