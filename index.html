@@ -3167,7 +3167,6 @@ function MetaAdsLedger() {
           <div className="mal-card"><div className="mal-card-label">總廣告費(帳本)</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.adSpend, currencyCode)}</div></div>
           <div className="mal-card"><div className="mal-card-label">總廣告費(Meta)</div><div className="mal-card-value">{fmtMoney(totalMetaSpend, currencyCode)}</div></div>
           <div className="mal-card"><div className="mal-card-label">帳面利潤</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.profit, currencyCode)}</div></div>
-          <div className="mal-card"><div className="mal-card-label">淨利</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.netProfit, currencyCode)}</div></div>
         </div>
 
         {productCodes.length > 0 && renderTable(productCodes, "產品代號")}
