@@ -742,6 +742,34 @@ const adPct = (spend, revenue, threshold) => {
   );
 };
 
+// 已知的「通路」名稱(不是產品代號,是銷售平台/門市/經銷這種)——移到頂層,原因跟adPct一樣:
+// AdPerformanceReport現在需要直接用這個判斷式來拆分產品/通路,是獨立頂層元件沒辦法取用主元件內部的東西。
+const KNOWN_CHANNEL_NAMES = ["蝦皮", "MOMO", "門市", "經銷", "LINE 禮物", "LINE禮物"];
+function isChannelCode(code) {
+  return KNOWN_CHANNEL_NAMES.some((name) => code.includes(name));
+}
+
+// 把帳本(ledgerAgg)資料轉成跟原本 buildProductBreakdown 相容的 rows 格式(code/spend/revenue/
+// conversions/spendShare),多加 profit/netProfit/aov 這幾個帳本才有的欄位——「投放成效」整合了
+// 「品牌業績」之後,兩邊共用的核心資料來源就是這個函式,不用再各自維護一套邏輯。
+// 產品代號跟通路分開回傳,因為通路(蝦皮/MOMO等)不該混在同一份成效判斷/AI分析裡。
+function buildLedgerProductBreakdown(ledgerAgg) {
+  const allCodes = Object.keys(ledgerAgg.byCode).sort();
+  const productCodes = allCodes.filter((c) => !isChannelCode(c));
+  const channelCodes = allCodes.filter((c) => isChannelCode(c));
+  function toRow(code) {
+    const v = ledgerAgg.byCode[code];
+    return { code, spend: v.spend, revenue: v.revenue, conversions: v.hasOrderEst ? v.orderEst : 0, profit: v.profit, netProfit: v.netProfit, aov: v.aov };
+  }
+  const rows = productCodes.map(toRow);
+  const channelRows = channelCodes.map(toRow);
+  const totalProductSpend = rows.reduce((s, r) => s + r.spend, 0);
+  rows.forEach((r) => { r.spendShare = totalProductSpend > 0 ? (r.spend / totalProductSpend) * 100 : 0; });
+  const totalChannelSpend = channelRows.reduce((s, r) => s + r.spend, 0);
+  channelRows.forEach((r) => { r.spendShare = totalChannelSpend > 0 ? (r.spend / totalChannelSpend) * 100 : 0; });
+  return { rows, channelRows };
+}
+
 function buildProductBreakdown(ads, minSpend) {
   const byCode = {};
   let unresolved = 0;
@@ -1385,7 +1413,7 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 選這個做法是因為兩邊(這裡、WeeklyPlanningSection)原本各自的AI邏輯、loading/error狀態管理
 // 都已經測過沒問題,用ref讓外部觸發內部既有函式,比整個拆掉重寫、把狀態都提到最外層風險小很多。
 const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
-  { ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, minSpend = 500, productNames = {}, onEditProductName, adRatioThreshold },
+  { ledgerAgg, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, productNames = {}, onEditProductName, adRatioThreshold, onOpenImport },
   ref
 ) {
   const displayName = (code) => (productNames[code] ? `${code}(${productNames[code]})` : code);
@@ -1397,12 +1425,25 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
   const [rowJudgments, setRowJudgments] = useState({}); // { 代號: {icon, label} } AI生成的逐代號短判斷,跟insights同一次呼叫產生
   const [editText, setEditText] = useState("");
   // 沒有依賴陣列,每次render都重新指定——保證外部透過ref呼叫時,拿到的一定是包著最新
-  // ads/props的那個版本的generateAiInsights,不會因為閉包捕捉到舊資料而分析錯期間。
+  // props的那個版本的generateAiInsights,不會因為閉包捕捉到舊資料而分析錯期間。
   useImperativeHandle(ref, () => ({ triggerAi: generateAiInsights }));
-  const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads, minSpend);
-  if (!rows.length) {
+  if (!ledgerAgg) {
+    return (
+      <div className="mal-empty">
+        <p>這個期間還沒有匯入後台的「每日收益表」,沒辦法產生投放成效報告(業績/花費數字改用後台實際數據,需要先有帳本資料)。</p>
+        {onOpenImport && <button className="mal-btn mal-btn-primary" onClick={onOpenImport}>📥 匯入後台每日收益表</button>}
+      </div>
+    );
+  }
+  const { rows, channelRows } = buildLedgerProductBreakdown(ledgerAgg);
+  if (!rows.length && !channelRows.length) {
     return <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>目前還沒有足夠的資料可以產生投放成效報告。</p>;
   }
+  // 總計卡片用 ledgerAgg.overall(帳本裡「整體」那一列),不是逐代號加總——這樣才會跟後台看到的
+  // 整體數字一致,不會因為某些收入沒被歸類到任何產品代號底下,加總起來反而對不上。
+  const totalRevenue = ledgerAgg.overall.revenue;
+  const totalSpend = ledgerAgg.overall.adSpend;
+  const totalProfit = ledgerAgg.overall.profit;
   const totalConversions = rows.reduce((s, r) => s + r.conversions, 0);
   const overallRoas = totalSpend > 0 ? totalRevenue / totalSpend : null;
   const chartRows = [...rows].sort((a, b) => (b.spend > 0 ? b.revenue / b.spend : 0) - (a.spend > 0 ? a.revenue / a.spend : 0));
@@ -1538,12 +1579,16 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
       )}
       <div className="mal-cards" style={{ marginBottom: 20 }}>
         <div className="mal-card">
+          <div className="mal-card-label">總業績</div>
+          <div className="mal-card-value">{fmtMoney(totalRevenue, currencyCode)}</div>
+        </div>
+        <div className="mal-card">
           <div className="mal-card-label">總花費</div>
           <div className="mal-card-value">{fmtMoney(totalSpend, currencyCode)}</div>
         </div>
         <div className="mal-card">
-          <div className="mal-card-label">總業績</div>
-          <div className="mal-card-value">{fmtMoney(totalRevenue, currencyCode)}</div>
+          <div className="mal-card-label">帳面利潤</div>
+          <div className="mal-card-value">{fmtMoney(totalProfit, currencyCode)}</div>
         </div>
         <div className="mal-card">
           <div className="mal-card-label">成交筆數</div>
@@ -1564,7 +1609,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         <table className="mal-table">
           <thead>
             <tr>
-              <th>系列</th><th>業績</th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>平均CPA</th><th>成交數</th><th>判斷</th>
+              <th>系列</th><th>業績</th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>平均CPA</th><th>成交數</th><th>帳面利潤</th><th>客單價</th><th>判斷</th>
             </tr>
           </thead>
           <tbody>
@@ -1587,6 +1632,8 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
                   <td>{adPct(r.spend, r.revenue, adRatioThreshold)}</td>
                   <td>{cpa !== null ? fmtMoney(cpa, currencyCode) : "—"}</td>
                   <td>{fmtInt(r.conversions)}</td>
+                  <td>{fmtMoney(r.profit, currencyCode)}</td>
+                  <td>{r.aov !== null ? fmtMoney(r.aov, currencyCode) : "—"}</td>
                   <td style={{ cursor: "pointer" }} title="點一下可以設定/編輯這個代號的判斷" onClick={() => editRowJudgment(r.code)}>
                     {rowJudgments[r.code] ? `${rowJudgments[r.code].icon} ${rowJudgments[r.code].label}` : <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>+ 加判斷</span>}
                   </td>
@@ -1595,17 +1642,45 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
             })}
             <tr>
               <td className="mal-row-month">總計</td>
-              <td className="mal-row-month">{fmtMoney(totalSpend, currencyCode)}</td>
               <td className="mal-row-month">{fmtMoney(totalRevenue, currencyCode)}</td>
+              <td className="mal-row-month">{fmtMoney(totalSpend, currencyCode)}</td>
               <td className="mal-row-month">{overallRoas !== null ? `${overallRoas.toFixed(2)}x` : "—"}</td>
-              <td className="mal-row-month">{fmtInt(totalConversions)}</td>
+              <td className="mal-row-month">{adPct(totalSpend, totalRevenue, adRatioThreshold)}</td>
               <td className="mal-row-month">{totalConversions > 0 ? fmtMoney(totalSpend / totalConversions, currencyCode) : "—"}</td>
-              <td className="mal-row-month">100%</td>
+              <td className="mal-row-month">{fmtInt(totalConversions)}</td>
+              <td className="mal-row-month">{fmtMoney(totalProfit, currencyCode)}</td>
+              <td className="mal-row-month">—</td>
               <td className="mal-row-month"></td>
             </tr>
           </tbody>
         </table>
       </div>
+
+      {channelRows.length > 0 && (
+        <>
+          <h3 style={{ fontFamily: "'Noto Serif KR', serif", fontWeight: 700, fontSize: 14.5, margin: "24px 0 12px" }}>通路業績</h3>
+          <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+            <table className="mal-table">
+              <thead>
+                <tr>
+                  <th>通路</th><th>業績</th><th>花費</th><th>帳面利潤</th><th>客單價</th>
+                </tr>
+              </thead>
+              <tbody>
+                {channelRows.map((r) => (
+                  <tr key={r.code}>
+                    <td>{r.code}</td>
+                    <td>{fmtMoney(r.revenue, currencyCode)}</td>
+                    <td>{fmtMoney(r.spend, currencyCode)}</td>
+                    <td>{fmtMoney(r.profit, currencyCode)}</td>
+                    <td>{r.aov !== null ? fmtMoney(r.aov, currencyCode) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       <div className="mal-roas-legend">
         {ROAS_TIERS.map((t) => (
@@ -3107,80 +3182,6 @@ function MetaAdsLedger() {
     );
   });
 
-  // 已知的「通路」名稱(不是產品代號,是銷售平台/門市/經銷這種)——跟一般用行銷活動代號命名的
-  // 產品不是同一種東西,混在同一張表裡不容易看,所以拆成獨立區塊。這份名單是目前看過的品牌
-  // (KP、宥凱、Halo-Mavis)試算表裡實際出現過的通路名稱,新品牌如果有其他通路名稱,要記得補進來。
-  const KNOWN_CHANNEL_NAMES = ["蝦皮", "MOMO", "門市", "經銷", "LINE 禮物", "LINE禮物"];
-  function isChannelCode(code) {
-    return KNOWN_CHANNEL_NAMES.some((name) => code.includes(name));
-  }
-
-  // 「品牌業績」——只看後台帳本(試算表)的實際營收,不跟Meta回報做比對(那是旁邊「一頁式正確業績」
-  // 的用途)。逐產品代號列清楚,通路(momo/蝦皮等)另外分一個區塊,不要混在產品明細裡。
-  function BrandRevenueReport({ ledgerAgg, currencyCode, periodLabel }) {
-    if (!ledgerAgg) return null; // 沒帳本資料時,旁邊「一頁式正確業績」區塊已經有引導匯入的空狀態畫面,這裡不用重複一次
-    const allCodes = Object.keys(ledgerAgg.byCode).sort();
-    const productCodes = allCodes.filter((c) => !isChannelCode(c));
-    const channelCodes = allCodes.filter((c) => isChannelCode(c));
-
-    function renderTable(codes, codeLabel) {
-      return (
-        <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
-          <table className="mal-table">
-            <thead>
-              <tr>
-                <th>{codeLabel}</th>
-                <th>營收</th>
-                <th>廣告費</th>
-                <th>帳面利潤</th>
-                <th>淨利</th>
-                <th>客單價</th>
-              </tr>
-            </thead>
-            <tbody>
-              {codes.map((code) => {
-                const v = ledgerAgg.byCode[code];
-                return (
-                  <tr key={code}>
-                    <td>{code}</td>
-                    <td>{fmtMoney(v.revenue, currencyCode)}</td>
-                    <td>{fmtMoney(v.spend, currencyCode)}</td>
-                    <td>{fmtMoney(v.profit, currencyCode)}</td>
-                    <td>{fmtMoney(v.netProfit, currencyCode)}</td>
-                    <td>{v.aov !== null ? fmtMoney(v.aov, currencyCode) : "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-
-    return (
-      <>
-        <h2 className="mal-section-title">
-          品牌業績{periodLabel ? `(${periodLabel})` : ""}
-          <span className="mal-section-count">(後台實際數據)</span>
-        </h2>
-        <div className="mal-cards" style={{ marginBottom: 18 }}>
-          <div className="mal-card"><div className="mal-card-label">總營收</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.revenue, currencyCode)}</div></div>
-          <div className="mal-card"><div className="mal-card-label">總廣告費</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.adSpend, currencyCode)}</div></div>
-          <div className="mal-card"><div className="mal-card-label">帳面利潤</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.profit, currencyCode)}</div></div>
-        </div>
-
-        {productCodes.length > 0 && renderTable(productCodes, "產品代號")}
-
-        {channelCodes.length > 0 && (
-          <>
-            <h3 style={{ fontFamily: "'Noto Serif KR', serif", fontWeight: 700, fontSize: 14.5, margin: "22px 0 12px" }}>通路業績</h3>
-            {renderTable(channelCodes, "通路")}
-          </>
-        )}
-      </>
-    );
-  }
-
 
   function PerformanceBreakdown({ ads, currencyCode, accountId }) {
     const { qualifyingAds, buckets } = groupAdsByPerformance(ads);
@@ -3870,11 +3871,6 @@ function MetaAdsLedger() {
           {focusData && (
             <>
               <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
-              <BrandRevenueReport
-                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
-                currencyCode={focusData.currency}
-                periodLabel={monthLabel(focusMonth)}
-              />
               <div className="mal-combined-ai-row">
                 <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(monthlyAdReportRef, monthlyPlanRef)}>
                   🤖 一次 AI 分析(投放成效＋週報告)
@@ -3883,17 +3879,17 @@ function MetaAdsLedger() {
               <AdPerformanceReport
                 ref={monthlyAdReportRef}
                 key={`${activeBrandId}::${focusMonth}`}
-                ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
+                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
                 currencyCode={focusData.currency}
                 periodLabel={monthLabel(focusMonth)}
                 roasTarget={roasTargets[activeBrandId]}
                 brands={brands}
                 activeBrandId={activeBrandId}
                 onEditRoasTarget={editRoasTarget}
-                minSpend={MIN_AD_SPEND}
                 productNames={productNames[activeBrandId] || {}}
                 onEditProductName={editProductName}
                 adRatioThreshold={adRatioThresholds[activeBrandId]}
+                onOpenImport={() => setShowLedgerModal(true)}
               />
               <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
               <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
@@ -4083,11 +4079,6 @@ function MetaAdsLedger() {
                 </div>
 
                 <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
-                <BrandRevenueReport
-                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
-                  currencyCode={focusWeekData.currency}
-                  periodLabel={weekLabel(focusWeek)}
-                />
 
                 <div className="mal-combined-ai-row">
                   <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(weeklyAdReportRef, weeklyPlanRef)}>
@@ -4098,7 +4089,7 @@ function MetaAdsLedger() {
                 <AdPerformanceReport
                   ref={weeklyAdReportRef}
                   key={`${activeBrandId}::${focusWeek}`}
-                  ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)}
+                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
                   currencyCode={focusWeekData.currency}
                   periodLabel={(() => {
                     const r = weekDateRange(focusWeek);
@@ -4111,8 +4102,8 @@ function MetaAdsLedger() {
                   onEditRoasTarget={editRoasTarget}
                   productNames={productNames[activeBrandId] || {}}
                   onEditProductName={editProductName}
-                  minSpend={MIN_AD_SPEND}
                   adRatioThreshold={adRatioThresholds[activeBrandId]}
+                  onOpenImport={() => setShowLedgerModal(true)}
                 />
 
                 <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
