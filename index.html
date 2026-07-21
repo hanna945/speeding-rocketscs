@@ -2283,6 +2283,29 @@ function MetaAdsLedger() {
       el.style.height = el.scrollHeight + "px";
     });
     await new Promise((resolve) => requestAnimationFrame(resolve));
+    // 診斷用:印出關鍵環境資訊+每個小標題的實際渲染狀態(位置/尺寸/字型有沒有載入好),
+    // 這樣就算沒辦法傳截圖,也可以把這些文字複製貼給我看,幫助判斷到底是哪個環節出問題。
+    // 之後確認問題解決了,這段log可以拿掉。
+    try {
+      console.log("=== PDF匯出診斷資訊開始 ===");
+      console.log("瀏覽器:", navigator.userAgent);
+      console.log("視窗尺寸:", window.innerWidth, "x", window.innerHeight, "devicePixelRatio:", window.devicePixelRatio);
+      console.log("字型載入狀態(document.fonts.status):", document.fonts.status);
+      console.log("Noto Serif KR 是否已載入:", document.fonts.check("16px 'Noto Serif KR'"));
+      const titles = document.querySelectorAll(".mal-section-title");
+      console.log(`共找到 ${titles.length} 個小標題(.mal-section-title)`);
+      titles.forEach((el, i) => {
+        const rect = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        console.log(`小標題 #${i} 文字內容:"${el.textContent.trim()}"`);
+        console.log(`  位置(x,y): ${rect.x.toFixed(1)}, ${rect.y.toFixed(1)} 尺寸(寬x高): ${rect.width.toFixed(1)} x ${rect.height.toFixed(1)}`);
+        console.log(`  color: ${cs.color}, fontSize: ${cs.fontSize}, lineHeight: ${cs.lineHeight}, borderLeft: ${cs.borderLeft}`);
+      });
+      console.log(".mal-shell 實際內容高度 scrollHeight:", document.querySelector(".mal-shell").scrollHeight);
+      console.log("=== PDF匯出診斷資訊結束 ===");
+    } catch (diagErr) {
+      console.log("診斷資訊蒐集時發生錯誤:", diagErr);
+    }
     try {
       const target = document.querySelector(".mal-shell");
       // html2canvas 用固定 scale:2 時,如果整頁內容夠長(完整報表疊加品牌業績+投放成效+廣告成效
