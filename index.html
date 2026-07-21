@@ -335,7 +335,7 @@
     display: none !important;
   }
   /* 週報告匯出成PDF/列印時,編輯用的控制項(新增/刪除/AI分析按鈕、存檔狀態文字、立即儲存按鈕)
-     不該出現在正式報告裡,直接隱藏;輸入框/下拉選單/文字框改成看起來像單純文字,不要有邊框跟
+     不該出現在正式報告裡,直接隱藏;輸入框/文字框改成看起來像單純文字,不要有邊框跟
      輸入框底色,不然PDF看起來會像一份還沒填完的表單,不像給老闆看的正式報告。 */
   body.mal-exporting .mal-plan-remove,
   body.mal-exporting .mal-plan-block > .mal-btn,
@@ -345,13 +345,23 @@
     display: none !important;
   }
   body.mal-exporting .mal-plan-input,
-  body.mal-exporting .mal-plan-textarea,
-  body.mal-exporting .mal-plan-select {
+  body.mal-exporting .mal-plan-textarea {
     border: none !important;
     background: transparent !important;
     padding: 2px 0 !important;
-    -webkit-appearance: none;
-    appearance: none;
+  }
+  /* 狀態下拉選單(<select>)是原生表單元件,html2canvas截圖對它的支援不穩定,常常顯示不出選到
+     的文字或直接裁切——不能只靠CSS調整外觀解決,截圖時乾脆整個換成旁邊準備好的純文字版本。
+     平常(不是匯出模式)這個純文字版本要藏起來,不然畫面上會看到選單旁邊多一段重複的文字。 */
+  .mal-plan-select-export-text { display: none; }
+  body.mal-exporting .mal-plan-select {
+    display: none !important;
+  }
+  body.mal-exporting .mal-plan-select-export-text {
+    display: inline-block;
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 2px 0;
   }
   body.mal-exporting .mal-plan-card-row {
     flex-wrap: wrap;
@@ -3202,6 +3212,7 @@ function MetaAdsLedger() {
                 <select className="mal-plan-select" value={m.status} onChange={(e) => updateMaterialIssue(m.id, "status", e.target.value)}>
                   {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
+                <span className="mal-plan-select-export-text">{(STATUS_OPTIONS.find((s) => s.value === m.status) || {}).label}</span>
                 <input className="mal-plan-input mal-plan-input-category" placeholder="分類" value={m.category || ""} onChange={(e) => updateMaterialIssue(m.id, "category", e.target.value)} />
                 <input className="mal-plan-input mal-plan-input-title" placeholder="標題(例如:SR涼感衣吃掉最大預算,CPA偏高)" value={m.title} onChange={(e) => updateMaterialIssue(m.id, "title", e.target.value)} />
                 <button className="mal-plan-remove" onClick={() => removeMaterialIssue(m.id)} title="刪除">✕</button>
@@ -3241,6 +3252,7 @@ function MetaAdsLedger() {
                 <select className="mal-plan-select" value={p.status} onChange={(e) => updateProject(p.id, "status", e.target.value)}>
                   {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
+                <span className="mal-plan-select-export-text">{(STATUS_OPTIONS.find((s) => s.value === p.status) || {}).label}</span>
                 <button className="mal-plan-remove" onClick={() => removeProject(p.id)} title="刪除">✕</button>
               </div>
               <div className="mal-plan-card-fields">
