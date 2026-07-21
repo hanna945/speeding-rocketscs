@@ -2542,7 +2542,10 @@ function MetaAdsLedger() {
       const adName = row.ad_name || "(未命名廣告)";
       const utm = utmMap[row.ad_id] || "";
       const isActive = statusMap[row.ad_id] === "ACTIVE";
-      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::" + (isActive ? "on" : "off");
+      // 跟shopline-proxy後端同一個bug、同一套修法:UTM相同但行銷活動不同的廣告,不該被合併成一筆,
+      // 分組key加上行銷活動名稱,兩個都相同才合併。
+      const campaignName = campaignMap[row.ad_id] || "(未分類活動)";
+      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::" + (isActive ? "on" : "off");
       if (!grouped[groupKey]) {
         grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
       }
