@@ -720,6 +720,27 @@ const NON_PRODUCT_CODE_PATTERN = /test|測試/i;
 // 依「產品代號」統計每個產品的營業額、廣告費、佔比與利潤,用來做業績比例分析(圓餅圖/表格)。
 // 代號清單完全從實際資料裡動態產生,不是寫死的列表——新產品只要照命名規則建立行銷活動,就會自動出現在這裡。
 // minSpend:花費低於這個門檻、又沒有轉單金額的廣告會被排除(避免資料量過大拖慢讀取),但會獨立計數方便對帳。
+const AD_RATIO_CRITICAL_PCT = 30; // 廣告費佔比超過這個數字,不管有沒有設定門檻,一律標紅(比黃字警示更嚴重的等級)
+// 移到頂層(原本定義在主元件裡面):這個函式本身是純粹的,只吃參數不吃任何元件內部狀態,
+// 移出來才能讓「投放成效」(AdPerformanceReport,已經是獨立的頂層元件)也能直接呼叫,
+// 不用整份複製一份重複維護兩套邏輯。
+const adPct = (spend, revenue, threshold) => {
+  if (revenue <= 0) return "—";
+  const pct = (spend / revenue) * 100;
+  const isCritical = pct > AD_RATIO_CRITICAL_PCT;
+  const isOverThreshold = !isCritical && threshold != null && pct > threshold; // 超過自訂門檻、但還沒到 30% 的中間警示等級
+  const style = isCritical
+    ? { color: "var(--red)", fontWeight: 700 }
+    : isOverThreshold
+    ? { color: "var(--amber)", fontWeight: 700 }
+    : undefined;
+  return (
+    <span style={style}>
+      {pct.toFixed(0)}%{isCritical ? " ‼" : isOverThreshold ? " ⚠" : ""}
+    </span>
+  );
+};
+
 function buildProductBreakdown(ads, minSpend) {
   const byCode = {};
   let unresolved = 0;
@@ -1309,11 +1330,12 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
-              new TableRow({ children: ["系列", "花費", "業績", "ROAS", "成交數", "平均CPA", "花費佔比"].map(headerCell) }),
+              new TableRow({ children: ["系列", "花費", "業績", "ROAS", "成交數", "平均CPA", "廣告佔比"].map(headerCell) }),
               ...rows.map((r) => {
                 const roas = r.spend > 0 ? r.revenue / r.spend : null;
                 const cpa = r.conversions > 0 ? r.spend / r.conversions : null;
                 const tier = roasTier(roas);
+                const adRatioText = r.revenue > 0 ? `${((r.spend / r.revenue) * 100).toFixed(0)}%` : "—";
                 return new TableRow({
                   children: [
                     dataCell(productNames[r.code] ? `${r.code}(${productNames[r.code]})` : r.code),
@@ -1322,7 +1344,7 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
                     dataCell(roas !== null ? `${roas.toFixed(2)}x` : "—", tier && tier.color),
                     dataCell(fmtInt(r.conversions)),
                     dataCell(cpa !== null ? fmtMoney(cpa, currencyCode) : "—"),
-                    dataCell(`${r.spendShare.toFixed(1)}%`),
+                    dataCell(adRatioText),
                   ],
                 });
               }),
@@ -1362,7 +1384,7 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 選這個做法是因為兩邊(這裡、WeeklyPlanningSection)原本各自的AI邏輯、loading/error狀態管理
 // 都已經測過沒問題,用ref讓外部觸發內部既有函式,比整個拆掉重寫、把狀態都提到最外層風險小很多。
 const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
-  { ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, minSpend = 500, productNames = {}, onEditProductName },
+  { ads, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, minSpend = 500, productNames = {}, onEditProductName, adRatioThreshold },
   ref
 ) {
   const displayName = (code) => (productNames[code] ? `${code}(${productNames[code]})` : code);
@@ -1541,7 +1563,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         <table className="mal-table">
           <thead>
             <tr>
-              <th>系列</th><th>花費</th><th>業績</th><th>ROAS</th><th>成交數</th><th>平均CPA</th><th>花費佔比</th><th>判斷</th>
+              <th>系列</th><th>花費</th><th>業績</th><th>ROAS</th><th>成交數</th><th>平均CPA</th><th>廣告佔比</th><th>判斷</th>
             </tr>
           </thead>
           <tbody>
@@ -1563,7 +1585,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
                   <td style={tier ? { color: tier.color, fontWeight: 700 } : undefined}>{roas !== null ? `${roas.toFixed(2)}x` : "—"}</td>
                   <td>{fmtInt(r.conversions)}</td>
                   <td>{cpa !== null ? fmtMoney(cpa, currencyCode) : "—"}</td>
-                  <td>{r.spendShare.toFixed(1)}%</td>
+                  <td>{adPct(r.spend, r.revenue, adRatioThreshold)}</td>
                   <td style={{ cursor: "pointer" }} title="點一下可以設定/編輯這個代號的判斷" onClick={() => editRowJudgment(r.code)}>
                     {rowJudgments[r.code] ? `${rowJudgments[r.code].icon} ${rowJudgments[r.code].label}` : <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>+ 加判斷</span>}
                   </td>
@@ -3671,24 +3693,7 @@ function MetaAdsLedger() {
   const focusDayIdx = activeFocusDay ? sortedDailyDays.findIndex((d) => d.date === activeFocusDay) : -1;
   const prevDayRecord = focusDayIdx > 0 ? sortedDailyDays[focusDayIdx - 1] : null;
   const dailyMatrixCodes = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
-  // threshold 有給且超過時,回傳標紅、加驚嘆號的樣式;沒給 threshold 或沒超過,就是原本的樣式。
-  const AD_RATIO_CRITICAL_PCT = 30; // 廣告費佔比超過這個數字,不管有沒有設定門檻,一律標紅(比黃字警示更嚴重的等級)
-  const adPct = (spend, revenue, threshold) => {
-    if (revenue <= 0) return "—";
-    const pct = (spend / revenue) * 100;
-    const isCritical = pct > AD_RATIO_CRITICAL_PCT;
-    const isOverThreshold = !isCritical && threshold != null && pct > threshold; // 超過自訂門檻、但還沒到 30% 的中間警示等級
-    const style = isCritical
-      ? { color: "var(--red)", fontWeight: 700 }
-      : isOverThreshold
-      ? { color: "var(--amber)", fontWeight: 700 }
-      : undefined;
-    return (
-      <span style={style}>
-        {pct.toFixed(0)}%{isCritical ? " ‼" : isOverThreshold ? " ⚠" : ""}
-      </span>
-    );
-  };
+  // adPct / AD_RATIO_CRITICAL_PCT 已經移到檔案最上面的頂層,這裡不用重複定義。
   // 淨利潤是負的(虧錢)時,用比廣告費佔比超標更重的標紅樣式(深紅底色+粗體),兩種警示程度做出區別。
   const netProfitCell = (value) => {
     if (value < 0) {
@@ -4012,6 +4017,7 @@ function MetaAdsLedger() {
                 minSpend={MIN_AD_SPEND}
                 productNames={productNames[activeBrandId] || {}}
                 onEditProductName={editProductName}
+                adRatioThreshold={adRatioThresholds[activeBrandId]}
               />
               <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
               <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
@@ -4241,6 +4247,7 @@ function MetaAdsLedger() {
                   productNames={productNames[activeBrandId] || {}}
                   onEditProductName={editProductName}
                   minSpend={MIN_AD_SPEND}
+                  adRatioThreshold={adRatioThresholds[activeBrandId]}
                 />
 
                 <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
