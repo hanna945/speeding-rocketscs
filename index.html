@@ -2229,7 +2229,21 @@ function MetaAdsLedger() {
     // 跟exportPDF同一個理由:「週報告」等區塊是非同步從雲端讀取的,只等動畫影格不夠一次網路
     // 來回完成,列印時機太早會印到「載入報告中…」而不是實際內容。
     setTimeout(() => {
-      window.print();
+      // 跟exportPDF同一個textarea裁切問題,瀏覽器列印一樣會受影響(textarea天生固定高度,
+      // 不會像一般文字自動撐開)。列印用afterprint事件還原高度,因為window.print()是模態視窗,
+      // 沒辦法像exportPDF那樣直接在下一行程式碼就知道列印「結束」了。
+      const resizedTextareas = [];
+      document.querySelectorAll(".mal-plan-textarea").forEach((el) => {
+        resizedTextareas.push({ el, originalHeight: el.style.height });
+        el.style.height = "auto";
+        el.style.height = el.scrollHeight + "px";
+      });
+      function restore() {
+        resizedTextareas.forEach(({ el, originalHeight }) => { el.style.height = originalHeight; });
+        window.removeEventListener("afterprint", restore);
+      }
+      window.addEventListener("afterprint", restore);
+      requestAnimationFrame(() => window.print());
     }, 900);
   }
 
@@ -2248,6 +2262,17 @@ function MetaAdsLedger() {
     // 不是實際內容,PDF看起來就像那個區塊「沒有出現」。多等一段夠長的時間確保資料真的讀完。
     await new Promise((resolve) => setTimeout(resolve, 900));
     document.body.classList.add("mal-exporting");
+    // <textarea> 天生是固定高度的方框,超出可見行數的內容會被裁掉(不會像一般文字自動往下延伸)——
+    // 「週報告」的文字框如果內容比預設的rows還長,html2canvas截圖時後面的字就會不見。
+    // 截圖前先把每個文字框的高度動態撐開到剛好容納全部內容(用scrollHeight,這是量測「內容實際
+    // 需要多高」的標準做法),截圖結束後在finally區塊恢復原本的高度,不影響使用者接下來繼續編輯。
+    const resizedTextareas = [];
+    document.querySelectorAll(".mal-plan-textarea").forEach((el) => {
+      resizedTextareas.push({ el, originalHeight: el.style.height });
+      el.style.height = "auto";
+      el.style.height = el.scrollHeight + "px";
+    });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     try {
       const target = document.querySelector(".mal-shell");
       const canvas = await window.html2canvas(target, { scale: 2, backgroundColor: "#F5F2EC", useCORS: true });
@@ -2280,6 +2305,7 @@ function MetaAdsLedger() {
     } catch (e) {
       setError("匯出 PDF 失敗:" + e.message);
     } finally {
+      resizedTextareas.forEach(({ el, originalHeight }) => { el.style.height = originalHeight; });
       document.body.classList.remove("mal-exporting");
       setPdfExporting(false);
     }
