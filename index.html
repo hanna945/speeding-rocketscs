@@ -3073,6 +3073,81 @@ function MetaAdsLedger() {
     );
   });
 
+  // 已知的「通路」名稱(不是產品代號,是銷售平台/門市/經銷這種)——跟一般用行銷活動代號命名的
+  // 產品不是同一種東西,混在同一張表裡不容易看,所以拆成獨立區塊。這份名單是目前看過的品牌
+  // (KP、宥凱、Halo-Mavis)試算表裡實際出現過的通路名稱,新品牌如果有其他通路名稱,要記得補進來。
+  const KNOWN_CHANNEL_NAMES = ["蝦皮", "MOMO", "門市", "經銷", "LINE 禮物", "LINE禮物"];
+  function isChannelCode(code) {
+    return KNOWN_CHANNEL_NAMES.some((name) => code.includes(name));
+  }
+
+  // 「品牌業績」——只看後台帳本(試算表)的實際營收,不跟Meta回報做比對(那是旁邊「一頁式正確業績」
+  // 的用途)。逐產品代號列清楚,通路(momo/蝦皮等)另外分一個區塊,不要混在產品明細裡。
+  function BrandRevenueReport({ ledgerAgg, currencyCode, periodLabel }) {
+    if (!ledgerAgg) return null; // 沒帳本資料時,旁邊「一頁式正確業績」區塊已經有引導匯入的空狀態畫面,這裡不用重複一次
+    const allCodes = Object.keys(ledgerAgg.byCode).sort();
+    const productCodes = allCodes.filter((c) => !isChannelCode(c));
+    const channelCodes = allCodes.filter((c) => isChannelCode(c));
+
+    function renderTable(codes, codeLabel) {
+      return (
+        <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+          <table className="mal-table">
+            <thead>
+              <tr>
+                <th>{codeLabel}</th>
+                <th>營收</th>
+                <th>廣告費</th>
+                <th>帳面利潤</th>
+                <th>淨利</th>
+                <th>客單價</th>
+              </tr>
+            </thead>
+            <tbody>
+              {codes.map((code) => {
+                const v = ledgerAgg.byCode[code];
+                return (
+                  <tr key={code}>
+                    <td>{code}</td>
+                    <td>{fmtMoney(v.revenue, currencyCode)}</td>
+                    <td>{fmtMoney(v.spend, currencyCode)}</td>
+                    <td>{fmtMoney(v.profit, currencyCode)}</td>
+                    <td>{fmtMoney(v.netProfit, currencyCode)}</td>
+                    <td>{v.aov !== null ? fmtMoney(v.aov, currencyCode) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <h2 className="mal-section-title">
+          品牌業績{periodLabel ? `(${periodLabel})` : ""}
+          <span className="mal-section-count">(後台實際數據,不含Meta回報比對)</span>
+        </h2>
+        <div className="mal-cards" style={{ marginBottom: 18 }}>
+          <div className="mal-card"><div className="mal-card-label">總營收</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.revenue, currencyCode)}</div></div>
+          <div className="mal-card"><div className="mal-card-label">總廣告費</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.adSpend, currencyCode)}</div></div>
+          <div className="mal-card"><div className="mal-card-label">帳面利潤</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.profit, currencyCode)}</div></div>
+          <div className="mal-card"><div className="mal-card-label">淨利</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.netProfit, currencyCode)}</div></div>
+        </div>
+
+        {productCodes.length > 0 && renderTable(productCodes, "產品代號")}
+
+        {channelCodes.length > 0 && (
+          <>
+            <h3 style={{ fontFamily: "'Noto Serif KR', serif", fontWeight: 700, fontSize: 14.5, margin: "22px 0 12px" }}>通路業績</h3>
+            {renderTable(channelCodes, "通路")}
+          </>
+        )}
+      </>
+    );
+  }
+
   function LedgerVsMetaComparison({ ads, currencyCode, ledgerAgg, onOpenImport, periodLabel }) {
     if (!ledgerAgg) {
       return (
@@ -4017,6 +4092,11 @@ function MetaAdsLedger() {
 
           {focusData && (
             <>
+              <BrandRevenueReport
+                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+                currencyCode={focusData.currency}
+                periodLabel={monthLabel(focusMonth)}
+              />
               <h2 className="mal-section-title">
                 {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
               </h2>
@@ -4200,6 +4280,12 @@ function MetaAdsLedger() {
                     </div>
                   </>
                 )}
+
+                <BrandRevenueReport
+                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
+                  currencyCode={focusWeekData.currency}
+                  periodLabel={weekLabel(focusWeek)}
+                />
 
                 <h2 className="mal-section-title">
                   {weekLabel(focusWeek)} 一頁式正確業績(後台實際 vs Meta 回報)
