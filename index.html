@@ -2285,7 +2285,16 @@ function MetaAdsLedger() {
     await new Promise((resolve) => requestAnimationFrame(resolve));
     try {
       const target = document.querySelector(".mal-shell");
-      const canvas = await window.html2canvas(target, { scale: 2, backgroundColor: "#F5F2EC", useCORS: true });
+      // html2canvas 用固定 scale:2 時,如果整頁內容夠長(完整報表疊加品牌業績+投放成效+廣告成效
+      // 分類+幾十筆廣告明細+週報告,很容易累積到很長),換算後的畫布高度可能超過瀏覽器(尤其手機)
+      // 能處理的畫布尺寸上限——超過上限的部分不會跳錯誤,而是靜靜地變空白或內容損毀,不容易發現。
+      // 「週報告」剛好排在最後面,是最先撞到這個上限、最容易被影響的區塊,跟實際回報的狀況吻合。
+      // 改成先量測實際內容高度,超過安全門檻(8000px,對手機瀏覽器來說是保守但可靠的上限)就自動
+      // 調降 scale,確保整張畫布都在安全範圍內,寧可犧牲一點清晰度也不要讓內容整段消失或損毀。
+      const SAFE_CANVAS_HEIGHT = 8000;
+      const contentHeight = target.scrollHeight;
+      const scale = Math.min(2, SAFE_CANVAS_HEIGHT / contentHeight);
+      const canvas = await window.html2canvas(target, { scale, backgroundColor: "#F5F2EC", useCORS: true });
       if (!canvas || !canvas.width || !canvas.height) {
         throw new Error("畫面擷取結果是空的(可能是字型或圖片跨網域限制導致),請重新整理頁面、等待字型與圖片都載入完成後再試一次。");
       }
