@@ -2226,11 +2226,11 @@ function MetaAdsLedger() {
   function handlePrintClick() {
     // 跟匯出 PDF 一樣,列印前先展開所有收合中的「廣告成效分類」區塊,避免收合的內容沒有印出來。
     window.dispatchEvent(new Event(PERF_EXPAND_ALL_EVENT));
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.print();
-      });
-    });
+    // 跟exportPDF同一個理由:「週報告」等區塊是非同步從雲端讀取的,只等動畫影格不夠一次網路
+    // 來回完成,列印時機太早會印到「載入報告中…」而不是實際內容。
+    setTimeout(() => {
+      window.print();
+    }, 900);
   }
 
   async function exportPDF() {
@@ -2243,6 +2243,10 @@ function MetaAdsLedger() {
     // 先展開所有收合中的「廣告成效分類」區塊,不然收合的內容不會被截進 PDF 裡。
     window.dispatchEvent(new Event(PERF_EXPAND_ALL_EVENT));
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    // 「週報告」「投放成效AI分析」都是非同步從雲端讀取的,只等兩個動畫影格(通常幾毫秒)絕對不夠
+    // 一次網路來回(KV讀取)完成——如果截圖時機太早,截到的會是「載入報告中…」那個小提示,
+    // 不是實際內容,PDF看起來就像那個區塊「沒有出現」。多等一段夠長的時間確保資料真的讀完。
+    await new Promise((resolve) => setTimeout(resolve, 900));
     document.body.classList.add("mal-exporting");
     try {
       const target = document.querySelector(".mal-shell");
