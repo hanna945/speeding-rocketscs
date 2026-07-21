@@ -3106,15 +3106,8 @@ function MetaAdsLedger() {
 
   // 「品牌業績」——只看後台帳本(試算表)的實際營收,不跟Meta回報做比對(那是旁邊「一頁式正確業績」
   // 的用途)。逐產品代號列清楚,通路(momo/蝦皮等)另外分一個區塊,不要混在產品明細裡。
-  function BrandRevenueReport({ ledgerAgg, currencyCode, periodLabel, ads }) {
+  function BrandRevenueReport({ ledgerAgg, currencyCode, periodLabel }) {
     if (!ledgerAgg) return null; // 沒帳本資料時,旁邊「一頁式正確業績」區塊已經有引導匯入的空狀態畫面,這裡不用重複一次
-    // Meta 廣告費逐代號對照——營收用帳本(後台實際數字更準,Meta常常歸因灌水),但廣告費剛好相反:
-    // Meta 回報的花費才是「平台實際扣款金額」,帳本裡的廣告費欄位常是手動填、可能有落差或忘了更新,
-    // 兩個都保留給使用者自己比對,不是互相取代。
-    const metaBreak = buildProductBreakdown(ads || [], MIN_AD_SPEND);
-    const metaSpendByCode = {};
-    let totalMetaSpend = 0;
-    metaBreak.rows.forEach((r) => { metaSpendByCode[r.code] = r.spend; totalMetaSpend += r.spend; });
     const allCodes = Object.keys(ledgerAgg.byCode).sort();
     const productCodes = allCodes.filter((c) => !isChannelCode(c));
     const channelCodes = allCodes.filter((c) => isChannelCode(c));
@@ -3127,8 +3120,7 @@ function MetaAdsLedger() {
               <tr>
                 <th>{codeLabel}</th>
                 <th>營收</th>
-                <th>廣告費(帳本)</th>
-                <th>廣告費(Meta)</th>
+                <th>廣告費</th>
                 <th>帳面利潤</th>
                 <th>淨利</th>
                 <th>客單價</th>
@@ -3137,13 +3129,11 @@ function MetaAdsLedger() {
             <tbody>
               {codes.map((code) => {
                 const v = ledgerAgg.byCode[code];
-                const metaSpend = metaSpendByCode[code];
                 return (
                   <tr key={code}>
                     <td>{code}</td>
                     <td>{fmtMoney(v.revenue, currencyCode)}</td>
                     <td>{fmtMoney(v.spend, currencyCode)}</td>
-                    <td>{metaSpend !== undefined ? fmtMoney(metaSpend, currencyCode) : "—"}</td>
                     <td>{fmtMoney(v.profit, currencyCode)}</td>
                     <td>{fmtMoney(v.netProfit, currencyCode)}</td>
                     <td>{v.aov !== null ? fmtMoney(v.aov, currencyCode) : "—"}</td>
@@ -3160,12 +3150,11 @@ function MetaAdsLedger() {
       <>
         <h2 className="mal-section-title">
           品牌業績{periodLabel ? `(${periodLabel})` : ""}
-          <span className="mal-section-count">(營收用後台實際數據,廣告費同時保留帳本與Meta兩邊數字)</span>
+          <span className="mal-section-count">(後台實際數據)</span>
         </h2>
         <div className="mal-cards" style={{ marginBottom: 18 }}>
           <div className="mal-card"><div className="mal-card-label">總營收</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.revenue, currencyCode)}</div></div>
-          <div className="mal-card"><div className="mal-card-label">總廣告費(帳本)</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.adSpend, currencyCode)}</div></div>
-          <div className="mal-card"><div className="mal-card-label">總廣告費(Meta)</div><div className="mal-card-value">{fmtMoney(totalMetaSpend, currencyCode)}</div></div>
+          <div className="mal-card"><div className="mal-card-label">總廣告費</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.adSpend, currencyCode)}</div></div>
           <div className="mal-card"><div className="mal-card-label">帳面利潤</div><div className="mal-card-value">{fmtMoney(ledgerAgg.overall.profit, currencyCode)}</div></div>
         </div>
 
@@ -3984,7 +3973,6 @@ function MetaAdsLedger() {
                 ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
                 currencyCode={focusData.currency}
                 periodLabel={monthLabel(focusMonth)}
-                ads={focusData.ads}
               />
               <WeeklyPlanningSection
                 ref={monthlyPlanRef}
@@ -4166,7 +4154,6 @@ function MetaAdsLedger() {
                   ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
                   currencyCode={focusWeekData.currency}
                   periodLabel={weekLabel(focusWeek)}
-                  ads={focusWeekData.ads}
                 />
 
                 <WeeklyPlanningSection
