@@ -2266,6 +2266,27 @@ function MetaAdsLedger() {
     setError(null);
     // 先展開所有收合中的「廣告成效分類」區塊,不然收合的內容不會被截進 PDF 裡。
     window.dispatchEvent(new Event(PERF_EXPAND_ALL_EVENT));
+    // 明確預先載入畫面實際會用到的每一種字重——診斷發現 document.fonts.status 顯示「loaded」,
+    // 但小標題實際用的字重(Noto Serif KR 600/700)用 document.fonts.check() 個別檢查卻是 false,
+    // 代表「字型系統整體穩定」不等於「這個特定字重真的可以用」。瀏覽器畫面本身遇到缺字重時,
+    // 會優雅退回到最接近的字重顯示,不會有明顯異狀;但html2canvas不一定會做一樣寬容的退回,
+    // 直接明確載入每個實際用到的字重組合,而不是只看廣泛的fonts.ready/fonts.status有沒有穩定。
+    try {
+      await Promise.all([
+        document.fonts.load("500 16px 'Noto Serif KR'"),
+        document.fonts.load("600 16px 'Noto Serif KR'"),
+        document.fonts.load("700 16px 'Noto Serif KR'"),
+        document.fonts.load("400 13px 'Noto Sans TC'"),
+        document.fonts.load("500 13px 'Noto Sans TC'"),
+        document.fonts.load("600 13px 'Noto Sans TC'"),
+        document.fonts.load("700 13px 'Noto Sans TC'"),
+        document.fonts.load("400 13px 'IBM Plex Mono'"),
+        document.fonts.load("600 13px 'IBM Plex Mono'"),
+        document.fonts.ready,
+      ]);
+    } catch {
+      /* 個別字重載入失敗也不中斷匯出流程,退回原本的等待時間當保底 */
+    }
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     // 「週報告」「投放成效AI分析」都是非同步從雲端讀取的,只等兩個動畫影格(通常幾毫秒)絕對不夠
     // 一次網路來回(KV讀取)完成——如果截圖時機太早,截到的會是「載入報告中…」那個小提示,
@@ -2291,7 +2312,9 @@ function MetaAdsLedger() {
       console.log("瀏覽器:", navigator.userAgent);
       console.log("視窗尺寸:", window.innerWidth, "x", window.innerHeight, "devicePixelRatio:", window.devicePixelRatio);
       console.log("字型載入狀態(document.fonts.status):", document.fonts.status);
-      console.log("Noto Serif KR 是否已載入:", document.fonts.check("16px 'Noto Serif KR'"));
+      console.log("Noto Serif KR 600 是否已載入:", document.fonts.check("600 16px 'Noto Serif KR'"));
+      console.log("Noto Serif KR 700 是否已載入:", document.fonts.check("700 16px 'Noto Serif KR'"));
+      console.log("Noto Sans TC 600 是否已載入:", document.fonts.check("600 13px 'Noto Sans TC'"));
       const titles = document.querySelectorAll(".mal-section-title");
       console.log(`共找到 ${titles.length} 個小標題(.mal-section-title)`);
       titles.forEach((el, i) => {
