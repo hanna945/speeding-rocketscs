@@ -14,8 +14,6 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -324,7 +322,7 @@
   body.mal-exporting .mal-scroll-wrap {
     overflow: visible !important;
   }
-  /* 匯出 PDF 時(html2canvas 截圖),position: sticky 常常截不準,乾脆匯出時關掉凍結效果——
+  /* 列印/匯出PDF時,position: sticky 在部分瀏覽器的列印引擎下常常定位不準,乾脆這時候關掉凍結效果——
      反正上面那行已經把捲動框展開顯示全部內容了,凍結欄位本來就只有「還在捲動」的情境下才有意義。 */
   body.mal-exporting .mal-ledger-table th:first-child,
   body.mal-exporting .mal-ledger-table td:first-child {
@@ -350,8 +348,8 @@
     background: transparent !important;
     padding: 2px 0 !important;
   }
-  /* 狀態下拉選單(<select>)是原生表單元件,html2canvas截圖對它的支援不穩定,常常顯示不出選到
-     的文字或直接裁切——不能只靠CSS調整外觀解決,截圖時乾脆整個換成旁邊準備好的純文字版本。
+  /* 狀態下拉選單(<select>)是原生表單元件,列印時外觀常帶著瀏覽器自己的邊框/箭頭裝飾,不像
+     正式報告的樣子——列印/匯出PDF時乾脆整個換成旁邊準備好的純文字版本,乾淨清楚。
      平常(不是匯出模式)這個純文字版本要藏起來,不然畫面上會看到選單旁邊多一段重複的文字。 */
   .mal-plan-select-export-text { display: none; }
   body.mal-exporting .mal-plan-select {
@@ -1872,7 +1870,6 @@ function MetaAdsLedger() {
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
   const [apiNotice, setApiNotice] = useState(null);
-  const [pdfExporting, setPdfExporting] = useState(false);
   const [rememberToken, setRememberToken] = useState(false);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
   const [autoSyncStatus, setAutoSyncStatus] = useState(null);
@@ -2255,125 +2252,6 @@ function MetaAdsLedger() {
       window.addEventListener("afterprint", restore);
       requestAnimationFrame(() => window.print());
     }, 900);
-  }
-
-  async function exportPDF() {
-    if (!window.html2canvas || !window.jspdf) {
-      setError("PDF 匯出工具還沒載入完成,請確認網路連線後再試一次。");
-      return;
-    }
-    setPdfExporting(true);
-    setError(null);
-    // 先展開所有收合中的「廣告成效分類」區塊,不然收合的內容不會被截進 PDF 裡。
-    window.dispatchEvent(new Event(PERF_EXPAND_ALL_EVENT));
-    // 明確預先載入畫面實際會用到的每一種字重——診斷發現 document.fonts.status 顯示「loaded」,
-    // 但小標題實際用的字重(Noto Serif KR 600/700)用 document.fonts.check() 個別檢查卻是 false,
-    // 代表「字型系統整體穩定」不等於「這個特定字重真的可以用」。瀏覽器畫面本身遇到缺字重時,
-    // 會優雅退回到最接近的字重顯示,不會有明顯異狀;但html2canvas不一定會做一樣寬容的退回,
-    // 直接明確載入每個實際用到的字重組合,而不是只看廣泛的fonts.ready/fonts.status有沒有穩定。
-    try {
-      await Promise.all([
-        document.fonts.load("500 16px 'Noto Serif KR'"),
-        document.fonts.load("600 16px 'Noto Serif KR'"),
-        document.fonts.load("700 16px 'Noto Serif KR'"),
-        document.fonts.load("400 13px 'Noto Sans TC'"),
-        document.fonts.load("500 13px 'Noto Sans TC'"),
-        document.fonts.load("600 13px 'Noto Sans TC'"),
-        document.fonts.load("700 13px 'Noto Sans TC'"),
-        document.fonts.load("400 13px 'IBM Plex Mono'"),
-        document.fonts.load("600 13px 'IBM Plex Mono'"),
-        document.fonts.ready,
-      ]);
-    } catch {
-      /* 個別字重載入失敗也不中斷匯出流程,退回原本的等待時間當保底 */
-    }
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    // 「週報告」「投放成效AI分析」都是非同步從雲端讀取的,只等兩個動畫影格(通常幾毫秒)絕對不夠
-    // 一次網路來回(KV讀取)完成——如果截圖時機太早,截到的會是「載入報告中…」那個小提示,
-    // 不是實際內容,PDF看起來就像那個區塊「沒有出現」。多等一段夠長的時間確保資料真的讀完。
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    document.body.classList.add("mal-exporting");
-    // <textarea> 天生是固定高度的方框,超出可見行數的內容會被裁掉(不會像一般文字自動往下延伸)——
-    // 「週報告」的文字框如果內容比預設的rows還長,html2canvas截圖時後面的字就會不見。
-    // 截圖前先把每個文字框的高度動態撐開到剛好容納全部內容(用scrollHeight,這是量測「內容實際
-    // 需要多高」的標準做法),截圖結束後在finally區塊恢復原本的高度,不影響使用者接下來繼續編輯。
-    const resizedTextareas = [];
-    document.querySelectorAll(".mal-plan-textarea").forEach((el) => {
-      resizedTextareas.push({ el, originalHeight: el.style.height });
-      el.style.height = "auto";
-      el.style.height = el.scrollHeight + "px";
-    });
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    // 診斷用:印出關鍵環境資訊+每個小標題的實際渲染狀態(位置/尺寸/字型有沒有載入好),
-    // 這樣就算沒辦法傳截圖,也可以把這些文字複製貼給我看,幫助判斷到底是哪個環節出問題。
-    // 之後確認問題解決了,這段log可以拿掉。
-    try {
-      console.log("=== PDF匯出診斷資訊開始 ===");
-      console.log("瀏覽器:", navigator.userAgent);
-      console.log("視窗尺寸:", window.innerWidth, "x", window.innerHeight, "devicePixelRatio:", window.devicePixelRatio);
-      console.log("字型載入狀態(document.fonts.status):", document.fonts.status);
-      console.log("Noto Serif KR 600 是否已載入:", document.fonts.check("600 16px 'Noto Serif KR'"));
-      console.log("Noto Serif KR 700 是否已載入:", document.fonts.check("700 16px 'Noto Serif KR'"));
-      console.log("Noto Sans TC 600 是否已載入:", document.fonts.check("600 13px 'Noto Sans TC'"));
-      const titles = document.querySelectorAll(".mal-section-title");
-      console.log(`共找到 ${titles.length} 個小標題(.mal-section-title)`);
-      titles.forEach((el, i) => {
-        const rect = el.getBoundingClientRect();
-        const cs = getComputedStyle(el);
-        console.log(`小標題 #${i} 文字內容:"${el.textContent.trim()}"`);
-        console.log(`  位置(x,y): ${rect.x.toFixed(1)}, ${rect.y.toFixed(1)} 尺寸(寬x高): ${rect.width.toFixed(1)} x ${rect.height.toFixed(1)}`);
-        console.log(`  color: ${cs.color}, fontSize: ${cs.fontSize}, lineHeight: ${cs.lineHeight}, borderLeft: ${cs.borderLeft}`);
-      });
-      console.log(".mal-shell 實際內容高度 scrollHeight:", document.querySelector(".mal-shell").scrollHeight);
-      console.log("=== PDF匯出診斷資訊結束 ===");
-    } catch (diagErr) {
-      console.log("診斷資訊蒐集時發生錯誤:", diagErr);
-    }
-    try {
-      const target = document.querySelector(".mal-shell");
-      // html2canvas 用固定 scale:2 時,如果整頁內容夠長(完整報表疊加品牌業績+投放成效+廣告成效
-      // 分類+幾十筆廣告明細+週報告,很容易累積到很長),換算後的畫布高度可能超過瀏覽器(尤其手機)
-      // 能處理的畫布尺寸上限——超過上限的部分不會跳錯誤,而是靜靜地變空白或內容損毀,不容易發現。
-      // 「週報告」剛好排在最後面,是最先撞到這個上限、最容易被影響的區塊,跟實際回報的狀況吻合。
-      // 改成先量測實際內容高度,超過安全門檻(8000px,對手機瀏覽器來說是保守但可靠的上限)就自動
-      // 調降 scale,確保整張畫布都在安全範圍內,寧可犧牲一點清晰度也不要讓內容整段消失或損毀。
-      const SAFE_CANVAS_HEIGHT = 8000;
-      const contentHeight = target.scrollHeight;
-      const scale = Math.min(2, SAFE_CANVAS_HEIGHT / contentHeight);
-      const canvas = await window.html2canvas(target, { scale, backgroundColor: "#F5F2EC", useCORS: true });
-      if (!canvas || !canvas.width || !canvas.height) {
-        throw new Error("畫面擷取結果是空的(可能是字型或圖片跨網域限制導致),請重新整理頁面、等待字型與圖片都載入完成後再試一次。");
-      }
-      const { jsPDF } = window.jspdf;
-
-      // Build a single page sized to the full content's aspect ratio, so nothing
-      // gets sliced mid-row/mid-card the way fixed-height A4 pagination would.
-      const pageWidthPt = 800;
-      const pageHeightPt = (canvas.height * pageWidthPt) / canvas.width;
-      const pdf = new jsPDF({
-        orientation: pageHeightPt > pageWidthPt ? "p" : "l",
-        unit: "pt",
-        format: [pageWidthPt, pageHeightPt],
-      });
-      const imgData = canvas.toDataURL("image/jpeg", 0.95);
-      pdf.addImage(imgData, "JPEG", 0, 0, pageWidthPt, pageHeightPt);
-
-      const label =
-        viewMode === "week"
-          ? focusWeek
-            ? `週報-${weekLabel(focusWeek).replace("~", "至")}`
-            : "全部週份"
-          : focusMonth
-          ? monthLabel(focusMonth).replace("/", "-")
-          : "全部月份";
-      pdf.save(`品牌成效分析-${label}.pdf`);
-    } catch (e) {
-      setError("匯出 PDF 失敗:" + e.message);
-    } finally {
-      resizedTextareas.forEach(({ el, originalHeight }) => { el.style.height = originalHeight; });
-      document.body.classList.remove("mal-exporting");
-      setPdfExporting(false);
-    }
   }
 
   async function resetAll() {
@@ -3882,12 +3760,7 @@ function MetaAdsLedger() {
             <button className="mal-btn" onClick={() => setShowLedgerModal(true)}>📥 匯入後台業績</button>
           )}
           {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
-            <button className="mal-btn mal-print-btn" onClick={handlePrintClick}>🖨 列印</button>
-          )}
-          {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
-            <button className="mal-btn mal-print-btn" disabled={pdfExporting} onClick={exportPDF}>
-              {pdfExporting ? "匯出中…" : "📄 匯出 PDF"}
-            </button>
+            <button className="mal-btn mal-print-btn" onClick={handlePrintClick}>🖨 列印 / 匯出 PDF</button>
           )}
           {sortedKeys.length > 0 && <button className="mal-btn mal-btn-danger" onClick={() => setConfirmReset(true)}>🗑 重置</button>}
         </div>
