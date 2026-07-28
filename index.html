@@ -50,34 +50,34 @@
   }
   .mal-title-block { display: flex; align-items: center; gap: 14px; }
   .mal-stamp {
-    width: 46px; height: 46px; border-radius: 13px; flex-shrink: 0; font-size: 18px;
+    width: 46px; height: 46px; border-radius: 6px; flex-shrink: 0; font-size: 18px;
     display: flex; align-items: center; justify-content: center; color: #fff;
     background: #fff; overflow: hidden;
-    box-shadow: 0 4px 14px rgba(74,63,53,0.14);
+    box-shadow: 0 4px 14px rgba(74,53,38,0.08);
   }
   .mal-stamp img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .mal-title { font-family: 'Noto Serif TC', serif; font-weight: 700; font-size: 25px; margin: 0; letter-spacing: 0.01em; color: var(--ink); }
   .mal-subtitle { font-size: 12.5px; color: #8A7457; margin: 4px 0 0; letter-spacing: 0.01em; }
   .mal-btn {
-    font-family: 'Noto Sans TC', sans-serif; font-weight: 600; font-size: 13px; border-radius: 10px; padding: 9px 16px;
+    font-family: 'Noto Sans TC', sans-serif; font-weight: 600; font-size: 13px; border-radius: 5px; padding: 9px 16px;
     cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rule);
     background: var(--paper-raised); color: var(--ink); transition: all 0.15s ease; box-shadow: 0 1px 2px rgba(74,63,53,0.05);
   }
   .mal-btn:hover { background: #FFF9EC; border-color: var(--ink-soft); box-shadow: 0 3px 10px rgba(74,63,53,0.09); }
   .mal-btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .mal-btn-primary:hover { background: var(--blue-deep); border-color: var(--blue-deep); box-shadow: 0 4px 14px rgba(138,132,121,0.3); }
+  .mal-btn-primary:hover { background: var(--blue-deep); border-color: var(--blue-deep); box-shadow: 0 3px 10px rgba(74,53,38,0.1); }
   .mal-btn-danger { background: transparent; border-color: var(--red); color: var(--red); }
   .mal-btn-danger:hover { background: #F3E4E9; box-shadow: none; }
   .mal-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
   /* 標題區塊坐在奶油淺色底上,一般按鈕樣式在這種淺底色上已經看得清楚,不用再疊加深色背景專用樣式——
      只保留「連接Meta API」這顆主按鈕改成玫瑰色,在淺色背景上突顯出來,其餘沿用一般按鈕樣式即可。 */
   .mal-header .mal-btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .mal-notice { background: #EEF1E4; border: 1px solid #D8E0C8; color: #5C6B41; font-size: 13px; padding: 10px 16px; border-radius: 10px; margin-bottom: 16px; }
-  .mal-error { background: #F3E4E9; border: 1px solid #E3C3D0; color: #8B4A63; font-size: 13px; padding: 10px 16px; border-radius: 10px; margin-bottom: 16px; }
-  .mal-empty { border: 1.5px dashed var(--rule); border-radius: 16px; padding: 56px 24px; text-align: center; background: var(--paper-raised); }
+  .mal-notice { background: #EEF1E4; border: 1px solid #D8E0C8; color: #5C6B41; font-size: 13px; padding: 10px 16px; border-radius: 5px; margin-bottom: 16px; }
+  .mal-error { background: #F3E4E9; border: 1px solid #E3C3D0; color: #8B4A63; font-size: 13px; padding: 10px 16px; border-radius: 5px; margin-bottom: 16px; }
+  .mal-empty { border: 1.5px dashed var(--rule); border-radius: 6px; padding: 56px 24px; text-align: center; background: var(--paper-raised); }
   .mal-plan-savestatus { font-family: 'Noto Sans TC', sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
   .mal-plan-savestatus-error { color: var(--red); font-weight: 700; }
-  .mal-plan-load-error { background: #F3E4E9; border: 1px solid #E3C3D0; border-radius: 12px; padding: 14px 16px; margin-top: 20px; color: var(--red); font-size: 13px; line-height: 1.6; }
+  .mal-plan-load-error { background: #F3E4E9; border: 1px solid #E3C3D0; border-radius: 6px; padding: 14px 16px; margin-top: 20px; color: var(--red); font-size: 13px; line-height: 1.6; }
   .mal-plan-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 32px 0 16px; flex-wrap: wrap; }
   .mal-plan-title-row .mal-section-title { margin: 0; }
   .mal-plan-block { margin-bottom: 24px; }
@@ -87,29 +87,29 @@
   .mal-plan-input-category { width: 76px; flex-shrink: 0; text-align: center; }
   .mal-plan-link-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
   .mal-plan-input-link { flex: 1; font-size: 12.5px; }
-  .mal-plan-link-go { flex-shrink: 0; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--blue-deep, var(--blue)); text-decoration: none; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-raised); white-space: nowrap; }
+  .mal-plan-link-go { flex-shrink: 0; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--blue-deep, var(--blue)); text-decoration: none; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper-raised); white-space: nowrap; }
   .mal-plan-link-go:hover { background: var(--paper); }
-  .mal-plan-image-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); padding: 7px 12px; border: 1.5px dashed var(--rule); border-radius: 8px; cursor: pointer; }
+  .mal-plan-image-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); padding: 7px 12px; border: 1.5px dashed var(--rule); border-radius: 5px; cursor: pointer; }
   .mal-plan-image-add:hover { color: var(--ink); border-color: var(--blue); }
   .mal-plan-image-wrap { position: relative; margin-top: 8px; display: block; width: 100%; }
-  .mal-plan-image { width: 100%; max-height: 400px; object-fit: contain; background: var(--paper); border-radius: 10px; border: 1px solid var(--rule); display: block; cursor: zoom-in; }
+  .mal-plan-image { width: 100%; max-height: 400px; object-fit: contain; background: var(--paper); border-radius: 5px; border: 1px solid var(--rule); display: block; cursor: zoom-in; }
   .mal-plan-image-remove { position: absolute; top: 6px; right: 6px; font-family: 'Noto Sans TC', sans-serif; font-size: 11px; font-weight: 600; color: #fff; background: rgba(0,0,0,0.6); border: none; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
   .mal-plan-image-remove:hover { background: rgba(168,96,122,0.9); }
   .mal-image-lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px; cursor: zoom-out; }
   .mal-image-lightbox-overlay img { max-width: 100%; max-height: 100%; border-radius: 6px; }
-  .mal-plan-ai-error { font-size: 12.5px; color: var(--red); background: #F3E4E9; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
+  .mal-plan-ai-error { font-size: 12.5px; color: var(--red); background: #F3E4E9; border-radius: 5px; padding: 8px 12px; margin-bottom: 10px; }
   .mal-combined-ai-row { margin-bottom: 20px; }
-  .mal-source-note { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 14px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 8px; display: inline-block; }
-  .mal-plan-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+  .mal-source-note { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 14px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 5px; display: inline-block; }
+  .mal-plan-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; margin-bottom: 10px; }
   .mal-plan-card-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .mal-plan-index { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: var(--ink-soft); flex-shrink: 0; width: 20px; }
-  .mal-plan-input { font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); }
+  .mal-plan-input { font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper); color: var(--ink); }
   .mal-plan-input-title { flex: 1; font-weight: 600; }
-  .mal-plan-select { font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; padding: 7px 8px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); flex-shrink: 0; }
-  .mal-plan-remove { flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; font-size: 12px; }
+  .mal-plan-select { font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; padding: 7px 8px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper); color: var(--ink); flex-shrink: 0; }
+  .mal-plan-remove { flex-shrink: 0; width: 26px; height: 26px; border-radius: 5px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; font-size: 12px; }
   .mal-plan-remove:hover { background: #F3E4E9; border-color: var(--red); color: var(--red); }
   .mal-plan-card-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 8px; }
-  .mal-plan-textarea { width: 100%; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); resize: vertical; box-sizing: border-box; line-height: 1.6; }
+  .mal-plan-textarea { width: 100%; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper); color: var(--ink); resize: vertical; box-sizing: border-box; line-height: 1.6; }
   @media (max-width: 560px) {
     .mal-plan-card-row { flex-wrap: wrap; }
     .mal-plan-input-title { width: 100%; order: -1; margin-bottom: 4px; }
@@ -124,13 +124,13 @@
   }
   .mal-brand-chip:hover { border-color: var(--blue); color: var(--ink); }
   .mal-brand-chip-active { border-color: var(--amber); color: #fff; background: var(--amber); font-weight: 600; }
-  .mal-viewmode-switch { display: flex; gap: 6px; margin-bottom: 18px; background: #E9E1CE; padding: 5px; border-radius: 14px; width: fit-content; }
+  .mal-viewmode-switch { display: flex; gap: 6px; margin-bottom: 18px; background: #E9E1CE; padding: 5px; border-radius: 6px; width: fit-content; }
   .mal-viewmode-btn {
     font-family: 'Noto Serif TC', serif; font-weight: 500; font-size: 13.5px; padding: 8px 18px;
-    border: none; border-radius: 10px; background: transparent; color: var(--ink-soft); cursor: pointer; transition: all 0.15s ease;
+    border: none; border-radius: 5px; background: transparent; color: var(--ink-soft); cursor: pointer; transition: all 0.15s ease;
   }
-  .mal-viewmode-btn-active { color: #fff; background: var(--blue); box-shadow: 0 2px 8px rgba(138,132,121,0.3); }
-  .mal-week-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 16px; padding: 20px 22px 8px; margin-bottom: 28px; box-shadow: 0 2px 10px rgba(74,63,53,0.05); }
+  .mal-viewmode-btn-active { color: #fff; background: var(--blue); box-shadow: 0 2px 6px rgba(74,53,38,0.08); }
+  .mal-week-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 22px 8px; margin-bottom: 28px; box-shadow: 0 2px 10px rgba(74,63,53,0.05); }
   .mal-week-title { margin-top: 0; border-bottom: 1px solid var(--rule); }
   .mal-week-analysis { margin: 14px 0 16px; }
   .mal-week-analysis-title { font-family: 'Noto Serif TC', serif; font-weight: 600; font-size: 14px; margin-bottom: 8px; }
@@ -158,18 +158,18 @@
   .mal-tab { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; padding: 7px 16px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-raised); color: var(--ink-soft); cursor: pointer; white-space: nowrap; transition: all 0.15s ease; }
   .mal-tab-active { border-color: var(--blue); color: #fff; background: var(--blue); }
   .mal-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 26px; }
-  .mal-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 16px; padding: 18px 20px; box-shadow: 0 2px 10px rgba(74,63,53,0.04); }
+  .mal-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 18px 20px; box-shadow: 0 2px 10px rgba(74,63,53,0.04); }
   .mal-card-highlight-good { background: #E8F1EA; border-color: #A9CDBA; }
   .mal-roas-legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 14px 0 20px; font-size: 12px; color: var(--ink-soft); }
   .mal-roas-legend-item { display: inline-flex; align-items: center; gap: 6px; }
   .mal-roas-legend-item i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-  .mal-insight-box { background: #FAF6EC; border: 1px solid #E8DFC6; border-radius: 12px; padding: 16px 18px; margin-top: 4px; }
+  .mal-insight-box { background: #FAF6EC; border: 1px solid #E8DFC6; border-radius: 6px; padding: 16px 18px; margin-top: 4px; }
   .mal-insight-box-title { font-weight: 700; font-size: 13.5px; margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .mal-insight-box ul { margin: 0; padding-left: 20px; }
   .mal-insight-box li { font-size: 13px; line-height: 1.8; }
   .mal-insight-edit-textarea {
     width: 100%; box-sizing: border-box; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; line-height: 1.8;
-    padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-raised); resize: vertical;
+    padding: 10px 12px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper-raised); resize: vertical;
   }
   .mal-card-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
   .mal-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 23px; font-weight: 600; margin: 8px 0 9px; }
@@ -191,7 +191,7 @@
   .mal-perf-card:disabled { cursor: default; opacity: 0.5; }
   .mal-perf-card-label { font-size: 15.5px; font-weight: 700; text-transform: none; letter-spacing: 0.01em; display: flex; align-items: center; gap: 6px; }
   .mal-perf-card-hint { font-size: 11px; color: var(--ink-soft); font-weight: 400; margin-top: 6px; }
-  .mal-perf-section { scroll-margin-top: 16px; border: 1px solid var(--rule); border-radius: 14px; margin-bottom: 16px; overflow: hidden; }
+  .mal-perf-section { scroll-margin-top: 16px; border: 1px solid var(--rule); border-radius: 6px; margin-bottom: 16px; overflow: hidden; }
   .mal-perf-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; cursor: pointer; background: var(--paper-raised); border: none; width: 100%; text-align: left; font-family: inherit; }
   .mal-perf-section-title { font-family: 'Noto Serif TC', serif; font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; }
   .mal-perf-section-chevron { font-size: 13px; transition: transform 0.15s ease; color: var(--ink-soft); }
@@ -206,7 +206,7 @@
   .mal-ad-header-row .mal-section-title-flex { margin: 0; border-bottom: none; padding-bottom: 0; flex: 1; }
   .mal-ad-header-row { border-bottom: none; padding-bottom: 6px; margin-bottom: 12px; }
   .mal-ad-sort-select { padding: 7px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-raised); color: var(--ink); font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; }
-  .mal-chart-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 16px; padding: 20px 18px; margin-bottom: 22px; box-shadow: 0 2px 10px rgba(74,63,53,0.04); }
+  .mal-chart-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 18px; margin-bottom: 22px; box-shadow: 0 2px 10px rgba(74,63,53,0.04); }
   .mal-chart-legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-soft); margin-bottom: 10px; }
   .mal-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
   .mal-chart-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
@@ -221,9 +221,9 @@
   .mal-icon-btn:disabled { opacity: 0.5; cursor: default; }
   .mal-icon-btn:disabled:hover { color: var(--ink-soft); }
   .mal-ad-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-  .mal-ad-row { display: flex; align-items: center; gap: 14px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 14px; padding: 12px 16px; transition: box-shadow 0.15s ease; }
+  .mal-ad-row { display: flex; align-items: center; gap: 14px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; transition: box-shadow 0.15s ease; }
   .mal-ad-row:hover { box-shadow: 0 3px 12px rgba(74,63,53,0.06); }
-  .mal-thumb { width: 52px; height: 52px; object-fit: cover; border-radius: 10px; border: 1px solid var(--rule); flex-shrink: 0; background: #fff; }
+  .mal-thumb { width: 52px; height: 52px; object-fit: cover; border-radius: 5px; border: 1px solid var(--rule); flex-shrink: 0; background: #fff; }
   .mal-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--ink-soft); background: #EDE7DC; font-size: 18px; }
   .mal-ad-info { flex: 1; min-width: 0; }
   .mal-ad-name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -281,14 +281,14 @@
   .mal-ad-stats span { font-family: 'Noto Sans TC', sans-serif; font-size: 10px; color: var(--ink-soft); text-transform: uppercase; }
   .mal-toggle-ads { margin-bottom: 24px; font-size: 12.5px; padding: 7px 14px; }
   .mal-modal-overlay { position: fixed; inset: 0; background: rgba(74,63,53,0.35); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; backdrop-filter: blur(2px); }
-  .mal-modal { background: #fff; border-radius: 20px; max-width: 560px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: 0 20px 60px rgba(74,63,53,0.2); }
+  .mal-modal { background: #fff; border-radius: 6px; max-width: 560px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: 0 14px 40px rgba(74,53,38,0.1); }
   .mal-modal h3 { font-family: 'Noto Serif TC', serif; font-size: 19px; margin: 0 0 4px; }
   .mal-modal p.mal-modal-sub { color: var(--ink-soft); font-size: 13px; margin: 0 0 18px; }
   .mal-modal-small { max-width: 380px; }
   .mal-field { margin-bottom: 13px; }
   .mal-field label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; }
   .mal-field label .mal-req { color: var(--red); }
-  .mal-field select { width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 10px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); }
+  .mal-field select { width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 5px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); }
   .mal-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
   .mal-pdf-section-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; font-family: 'Noto Sans TC', sans-serif; font-size: 14px; color: var(--ink); cursor: pointer; border-bottom: 1px solid var(--rule); }
   .mal-pdf-section-row:last-of-type { border-bottom: none; }
@@ -297,7 +297,7 @@
   .mal-field-group-label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; margin-bottom: 10px; }
   .mal-advanced-toggle { display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; color: var(--blue); font-size: 12.5px; font-weight: 600; padding: 8px 0; margin-top: 4px; }
   .mal-advanced-fields { border-top: 1px dashed var(--rule); margin-top: 8px; padding-top: 14px; }
-  .mal-field-alt { background: #F3EEE5; border: 1px dashed var(--rule); border-radius: 10px; padding: 10px 12px; }
+  .mal-field-alt { background: #F3EEE5; border: 1px dashed var(--rule); border-radius: 5px; padding: 10px 12px; }
   .mal-field-alt label { color: var(--ink-soft); font-weight: 500; }
   .mal-preview-table { width: 100%; font-size: 11px; border-collapse: collapse; margin-bottom: 16px; max-height: 140px; overflow: auto; display: block; }
   .mal-preview-table thead, .mal-preview-table tbody { display: table; width: 100%; }
@@ -1233,26 +1233,28 @@ function SimpleLineChart({ data, seriesA, seriesB, colorA, colorB, labelA, label
 
 // 精選 24 色的色盤,色調跟整體「復古紙本」風格一致(用完才會開始用下面的演算法備援色)。
 const DONUT_PALETTE = [
-  "#6E8577", "#A8607A", "#BFA054", "#7C8B54", "#8E9AAF", "#C97B63",
-  "#5B7F95", "#9B7EDE", "#D98B5F", "#4F8A7B", "#B85C7A", "#7D9471",
-  "#8C6E4F", "#5E7A8C", "#A67B9E", "#7B9A6B", "#C08552", "#647A9E",
-  "#9E7B6E", "#6B9A8C", "#B88CA6", "#8A9E5B", "#A65B6E", "#5B8AA6",
+  "#C57A43", "#6A4B36", "#D3A58E", "#9B9A79", "#BDAA98", "#DCC6B3", "#856A58",
+  "#B96B37", "#5D422F", "#A78366", "#87816A", "#CBB89F", "#C9A678", "#6E5A4A",
+  "#D9BC9A", "#8E7B5C", "#A99378", "#C48F5E", "#73624F", "#B8A48A", "#9C7A54",
+  "#DDCBB0", "#7A6650", "#AE8968",
 ];
 
 // 產品代號的數量沒有上限,色盤用完之後,用 HSL 色相環演算法自動生成新顏色(黃金角度旋轉,確保彼此夠好分辨),
 // 而不是讓顏色從頭循環重複——避免產品一多,兩個不同代號被畫成同一個顏色而看不出差異。
 function colorForIndex(i) {
   if (i < DONUT_PALETTE.length) return DONUT_PALETTE[i];
-  const hue = (i * 137.508) % 360; // 黃金角度,讓色相盡量分散
-  return `hsl(${hue.toFixed(0)}, 46%, 48%)`;
+  // 色盤用完之後的備用色,原本用完整360度色相環,會跑出藍紫綠這些冷色調,跟整體暖色主題不搭。
+  // 改成只在暖色相範圍(15°~45°,橘棕色系)裡跑黃金角度旋轉,亮度/彩度也調低,保持低調質感。
+  const hue = 15 + ((i * 137.508) % 30);
+  return `hsl(${hue.toFixed(0)}, 38%, 42%)`;
 }
 
 // ROAS 效率分級,四級跟參考範例(行銷週報 PDF)的圖例一致。
 const ROAS_TIERS = [
-  { min: 5, label: "優秀", color: "#3F7D4F" },
-  { min: 3, label: "穩健", color: "#3D6B92" },
-  { min: 2, label: "待優化", color: "#B8860B" },
-  { min: 0, label: "低效", color: "#A8607A" },
+  { min: 5, label: "優秀", color: "#718069" },
+  { min: 3, label: "穩健", color: "#856A58" },
+  { min: 2, label: "待優化", color: "#B98955" },
+  { min: 0, label: "低效", color: "#A56357" },
 ];
 function roasTier(roas) {
   if (roas === null || roas === undefined || !isFinite(roas)) return null;
