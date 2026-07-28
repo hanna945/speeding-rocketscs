@@ -19,16 +19,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <style>
   :root {
-    --paper: #F1ECE2;
-    --paper-raised: #FCF9F3;
-    --ink: #3D3027;
-    --ink-soft: #76695E;
-    --rule: #DDD3C6;
-    --blue: #C57A43;
-    --blue-deep: #B96B37;
-    --green: #718069;
+    --paper: #F3EEE5;
+    --paper-raised: #FBF7F0;
+    --ink: #3B2F27;
+    --ink-soft: #8F8171;
+    --ink-secondary: #6F6258;
+    --rule: #E8E0D3;
+    --rule-soft: #EFE9DE;
+    --blue: #A9744A;
+    --blue-deep: #8F5F39;
+    --green: #8A8D74;
     --red: #A56357;
-    --amber: #B98955;
+    --amber: #B08653;
+    --num-ink: #5B4A3B;
+    --section-num: #DCD2C2;
     --masthead-a: #EAE6DD;
     --masthead-b: #D9D3C7;
   }
@@ -44,29 +48,29 @@
      配色改成奶油/淺金漸層(不用深色底),第二輪根據回饋拿掉綠色調,主色改成淺玫瑰色。 */
   .mal-header {
     display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap;
-    background: linear-gradient(160deg, var(--masthead-a), var(--masthead-b)); color: var(--ink);
-    margin: 0 calc(-50vw + 50%) 26px; padding: 26px max(20px, calc(50vw - 460px + 20px)) 22px;
-    border-bottom: 1px solid #E3CB98;
+    background: transparent; color: var(--ink);
+    margin: 0 calc(-50vw + 50%) 26px; padding: 32px max(20px, calc(50vw - 460px + 20px)) 20px;
+    border-bottom: 1px solid var(--rule);
   }
   .mal-title-block { display: flex; align-items: center; gap: 14px; }
   .mal-stamp {
-    width: 46px; height: 46px; border-radius: 6px; flex-shrink: 0; font-size: 18px;
+    width: 42px; height: 42px; border-radius: 3px; flex-shrink: 0; font-size: 18px;
     display: flex; align-items: center; justify-content: center; color: #fff;
-    background: #fff; overflow: hidden;
-    box-shadow: 0 4px 14px rgba(74,53,38,0.08);
+    background: var(--paper-raised); overflow: hidden; border: 1px solid var(--rule);
+    box-shadow: none;
   }
   .mal-stamp img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .mal-title { font-family: 'Noto Serif TC', serif; font-weight: 700; font-size: 25px; margin: 0; letter-spacing: 0.01em; color: var(--ink); }
-  .mal-eyebrow { font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--blue-deep); margin: 0 0 4px; }
-  .mal-subtitle { font-size: 12.5px; color: var(--ink-soft); margin: 4px 0 0; letter-spacing: 0.01em; }
+  .mal-title { font-family: 'Noto Serif TC', serif; font-weight: 500; font-size: 25px; margin: 0; letter-spacing: 0.02em; color: var(--ink); }
+  .mal-eyebrow { font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 600; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--blue); margin: 0 0 6px; }
+  .mal-subtitle { font-size: 12.5px; color: var(--ink-secondary); margin: 4px 0 0; letter-spacing: 0.01em; }
   .mal-btn {
-    font-family: 'Noto Sans TC', sans-serif; font-weight: 600; font-size: 13px; border-radius: 5px; padding: 9px 16px;
+    font-family: 'Noto Sans TC', sans-serif; font-weight: 500; font-size: 13px; letter-spacing: 0.02em; border-radius: 3px; padding: 0 18px; height: 42px;
     cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rule);
-    background: var(--paper-raised); color: var(--ink); transition: all 0.15s ease; box-shadow: 0 1px 2px rgba(74,63,53,0.05);
+    background: var(--paper-raised); color: var(--ink); transition: all 0.15s ease; box-shadow: none;
   }
-  .mal-btn:hover { background: #FFF9EC; border-color: var(--ink-soft); box-shadow: 0 3px 10px rgba(74,63,53,0.09); }
-  .mal-btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .mal-btn-primary:hover { background: var(--blue-deep); border-color: var(--blue-deep); box-shadow: 0 3px 10px rgba(74,53,38,0.1); }
+  .mal-btn:hover { background: var(--paper); border-color: var(--ink-soft); box-shadow: none; }
+  .mal-btn-primary { background: var(--blue-deep); border-color: var(--blue-deep); color: var(--paper-raised); font-weight: 500; }
+  .mal-btn-primary:hover { background: #7A4F30; border-color: #7A4F30; box-shadow: none; }
   .mal-btn-danger { background: transparent; border-color: var(--red); color: var(--red); }
   .mal-btn-danger:hover { background: #F3E4E9; box-shadow: none; }
   .mal-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
@@ -158,9 +162,11 @@
   .mal-scroll-wrap::-webkit-scrollbar-thumb { background: var(--blue); border-radius: 999px; border: 2px solid var(--rule); }
   .mal-tab { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; padding: 7px 16px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-raised); color: var(--ink-soft); cursor: pointer; white-space: nowrap; transition: all 0.15s ease; }
   .mal-tab-active { border-color: var(--blue); color: #fff; background: var(--blue); }
-  .mal-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 26px; }
-  .mal-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 18px 20px; box-shadow: 0 2px 10px rgba(74,63,53,0.04); }
-  .mal-card-highlight-good { background: #E8F1EA; border-color: #A9CDBA; }
+  .mal-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0; margin-bottom: 26px; border: 1px solid var(--rule-soft); }
+  .mal-card { background: var(--paper-raised); border: none; border-right: 1px solid var(--rule-soft); border-bottom: 1px solid var(--rule-soft); border-radius: 0; padding: 20px 22px; box-shadow: none; }
+  .mal-card:last-child { border-right: none; }
+  .mal-card-highlight-good { background: var(--paper-raised); border-color: var(--rule-soft); }
+  .mal-card-highlight-good .mal-card-value { color: var(--blue-deep); }
   .mal-roas-legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 14px 0 20px; font-size: 12px; color: var(--ink-soft); }
   .mal-roas-legend-item { display: inline-flex; align-items: center; gap: 6px; }
   .mal-roas-legend-item i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
@@ -172,8 +178,8 @@
     width: 100%; box-sizing: border-box; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; line-height: 1.8;
     padding: 10px 12px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper-raised); resize: vertical;
   }
-  .mal-card-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-  .mal-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 23px; font-weight: 600; margin: 8px 0 9px; }
+  .mal-card-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+  .mal-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 23px; font-weight: 500; letter-spacing: -0.005em; color: var(--num-ink); margin: 10px 0 9px; }
   /* 週報表儀表板:整體ROAS卡片(達標時用綠底跟其他卡片區隔)、橫條圖、圖例。
      顏色沿用全站既有色票(--green/--blue/--amber/--red),ROAS四級分色不額外造新顏色。 */
   .mal-dash-card-roas { background: #EEF3EA; border-color: var(--green); }
@@ -201,7 +207,24 @@
   .mal-delta-good { color: var(--green); }
   .mal-delta-bad { color: var(--red); }
   .mal-delta-flat { color: var(--ink-soft); }
-  .mal-section-title { font-family: 'Noto Serif TC', serif; font-weight: 600; font-size: 17.5px; letter-spacing: 0.02em; margin: 44px 0 18px; padding-left: 14px; border-left: 2px solid var(--blue); border-bottom: none; line-height: 1.4; color: var(--ink); }
+  .mal-shell { counter-reset: mal-section; }
+  .mal-section-title {
+    font-family: 'Noto Serif TC', serif; font-weight: 500; font-size: 19px; letter-spacing: 0.02em;
+    margin: 52px 0 24px; padding-left: 38px; border-left: none; border-bottom: none; line-height: 1.3;
+    color: var(--ink); position: relative; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    counter-increment: mal-section;
+  }
+  .mal-section-title::before {
+    content: counter(mal-section, decimal-leading-zero);
+    font-family: 'Cormorant Garamond', serif; font-weight: 500; font-size: 42px; color: var(--section-num);
+    position: absolute; left: -4px; top: -20px; line-height: 1; z-index: 0;
+  }
+  .mal-section-title::after { content: ""; flex: 0 1 60px; min-width: 24px; height: 1px; background: var(--rule); align-self: center; }
+  @media (max-width: 600px) {
+    .mal-section-title { font-size: 16px; flex-wrap: wrap; padding-left: 34px; margin: 40px 0 20px; }
+    .mal-section-title::before { font-size: 32px; top: -14px; }
+    .mal-section-title::after { flex-basis: 100%; margin-top: 10px; }
+  }
   .mal-section-count { font-family: 'Noto Sans TC', sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-soft); margin-left: 8px; }
   .mal-ad-header-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
   .mal-ad-header-row .mal-section-title-flex { margin: 0; border-bottom: none; padding-bottom: 0; flex: 1; }
@@ -212,9 +235,9 @@
   .mal-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
   .mal-chart-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
   .mal-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .mal-table th { text-align: right; font-weight: 600; color: var(--ink-soft); font-size: 11.5px; text-transform: uppercase; padding: 8px 10px; border-bottom: 2px solid var(--ink); }
+  .mal-table th { text-align: right; font-weight: 700; color: var(--ink-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; padding: 0 10px 12px; border-bottom: 1px solid var(--rule); }
   .mal-table th:first-child, .mal-table td:first-child { text-align: left; }
-  .mal-table td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--rule); font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
+  .mal-table td { text-align: right; padding: 13px 10px; border-bottom: 1px solid var(--rule-soft); font-family: 'IBM Plex Mono', monospace; font-weight: 500; letter-spacing: -0.005em; font-size: 12.5px; }
   .mal-table tr:hover td { background: #F7F2EA; }
   .mal-row-month { font-family: 'Noto Sans TC', sans-serif; font-weight: 600; }
   .mal-icon-btn { background: none; border: none; cursor: pointer; color: var(--ink-soft); padding: 4px; font-size: 14px; }
