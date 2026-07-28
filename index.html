@@ -91,10 +91,12 @@
   .mal-plan-link-go:hover { background: var(--paper); }
   .mal-plan-image-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); padding: 7px 12px; border: 1.5px dashed var(--rule); border-radius: 8px; cursor: pointer; }
   .mal-plan-image-add:hover { color: var(--ink); border-color: var(--blue); }
-  .mal-plan-image-wrap { position: relative; margin-top: 8px; display: inline-block; }
-  .mal-plan-image { max-width: 100%; max-height: 220px; border-radius: 10px; border: 1px solid var(--rule); display: block; }
+  .mal-plan-image-wrap { position: relative; margin-top: 8px; display: block; width: 100%; }
+  .mal-plan-image { width: 100%; max-height: 400px; object-fit: contain; background: var(--paper); border-radius: 10px; border: 1px solid var(--rule); display: block; cursor: zoom-in; }
   .mal-plan-image-remove { position: absolute; top: 6px; right: 6px; font-family: 'Noto Sans TC', sans-serif; font-size: 11px; font-weight: 600; color: #fff; background: rgba(0,0,0,0.6); border: none; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
   .mal-plan-image-remove:hover { background: rgba(168,96,122,0.9); }
+  .mal-image-lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px; cursor: zoom-out; }
+  .mal-image-lightbox-overlay img { max-width: 100%; max-height: 100%; border-radius: 6px; }
   .mal-plan-ai-error { font-size: 12.5px; color: var(--red); background: #F3E4E9; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
   .mal-combined-ai-row { margin-bottom: 20px; }
   .mal-source-note { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 14px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 8px; display: inline-block; }
@@ -3014,6 +3016,7 @@ function MetaAdsLedger() {
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState("");
     const [loadError, setLoadError] = useState("");
+    const [lightboxImage, setLightboxImage] = useState(null); // 點縮圖放大看原圖用
     const saveTimerRef = useRef(null);
     // 待存檔的最新內容——跟 saveTimerRef 分開追蹤,是因為「立即存檔」(flush)要能在計時器
     // 還沒觸發前,直接把這裡記著的最新資料送出去,不用等900ms。之前的版本只靠setTimeout,
@@ -3341,7 +3344,7 @@ function MetaAdsLedger() {
               </div>
               {p.image ? (
                 <div className="mal-plan-image-wrap">
-                  <img className="mal-plan-image" src={p.image} alt="專案輔助說明圖片" />
+                  <img className="mal-plan-image" src={p.image} alt="專案輔助說明圖片" onClick={() => setLightboxImage(p.image)} />
                   <button className="mal-plan-image-remove" onClick={() => updateProject(p.id, "image", "")} title="移除圖片">✕ 移除圖片</button>
                 </div>
               ) : (
@@ -3360,6 +3363,12 @@ function MetaAdsLedger() {
           ))}
           <button className="mal-btn" onClick={addProject}>+ 新增專案項目</button>
         </div>
+
+        {lightboxImage && (
+          <div className="mal-image-lightbox-overlay" onClick={() => setLightboxImage(null)}>
+            <img src={lightboxImage} alt="放大檢視" />
+          </div>
+        )}
       </>
     );
   });
