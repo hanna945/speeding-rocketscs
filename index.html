@@ -65,8 +65,9 @@
   .mal-subtitle { font-size: 12.5px; color: var(--ink-secondary); margin: 4px 0 0; letter-spacing: 0.01em; }
   .mal-btn {
     font-family: 'Noto Sans TC', sans-serif; font-weight: 500; font-size: 13px; letter-spacing: 0.02em; border-radius: 3px; padding: 0 18px; height: 42px;
-    cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rule);
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--rule);
     background: var(--paper-raised); color: var(--ink); transition: all 0.15s ease; box-shadow: none;
+    white-space: nowrap; min-width: 0;
   }
   .mal-btn:hover { background: var(--paper); border-color: var(--ink-soft); box-shadow: none; }
   .mal-btn-primary { background: var(--blue-deep); border-color: var(--blue-deep); color: var(--paper-raised); font-weight: 500; }
@@ -330,6 +331,16 @@
     .mal-cards { grid-template-columns: repeat(2, 1fr); }
     .mal-ad-row { flex-wrap: wrap; }
     .mal-ad-stats { width: 100%; justify-content: space-between; gap: 8px; }
+    /* 手機版操作按鈕改成2欄grid,不要塞在同一橫排擠爆——這是造成逐字斷行、按鈕溢出畫面的根本原因 */
+    .mal-header-actions {
+      display: grid !important; grid-template-columns: repeat(2, 1fr); gap: 8px !important; width: 100%;
+    }
+    .mal-header-actions .mal-btn { width: 100%; font-size: 12.5px; padding: 0 10px; }
+    /* 品牌名稱長度不一,手機版改成2欄grid,長名稱允許在按鈕內換行(最多視覺上約2行),
+       不要用nowrap硬撐寬度,不然像「Halo-Mavis國際連線(光速代操)」這種長名稱會把版面撐爆。 */
+    .mal-brand-switch { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .mal-brand-switch-label { grid-column: 1 / -1; }
+    .mal-brand-chip { white-space: normal; line-height: 1.35; text-align: center; padding: 8px 10px; min-height: 34px; display: flex; align-items: center; justify-content: center; }
   }
 
   @media print {
