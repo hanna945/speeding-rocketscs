@@ -60,6 +60,8 @@
     box-shadow: none;
   }
   .mal-stamp img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mal-header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .mal-header-actions-primary, .mal-header-actions-secondary, .mal-header-actions-reset-row { display: contents; }
   .mal-title { font-family: 'Noto Serif TC', serif; font-weight: 500; font-size: 25px; margin: 0; letter-spacing: 0.02em; color: var(--ink); }
   .mal-eyebrow { font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 600; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--blue); margin: 0 0 6px; }
   .mal-subtitle { font-size: 12.5px; color: var(--ink-secondary); margin: 4px 0 0; letter-spacing: 0.01em; }
@@ -335,31 +337,36 @@
     .mal-header { padding-top: 16px; padding-bottom: 12px; margin-bottom: 14px; }
     .mal-viewmode-switch { margin-bottom: 12px; }
     .mal-section-title { margin-top: 26px; }
-    /* 手機版操作按鈕改成2欄grid,不要塞在同一橫排擠爆——這是造成逐字斷行、按鈕溢出畫面的根本原因。
-       按鈕高度收到46px(原本42px+padding偏大),整體更輕巧,不再像大型App卡片。 */
-    .mal-header-actions {
-      display: grid !important; grid-template-columns: repeat(2, 1fr); gap: 8px !important; width: 100%;
+
+    /* 手機版操作區固定三段版型,不是5-6顆按鈕塞進同一個2欄grid(那樣一定會有一格留白)。
+       外層改成直向排列,三個子區各自是獨立的grid,彼此不共用格線。 */
+    .mal-header-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+    .mal-header-actions-primary, .mal-header-actions-secondary, .mal-header-actions-reset-row { display: grid; gap: 8px; }
+    /* 第一列:連接Meta API + 團隊密碼,固定2欄,46px高 */
+    .mal-header-actions-primary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .mal-header-actions-primary .mal-btn { height: 46px; font-size: 12.5px; padding: 0 8px; width: 100%; min-width: 0; }
+    /* 第二列:匯入後台業績 + 列印 + 匯出PDF,固定3欄,42px高,字級略小但不換行不斷字 */
+    .mal-header-actions-secondary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .mal-header-actions-secondary .mal-btn { height: 42px; font-size: 11.5px; padding: 0 4px; width: 100%; min-width: 0; }
+    /* 第三列:重置,小型文字/細框按鈕,靠右,不占大面積 */
+    .mal-header-actions-reset-row { grid-template-columns: auto; justify-content: end; margin: 0; }
+    .mal-header-actions-reset-row .mal-btn-danger {
+      height: 35px; font-size: 12px; font-weight: 500; padding: 0 16px;
+      background: transparent; width: auto;
     }
-    .mal-header-actions .mal-btn { width: 100%; height: 46px; font-size: 12.5px; padding: 0 8px; }
-    /* 重置是危險操作、不是主要功能,單獨落在grid最後一列時只佔左半格、右邊空白,看起來像缺件。
-       改成橫跨兩欄、但用更小的高度+更輕的視覺(細字外框,不是實心色塊),降低存在感又不會露出空白。 */
-    .mal-header-actions .mal-btn-danger {
-      grid-column: 1 / -1; height: 36px; font-size: 12px; font-weight: 500;
-      background: transparent; justify-self: end; width: auto; padding: 0 16px;
-    }
-    /* 「品牌:」獨立一行,跟上面操作區、下面品牌按鈕都保留清楚間距,不要黏在重置按鈕旁邊 */
-    .mal-brand-switch { margin-top: 22px; margin-bottom: 10px; }
+
+    /* 「品牌:」跟操作區只保留約20px間距,不要黏著也不要留大量空白 */
+    .mal-brand-switch { margin-top: 20px; margin-bottom: 10px; }
     /* 品牌名稱長度不一,手機版改成2欄grid,長名稱允許在按鈕內換行(最多視覺上約2行),
        不要用nowrap硬撐寬度,不然像「Halo-Mavis國際連線(光速代操)」這種長名稱會把版面撐爆。
-       grid預設同一列的項目就會等高(align-items:stretch),min-height只是保底,不會限制長名稱撐開的高度。 */
+       align-items:stretch要明確覆寫,不然會沿用桌機版flex的align-items:center,同一列不會等高。 */
     .mal-brand-switch { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; align-items: stretch; }
     .mal-brand-switch-label { grid-column: 1 / -1; margin-bottom: 2px; }
     .mal-brand-chip {
-      white-space: normal; line-height: 1.35; text-align: center; padding: 8px 10px; min-height: 48px;
+      white-space: normal; line-height: 1.35; text-align: center; padding: 6px 10px; min-height: 46px;
       display: flex; align-items: center; justify-content: center;
     }
-    /* 匯入/列印/匯出/重置這幾顆按鈕的emoji拿掉純裝飾用途的,不搶視覺焦點——文字本身已經說明功能,
-       按鈕功能、事件完全沒變,只是不顯示emoji前綴。 */
+    /* 純裝飾用的emoji(插頭/鑰匙/雲朵/信封/印表機/垃圾桶)手機版隱藏,不影響按鈕點擊事件跟文字 */
     .mal-header-actions .mal-btn .mal-btn-emoji { display: none; }
   }
 
@@ -3978,23 +3985,31 @@ function MetaAdsLedger() {
             </p>
           </div>
         </div>
-        <div className="mal-header-actions" style={{ display: "flex", gap: 10 }}>
-          <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}>🔌 連接 Meta API</button>
-          {!HAS_SHARED_STORAGE && (
-            <button className="mal-btn" onClick={() => { setTeamKeyInput(getTeamKey()); setShowTeamKeyModal(true); }}>
-              {cloudStatus === "connected" ? `☁️ ${credentialName || "已連線"}` : "🔑 團隊密碼"}
-            </button>
+        <div className="mal-header-actions">
+          <div className="mal-header-actions-primary">
+            <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}>🔌 連接 Meta API</button>
+            {!HAS_SHARED_STORAGE && (
+              <button className="mal-btn" onClick={() => { setTeamKeyInput(getTeamKey()); setShowTeamKeyModal(true); }}>
+                {cloudStatus === "connected" ? `☁️ ${credentialName || "已連線"}` : "🔑 團隊密碼"}
+              </button>
+            )}
+          </div>
+          <div className="mal-header-actions-secondary">
+            {activeBrandId && (
+              <button className="mal-btn" onClick={() => setShowLedgerModal(true)}><span className="mal-btn-emoji">📥</span> 匯入後台業績</button>
+            )}
+            {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
+              <button className="mal-btn mal-print-btn" onClick={handlePrintClick}><span className="mal-btn-emoji">🖨</span> 列印</button>
+            )}
+            {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
+              <button className="mal-btn mal-print-btn" onClick={() => setShowPdfSectionModal(true)}><span className="mal-btn-emoji">📄</span> 匯出 PDF</button>
+            )}
+          </div>
+          {sortedKeys.length > 0 && (
+            <div className="mal-header-actions-reset-row">
+              <button className="mal-btn mal-btn-danger" onClick={() => setConfirmReset(true)}><span className="mal-btn-emoji">🗑</span> 重置</button>
+            </div>
           )}
-          {activeBrandId && (
-            <button className="mal-btn" onClick={() => setShowLedgerModal(true)}><span className="mal-btn-emoji">📥</span> 匯入後台業績</button>
-          )}
-          {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
-            <button className="mal-btn mal-print-btn" onClick={handlePrintClick}><span className="mal-btn-emoji">🖨</span> 列印</button>
-          )}
-          {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
-            <button className="mal-btn mal-print-btn" onClick={() => setShowPdfSectionModal(true)}><span className="mal-btn-emoji">📄</span> 匯出 PDF</button>
-          )}
-          {sortedKeys.length > 0 && <button className="mal-btn mal-btn-danger" onClick={() => setConfirmReset(true)}><span className="mal-btn-emoji">🗑</span> 重置</button>}
         </div>
 
         {showPdfSectionModal && (
