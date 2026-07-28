@@ -120,15 +120,15 @@
     .mal-plan-input-title { width: 100%; order: -1; margin-bottom: 4px; }
   }
   .mal-empty p { color: var(--ink-soft); font-size: 14px; max-width: 440px; margin: 10px auto 20px; line-height: 1.6; }
-  .mal-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 20px; }
+  .mal-tabs { display: flex; gap: 22px; overflow-x: auto; padding-bottom: 0; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
   .mal-brand-switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
   .mal-brand-switch-label { font-size: 12.5px; color: var(--ink-soft); font-weight: 600; }
   .mal-brand-chip {
-    font-size: 12.5px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--rule);
-    background: var(--paper-raised); color: var(--ink-soft); cursor: pointer; white-space: nowrap; transition: all 0.15s ease;
+    font-size: 12.5px; padding: 6px 14px; border-radius: 3px; border: 1px solid var(--rule);
+    background: var(--paper-raised); color: var(--ink-secondary); cursor: pointer; white-space: nowrap; transition: all 0.15s ease;
   }
   .mal-brand-chip:hover { border-color: var(--blue); color: var(--ink); }
-  .mal-brand-chip-active { border-color: var(--amber); color: #fff; background: var(--amber); font-weight: 600; }
+  .mal-brand-chip-active { border-color: var(--blue-deep); color: var(--paper-raised); background: var(--blue-deep); font-weight: 500; }
   .mal-viewmode-switch { display: flex; gap: 6px; margin-bottom: 18px; background: #E9E1CE; padding: 5px; border-radius: 6px; width: fit-content; }
   .mal-viewmode-btn {
     font-family: 'Noto Serif TC', serif; font-weight: 500; font-size: 13.5px; padding: 8px 18px;
@@ -160,8 +160,8 @@
   .mal-scroll-wrap::-webkit-scrollbar { height: 11px; }
   .mal-scroll-wrap::-webkit-scrollbar-track { background: var(--rule); border-radius: 999px; }
   .mal-scroll-wrap::-webkit-scrollbar-thumb { background: var(--blue); border-radius: 999px; border: 2px solid var(--rule); }
-  .mal-tab { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; padding: 7px 16px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-raised); color: var(--ink-soft); cursor: pointer; white-space: nowrap; transition: all 0.15s ease; }
-  .mal-tab-active { border-color: var(--blue); color: #fff; background: var(--blue); }
+  .mal-tab { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; font-size: 13px; padding: 0 4px 10px; border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--ink-secondary); cursor: pointer; white-space: nowrap; transition: all 0.15s ease; }
+  .mal-tab-active { border-bottom-color: var(--blue-deep); color: var(--blue-deep); background: transparent; font-weight: 600; }
   .mal-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0; margin-bottom: 26px; border: 1px solid var(--rule-soft); }
   .mal-card { background: var(--paper-raised); border: none; border-right: 1px solid var(--rule-soft); border-bottom: 1px solid var(--rule-soft); border-radius: 0; padding: 20px 22px; box-shadow: none; }
   .mal-card:last-child { border-right: none; }
@@ -229,7 +229,7 @@
   .mal-ad-header-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
   .mal-ad-header-row .mal-section-title-flex { margin: 0; border-bottom: none; padding-bottom: 0; flex: 1; }
   .mal-ad-header-row { border-bottom: none; padding-bottom: 6px; margin-bottom: 12px; }
-  .mal-ad-sort-select { padding: 7px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-raised); color: var(--ink); font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; }
+  .mal-ad-sort-select { padding: 7px 12px; height: 34px; border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-raised); color: var(--ink); font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; }
   .mal-chart-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 18px; margin-bottom: 22px; box-shadow: 0 2px 10px rgba(74,63,53,0.04); }
   .mal-chart-legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-soft); margin-bottom: 10px; }
   .mal-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
@@ -266,11 +266,11 @@
   }
   .mal-status-filter { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
   .mal-status-filter-btn {
-    font-family: 'Noto Sans TC', sans-serif; font-size: 12px; font-weight: 600; padding: 7px 15px;
-    border-radius: 999px; border: 1px solid var(--rule); background: var(--paper-raised);
-    color: var(--ink-soft); cursor: pointer; transition: all 0.15s ease;
+    font-family: 'Noto Sans TC', sans-serif; font-size: 12px; font-weight: 500; padding: 7px 14px; height: 34px;
+    border-radius: 3px; border: 1px solid var(--rule); background: var(--paper-raised);
+    color: var(--ink-secondary); cursor: pointer; transition: all 0.15s ease;
   }
-  .mal-status-filter-btn-active { border-color: var(--blue); color: #fff; background: var(--blue); }
+  .mal-status-filter-btn-active { border-color: var(--blue-deep); color: var(--paper-raised); background: var(--blue-deep); font-weight: 500; }
   .mal-ad-search-wrap { position: relative; margin-left: auto; }
   .mal-ad-search-wrap input {
     font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; padding: 7px 30px 7px 13px;
@@ -305,7 +305,7 @@
   .mal-ad-stats span { font-family: 'Noto Sans TC', sans-serif; font-size: 10px; color: var(--ink-soft); text-transform: uppercase; }
   .mal-toggle-ads { margin-bottom: 24px; font-size: 12.5px; padding: 7px 14px; }
   .mal-modal-overlay { position: fixed; inset: 0; background: rgba(74,63,53,0.35); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; backdrop-filter: blur(2px); }
-  .mal-modal { background: #fff; border-radius: 6px; max-width: 560px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: 0 14px 40px rgba(74,53,38,0.1); }
+  .mal-modal { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 4px; max-width: 560px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: 0 14px 40px rgba(74,53,38,0.08); }
   .mal-modal h3 { font-family: 'Noto Serif TC', serif; font-size: 19px; margin: 0 0 4px; }
   .mal-modal p.mal-modal-sub { color: var(--ink-soft); font-size: 13px; margin: 0 0 18px; }
   .mal-modal-small { max-width: 380px; }
