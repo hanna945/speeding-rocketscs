@@ -1257,9 +1257,9 @@ function SimpleLineChart({ data, seriesA, seriesB, colorA, colorB, labelA, label
 
 // 精選 24 色的色盤,色調跟整體「復古紙本」風格一致(用完才會開始用下面的演算法備援色)。
 const DONUT_PALETTE = [
-  "#C57A43", "#6A4B36", "#D3A58E", "#9B9A79", "#BDAA98", "#DCC6B3", "#856A58",
-  "#B96B37", "#5D422F", "#A78366", "#87816A", "#CBB89F", "#C9A678", "#6E5A4A",
-  "#D9BC9A", "#8E7B5C", "#A99378", "#C48F5E", "#73624F", "#B8A48A", "#9C7A54",
+  "#A9744A", "#5B4A3B", "#8A8D74", "#C9AF97", "#8F5F39", "#B08653", "#73624F",
+  "#9C7A54", "#6E5A4A", "#A78366", "#87816A", "#CBB89F", "#B08653", "#5D422F",
+  "#D9BC9A", "#8E7B5C", "#A99378", "#8A8D74", "#73624F", "#B8A48A", "#9C7A54",
   "#DDCBB0", "#7A6650", "#AE8968",
 ];
 
@@ -1275,9 +1275,9 @@ function colorForIndex(i) {
 
 // ROAS 效率分級,四級跟參考範例(行銷週報 PDF)的圖例一致。
 const ROAS_TIERS = [
-  { min: 5, label: "優秀", color: "#718069" },
-  { min: 3, label: "穩健", color: "#856A58" },
-  { min: 2, label: "待優化", color: "#B98955" },
+  { min: 5, label: "優秀", color: "#8A8D74" },
+  { min: 3, label: "穩健", color: "#73624F" },
+  { min: 2, label: "待優化", color: "#B08653" },
   { min: 0, label: "低效", color: "#A56357" },
 ];
 function roasTier(roas) {
