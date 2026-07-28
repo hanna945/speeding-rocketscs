@@ -341,7 +341,7 @@
     /* 手機版操作區固定三段版型,不是5-6顆按鈕塞進同一個2欄grid(那樣一定會有一格留白)。
        外層改成直向排列,三個子區各自是獨立的grid,彼此不共用格線。 */
     .mal-header-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; }
-    .mal-header-actions-primary, .mal-header-actions-secondary, .mal-header-actions-reset-row { display: grid; gap: 8px; }
+    .mal-header-actions-primary, .mal-header-actions-secondary, .mal-header-actions-reset-row { display: grid; gap: 8px; width: 100%; align-self: stretch; }
     /* 第一列:連接Meta API + 團隊密碼,固定2欄,46px高 */
     .mal-header-actions-primary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .mal-header-actions-primary .mal-btn { height: 46px; font-size: 12.5px; padding: 0 8px; width: 100%; min-width: 0; }
@@ -3987,10 +3987,10 @@ function MetaAdsLedger() {
         </div>
         <div className="mal-header-actions">
           <div className="mal-header-actions-primary">
-            <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}>🔌 連接 Meta API</button>
+            <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}><span className="mal-btn-emoji">🔌</span> 連接 Meta API</button>
             {!HAS_SHARED_STORAGE && (
               <button className="mal-btn" onClick={() => { setTeamKeyInput(getTeamKey()); setShowTeamKeyModal(true); }}>
-                {cloudStatus === "connected" ? `☁️ ${credentialName || "已連線"}` : "🔑 團隊密碼"}
+                {cloudStatus === "connected" ? <><span className="mal-btn-emoji">☁️</span> {credentialName || "已連線"}</> : <><span className="mal-btn-emoji">🔑</span> 團隊密碼</>}
               </button>
             )}
           </div>
