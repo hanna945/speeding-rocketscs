@@ -89,6 +89,12 @@
   .mal-plan-input-link { flex: 1; font-size: 12.5px; }
   .mal-plan-link-go { flex-shrink: 0; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--blue-deep, var(--blue)); text-decoration: none; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-raised); white-space: nowrap; }
   .mal-plan-link-go:hover { background: var(--paper); }
+  .mal-plan-image-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); padding: 7px 12px; border: 1.5px dashed var(--rule); border-radius: 8px; cursor: pointer; }
+  .mal-plan-image-add:hover { color: var(--ink); border-color: var(--blue); }
+  .mal-plan-image-wrap { position: relative; margin-top: 8px; display: inline-block; }
+  .mal-plan-image { max-width: 100%; max-height: 220px; border-radius: 10px; border: 1px solid var(--rule); display: block; }
+  .mal-plan-image-remove { position: absolute; top: 6px; right: 6px; font-family: 'Noto Sans TC', sans-serif; font-size: 11px; font-weight: 600; color: #fff; background: rgba(0,0,0,0.6); border: none; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+  .mal-plan-image-remove:hover { background: rgba(168,96,122,0.9); }
   .mal-plan-ai-error { font-size: 12.5px; color: var(--red); background: #F3E4E9; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
   .mal-combined-ai-row { margin-bottom: 20px; }
   .mal-source-note { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 14px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 8px; display: inline-block; }
@@ -343,6 +349,8 @@
   body.mal-exporting .mal-plan-block > .mal-btn,
   body.mal-exporting .mal-plan-title-row > .mal-btn,
   body.mal-exporting .mal-plan-block-header > .mal-icon-btn,
+  body.mal-exporting .mal-plan-image-add,
+  body.mal-exporting .mal-plan-image-remove,
   body.mal-exporting .mal-plan-savestatus {
     display: none !important;
   }
@@ -3106,13 +3114,42 @@ function MetaAdsLedger() {
       scheduleSave({ ...data, actionItems: data.actionItems.filter((it) => it.id !== id) });
     }
     function addProject() {
-      scheduleSave({ ...data, projects: [...data.projects, { id: Date.now(), name: "", owner: "", dueDate: "", progress: "", status: "green", description: "", link: "" }] });
+      scheduleSave({ ...data, projects: [...data.projects, { id: Date.now(), name: "", owner: "", dueDate: "", progress: "", status: "green", description: "", link: "", image: "" }] });
     }
     function updateProject(id, field, value) {
       scheduleSave({ ...data, projects: data.projects.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
     }
     function removeProject(id) {
       scheduleSave({ ...data, projects: data.projects.filter((it) => it.id !== id) });
+    }
+    // 圖片存進雲端資料庫時,是跟整份「週報告」文字內容存在同一個key裡(不是另外開檔案儲存空間),
+    // 原圖(尤其手機拍的照片)動輒4-5MB,同時放幾張很容易撐爆單一key的儲存上限、也會讓每次
+    // 存檔/讀取變慢。選好圖片後,先用畫布把長邊壓縮到最多960px、轉成JPEG(品質0.75)再存,
+    // 壓縮後通常只有幾百KB,對「輔助說明用的示意圖」這種用途來說,畫質已經很夠用。
+    function handleProjectImageUpload(id, file) {
+      if (!file || !file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX_DIM = 960;
+          let { width, height } = img;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL("image/jpeg", 0.75);
+          updateProject(id, "image", compressed);
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
     }
     function addMaterialIssue() {
       scheduleSave({ ...data, materialIssues: [...data.materialIssues, { id: Date.now(), title: "", status: "red", category: "", content: "" }] });
@@ -3204,6 +3241,23 @@ function MetaAdsLedger() {
                   <a className="mal-plan-link-go" href={p.link.trim()} target="_blank" rel="noopener noreferrer">↗ 前往</a>
                 )}
               </div>
+              {p.image ? (
+                <div className="mal-plan-image-wrap">
+                  <img className="mal-plan-image" src={p.image} alt="專案輔助說明圖片" />
+                  <button className="mal-plan-image-remove" onClick={() => updateProject(p.id, "image", "")} title="移除圖片">✕ 移除圖片</button>
+                </div>
+              ) : (
+                <label className="mal-plan-image-add" htmlFor={`project-image-${p.id}`}>
+                  📷 新增圖片
+                  <input
+                    id={`project-image-${p.id}`}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => { handleProjectImageUpload(p.id, e.target.files[0]); e.target.value = ""; }}
+                  />
+                </label>
+              )}
             </div>
           ))}
           <button className="mal-btn" onClick={addProject}>+ 新增專案項目</button>
