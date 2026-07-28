@@ -5214,7 +5214,40 @@ function MetaAdsLedger() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<MetaAdsLedger />);
+// 診斷用:目前這個app沒有任何error boundary,React遇到render過程中拋出的錯誤,預設行為是把整棵
+// 元件樹卸載掉——這可以解釋「畫面顯示到一半、後面全部消失變空白」這種症狀。加上這層,錯誤發生時
+// 會直接把錯誤訊息印在畫面上,而不是留下一片空白,才能真正知道問題出在哪一行。之後確認問題解決,
+// 這層可以拿掉,但保留著也無害,不影響任何正常功能。
+class MalErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null, info: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    this.setState({ info });
+    console.error("MalErrorBoundary 抓到錯誤:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 24, fontFamily: "monospace", whiteSpace: "pre-wrap", color: "#A56357", background: "#FBF7F0" }}>
+          <h2 style={{ color: "#3B2F27" }}>畫面發生錯誤(這是診斷用的錯誤邊界,不是正常畫面)</h2>
+          <p><b>錯誤訊息:</b>{String(this.state.error && this.state.error.message)}</p>
+          <p><b>Stack:</b>{this.state.error && this.state.error.stack}</p>
+          <p><b>Component Stack:</b>{this.state.info && this.state.info.componentStack}</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <MalErrorBoundary><MetaAdsLedger /></MalErrorBoundary>
+);
 </script>
 </body>
 </html>
