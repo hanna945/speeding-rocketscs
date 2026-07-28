@@ -85,6 +85,10 @@
   .mal-plan-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
   .mal-plan-block-header .mal-plan-block-title { margin-bottom: 0; }
   .mal-plan-input-category { width: 76px; flex-shrink: 0; text-align: center; }
+  .mal-plan-link-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .mal-plan-input-link { flex: 1; font-size: 12.5px; }
+  .mal-plan-link-go { flex-shrink: 0; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--blue-deep, var(--blue)); text-decoration: none; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-raised); white-space: nowrap; }
+  .mal-plan-link-go:hover { background: var(--paper); }
   .mal-plan-ai-error { font-size: 12.5px; color: var(--red); background: #F3E4E9; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
   .mal-combined-ai-row { margin-bottom: 20px; }
   .mal-source-note { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 14px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 8px; display: inline-block; }
@@ -3102,7 +3106,7 @@ function MetaAdsLedger() {
       scheduleSave({ ...data, actionItems: data.actionItems.filter((it) => it.id !== id) });
     }
     function addProject() {
-      scheduleSave({ ...data, projects: [...data.projects, { id: Date.now(), name: "", owner: "", dueDate: "", progress: "", status: "green", description: "" }] });
+      scheduleSave({ ...data, projects: [...data.projects, { id: Date.now(), name: "", owner: "", dueDate: "", progress: "", status: "green", description: "", link: "" }] });
     }
     function updateProject(id, field, value) {
       scheduleSave({ ...data, projects: data.projects.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
@@ -3194,6 +3198,12 @@ function MetaAdsLedger() {
                 <input className="mal-plan-input" placeholder="目前進度(例如:100% 或 第一階段完成)" value={p.progress} onChange={(e) => updateProject(p.id, "progress", e.target.value)} />
               </div>
               <textarea className="mal-plan-textarea" placeholder="說明…" rows={2} value={p.description} onChange={(e) => updateProject(p.id, "description", e.target.value)} />
+              <div className="mal-plan-link-row">
+                <input className="mal-plan-input mal-plan-input-link" placeholder="連結(選填,例如Google文件、設計稿、參考資料網址)" value={p.link || ""} onChange={(e) => updateProject(p.id, "link", e.target.value)} />
+                {p.link && /^https?:\/\//.test(p.link.trim()) && (
+                  <a className="mal-plan-link-go" href={p.link.trim()} target="_blank" rel="noopener noreferrer">↗ 前往</a>
+                )}
+              </div>
             </div>
           ))}
           <button className="mal-btn" onClick={addProject}>+ 新增專案項目</button>
