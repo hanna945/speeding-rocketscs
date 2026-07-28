@@ -288,6 +288,10 @@
   .mal-field label .mal-req { color: var(--red); }
   .mal-field select { width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 10px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); }
   .mal-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  .mal-pdf-section-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; font-family: 'Noto Sans TC', sans-serif; font-size: 14px; color: var(--ink); cursor: pointer; border-bottom: 1px solid var(--rule); }
+  .mal-pdf-section-row:last-of-type { border-bottom: none; }
+  .mal-pdf-section-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--blue); flex-shrink: 0; }
+  .mal-pdf-section-all { font-weight: 700; border-bottom: 1.5px solid var(--ink-soft); margin-bottom: 4px; }
   .mal-field-group-label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; margin-bottom: 10px; }
   .mal-advanced-toggle { display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; color: var(--blue); font-size: 12.5px; font-weight: 600; padding: 8px 0; margin-top: 4px; }
   .mal-advanced-fields { border-top: 1px dashed var(--rule); margin-top: 8px; padding-top: 14px; }
@@ -1845,6 +1849,19 @@ function MetaAdsLedger() {
   const [notice, setNotice] = useState(null);
   const [focusMonth, setFocusMonth] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  // 「匯出PDF」跟「列印」是兩種不同情境:列印可能真的要印到紙本,維持正常分頁;
+  // 匯出PDF要的是一份完整、連續、不會被紙張尺寸切斷的檔案,而且使用者可能只想要部分區塊
+  // (例如不要廣告明細那一長串),所以另外開一個勾選視窗,匯出前自己選要包含什麼。
+  const PDF_SECTION_OPTIONS = [
+    { key: "ad-performance", label: "投放成效(含通路業績)" },
+    { key: "campaign-analysis", label: "行銷活動整體成效分析" },
+    { key: "performance-breakdown", label: "廣告成效分類" },
+    { key: "ad-list", label: "廣告明細" },
+    { key: "weekly-plan", label: "週報告" },
+  ];
+  const [showPdfSectionModal, setShowPdfSectionModal] = useState(false);
+  const [pdfSelectedSections, setPdfSelectedSections] = useState(() => new Set(PDF_SECTION_OPTIONS.map((o) => o.key)));
+  const [pdfExportBusy, setPdfExportBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [showAllAds, setShowAllAds] = useState(false);
   const [adSortMode, setAdSortMode] = useState("spend");
@@ -2264,6 +2281,87 @@ function MetaAdsLedger() {
       window.addEventListener("afterprint", restore);
       requestAnimationFrame(() => window.print());
     }, 900);
+  }
+
+  // 「匯出PDF」用的是跟「列印」同一套瀏覽器原生引擎(不是html2canvas,那條路已經證實不可靠),
+  // 但多做兩件事:①先跳勾選視窗,依使用者選擇隱藏不要的區塊,不是整份報表照單全收
+  // ②動態算出「隱藏完不要的區塊之後,剩下內容實際多高」,把@page尺寸設成剛好那麼高的單一頁面,
+  // 這樣列印引擎不會照A4/Letter這種標準紙張尺寸把內容切成好幾頁——存出來的PDF是連續一整份,
+  // 不會有內容被紙張邊界硬生生切斷的問題。
+  async function runPdfExport() {
+    setPdfExportBusy(true);
+    window.dispatchEvent(new Event(PERF_EXPAND_ALL_EVENT));
+    try {
+      await Promise.all([
+        document.fonts.load("500 16px 'Noto Serif KR'"),
+        document.fonts.load("600 16px 'Noto Serif KR'"),
+        document.fonts.load("700 16px 'Noto Serif KR'"),
+        document.fonts.load("400 13px 'Noto Sans TC'"),
+        document.fonts.load("600 13px 'Noto Sans TC'"),
+        document.fonts.ready,
+      ]);
+    } catch {
+      /* 個別字重載入失敗也不中斷匯出流程 */
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) => setTimeout(resolve, 900)); // 等雲端資料(週報告/AI分析)讀取完成
+
+    // 隱藏使用者沒勾選的區塊
+    const hiddenEls = [];
+    document.querySelectorAll("[data-pdf-section]").forEach((el) => {
+      const key = el.getAttribute("data-pdf-section");
+      if (!pdfSelectedSections.has(key)) {
+        hiddenEls.push({ el, originalDisplay: el.style.display });
+        el.style.display = "none";
+      }
+    });
+
+    // textarea 動態撐高(跟列印同一個理由,週報告的文字框不會自動撐開)
+    const resizedTextareas = [];
+    document.querySelectorAll(".mal-plan-textarea").forEach((el) => {
+      resizedTextareas.push({ el, originalHeight: el.style.height });
+      el.style.height = "auto";
+      el.style.height = el.scrollHeight + "px";
+    });
+
+    document.body.classList.add("mal-exporting");
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    // 隱藏完不要的區塊、textarea也撐開之後,量測「現在實際還剩多高」,動態產生一個剛好這麼高
+    // 的單一頁面尺寸——用CSS像素除以96(瀏覽器預設DPI)換算成英吋,是CSS px轉實體單位的標準做法。
+    const target = document.querySelector(".mal-shell");
+    const widthPx = target.scrollWidth;
+    const heightPx = target.scrollHeight;
+    const widthIn = (widthPx / 96 + 0.6).toFixed(2); // 留一點左右邊距空間
+    const heightIn = (heightPx / 96 + 0.6).toFixed(2);
+    const pageStyle = document.createElement("style");
+    pageStyle.id = "mal-dynamic-page-size";
+    pageStyle.textContent = `@page { size: ${widthIn}in ${heightIn}in; margin: 0.3in; }`;
+    document.head.appendChild(pageStyle);
+
+    function cleanup() {
+      hiddenEls.forEach(({ el, originalDisplay }) => { el.style.display = originalDisplay; });
+      resizedTextareas.forEach(({ el, originalHeight }) => { el.style.height = originalHeight; });
+      document.body.classList.remove("mal-exporting");
+      const styleEl = document.getElementById("mal-dynamic-page-size");
+      if (styleEl) styleEl.remove();
+      window.removeEventListener("afterprint", cleanup);
+      setPdfExportBusy(false);
+    }
+    window.addEventListener("afterprint", cleanup);
+    requestAnimationFrame(() => window.print());
+  }
+
+  function toggleAllPdfSections(checked) {
+    setPdfSelectedSections(checked ? new Set(PDF_SECTION_OPTIONS.map((o) => o.key)) : new Set());
+  }
+  function togglePdfSection(key) {
+    setPdfSelectedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   async function resetAll() {
@@ -3824,10 +3922,45 @@ function MetaAdsLedger() {
             <button className="mal-btn" onClick={() => setShowLedgerModal(true)}>📥 匯入後台業績</button>
           )}
           {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
-            <button className="mal-btn mal-print-btn" onClick={handlePrintClick}>🖨 列印 / 匯出 PDF</button>
+            <button className="mal-btn mal-print-btn" onClick={handlePrintClick}>🖨 列印</button>
+          )}
+          {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
+            <button className="mal-btn mal-print-btn" onClick={() => setShowPdfSectionModal(true)}>📄 匯出 PDF</button>
           )}
           {sortedKeys.length > 0 && <button className="mal-btn mal-btn-danger" onClick={() => setConfirmReset(true)}>🗑 重置</button>}
         </div>
+
+        {showPdfSectionModal && (
+          <div className="mal-modal-overlay" onClick={() => setShowPdfSectionModal(false)}>
+            <div className="mal-modal" onClick={(e) => e.stopPropagation()}>
+              <h3>選擇要匯出的內容</h3>
+              <label className="mal-pdf-section-row mal-pdf-section-all">
+                <input
+                  type="checkbox"
+                  checked={pdfSelectedSections.size === PDF_SECTION_OPTIONS.length}
+                  onChange={(e) => toggleAllPdfSections(e.target.checked)}
+                />
+                全選 / 全不選
+              </label>
+              {PDF_SECTION_OPTIONS.map((opt) => (
+                <label className="mal-pdf-section-row" key={opt.key}>
+                  <input type="checkbox" checked={pdfSelectedSections.has(opt.key)} onChange={() => togglePdfSection(opt.key)} />
+                  {opt.label}
+                </label>
+              ))}
+              <div className="mal-modal-actions">
+                <button className="mal-btn" onClick={() => setShowPdfSectionModal(false)}>取消</button>
+                <button
+                  className="mal-btn mal-btn-primary"
+                  disabled={pdfSelectedSections.size === 0 || pdfExportBusy}
+                  onClick={() => { setShowPdfSectionModal(false); runPdfExport(); }}
+                >
+                  {pdfExportBusy ? "準備中…" : "確認匯出"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {brands.length > 0 && (
@@ -3955,27 +4088,34 @@ function MetaAdsLedger() {
                   🤖 一次 AI 分析(投放成效＋週報告)
                 </button>
               </div>
-              <AdPerformanceReport
-                ref={monthlyAdReportRef}
-                key={`${activeBrandId}::${focusMonth}`}
-                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
-                currencyCode={focusData.currency}
-                periodLabel={monthLabel(focusMonth)}
-                roasTarget={roasTargets[activeBrandId]}
-                brands={brands}
-                activeBrandId={activeBrandId}
-                onEditRoasTarget={editRoasTarget}
-                productNames={productNames[activeBrandId] || {}}
-                onEditProductName={editProductName}
-                adRatioThreshold={adRatioThresholds[activeBrandId]}
-                onOpenImport={() => setShowLedgerModal(true)}
-                storageKey={`adperf-ai-month:${activeBrandId}::${focusMonth}`}
-              />
-              <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
-              <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
+              <div data-pdf-section="ad-performance">
+                <AdPerformanceReport
+                  ref={monthlyAdReportRef}
+                  key={`${activeBrandId}::${focusMonth}`}
+                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+                  currencyCode={focusData.currency}
+                  periodLabel={monthLabel(focusMonth)}
+                  roasTarget={roasTargets[activeBrandId]}
+                  brands={brands}
+                  activeBrandId={activeBrandId}
+                  onEditRoasTarget={editRoasTarget}
+                  productNames={productNames[activeBrandId] || {}}
+                  onEditProductName={editProductName}
+                  adRatioThreshold={adRatioThresholds[activeBrandId]}
+                  onOpenImport={() => setShowLedgerModal(true)}
+                  storageKey={`adperf-ai-month:${activeBrandId}::${focusMonth}`}
+                />
+              </div>
+              <div data-pdf-section="campaign-analysis">
+                <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
+              </div>
+              <div data-pdf-section="performance-breakdown">
+                <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
+              </div>
             </>
           )}
 
+          <div data-pdf-section="ad-list">
           {focusData && spendFilteredAds.length > 0 && (
             <StatusFilterButtons statusValue={adStatusFilter} onStatusChange={setAdStatusFilter} keyword={adSearchKeyword} onKeywordChange={setAdSearchKeyword} />
           )}
@@ -4058,19 +4198,22 @@ function MetaAdsLedger() {
               )}
             </>
           )}
+          </div>
 
           {focusData && (
-            <WeeklyPlanningSection
-              ref={monthlyPlanRef}
-              storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`}
-              key={`monthplan::${activeBrandId}::${focusMonth}`}
-              ads={focusData.ads}
-              currencyCode={focusData.currency}
-              roasTarget={roasTargets[activeBrandId]}
-              periodLabel={monthLabel(focusMonth)}
-              brandName={(brands.find((b) => b.id === activeBrandId) || {}).name || ""}
+            <div data-pdf-section="weekly-plan">
+              <WeeklyPlanningSection
+                ref={monthlyPlanRef}
+                storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`}
+                key={`monthplan::${activeBrandId}::${focusMonth}`}
+                ads={focusData.ads}
+                currencyCode={focusData.currency}
+                roasTarget={roasTargets[activeBrandId]}
+                periodLabel={monthLabel(focusMonth)}
+                brandName={(brands.find((b) => b.id === activeBrandId) || {}).name || ""}
                 minSpend={MIN_AD_SPEND}
               />
+            </div>
           )}
 
           <h2 className="mal-section-title">每月明細</h2>
@@ -4166,30 +4309,37 @@ function MetaAdsLedger() {
                   </button>
                 </div>
 
-                <AdPerformanceReport
-                  ref={weeklyAdReportRef}
-                  key={`${activeBrandId}::${focusWeek}`}
-                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
-                  currencyCode={focusWeekData.currency}
-                  periodLabel={(() => {
-                    const r = weekDateRange(focusWeek);
-                    const fmtMD = (iso) => { const [, m, d] = iso.split("-"); return `${Number(m)}/${Number(d)}`; };
-                    return `${fmtMD(r.since)} - ${fmtMD(r.until)}`;
-                  })()}
-                  roasTarget={roasTargets[activeBrandId]}
-                  brands={brands}
-                  activeBrandId={activeBrandId}
-                  onEditRoasTarget={editRoasTarget}
-                  productNames={productNames[activeBrandId] || {}}
-                  onEditProductName={editProductName}
-                  adRatioThreshold={adRatioThresholds[activeBrandId]}
-                  onOpenImport={() => setShowLedgerModal(true)}
-                  storageKey={`adperf-ai-week:${activeBrandId}::${focusWeek}`}
-                />
+                <div data-pdf-section="ad-performance">
+                  <AdPerformanceReport
+                    ref={weeklyAdReportRef}
+                    key={`${activeBrandId}::${focusWeek}`}
+                    ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
+                    currencyCode={focusWeekData.currency}
+                    periodLabel={(() => {
+                      const r = weekDateRange(focusWeek);
+                      const fmtMD = (iso) => { const [, m, d] = iso.split("-"); return `${Number(m)}/${Number(d)}`; };
+                      return `${fmtMD(r.since)} - ${fmtMD(r.until)}`;
+                    })()}
+                    roasTarget={roasTargets[activeBrandId]}
+                    brands={brands}
+                    activeBrandId={activeBrandId}
+                    onEditRoasTarget={editRoasTarget}
+                    productNames={productNames[activeBrandId] || {}}
+                    onEditProductName={editProductName}
+                    adRatioThreshold={adRatioThresholds[activeBrandId]}
+                    onOpenImport={() => setShowLedgerModal(true)}
+                    storageKey={`adperf-ai-week:${activeBrandId}::${focusWeek}`}
+                  />
+                </div>
 
-                <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
-                <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
+                <div data-pdf-section="campaign-analysis">
+                  <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
+                </div>
+                <div data-pdf-section="performance-breakdown">
+                  <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
+                </div>
 
+                <div data-pdf-section="ad-list">
                 {focusWeekData.ads && focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND).length > 0 && (
                   <StatusFilterButtons statusValue={adStatusFilter} onStatusChange={setAdStatusFilter} keyword={adSearchKeyword} onKeywordChange={setAdSearchKeyword} />
                 )}
@@ -4236,7 +4386,9 @@ function MetaAdsLedger() {
                     </div>
                   </>
                 )}
+                </div>
 
+                <div data-pdf-section="weekly-plan">
                 <WeeklyPlanningSection
                   ref={weeklyPlanRef}
                   storageKey={`weekly-plan:${activeBrandId}::${focusWeek}`}
@@ -4252,6 +4404,7 @@ function MetaAdsLedger() {
                   brandName={(brands.find((b) => b.id === activeBrandId) || {}).name || ""}
                   minSpend={MIN_AD_SPEND}
                 />
+                </div>
 
                 <div className="mal-modal-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
                   <button
