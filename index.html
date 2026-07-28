@@ -149,16 +149,22 @@
   .mal-week-analysis-title { font-family: 'Noto Serif TC', serif; font-weight: 600; font-size: 14px; margin-bottom: 8px; }
   .mal-week-analysis ul { margin: 0; padding-left: 20px; }
   .mal-week-analysis li { font-size: 13px; line-height: 1.7; color: var(--ink); margin-bottom: 4px; }
-  .mal-ledger-table th, .mal-ledger-table td { border-right: 1px solid var(--rule); }
+  .mal-ledger-table { background: #FAF6EE; table-layout: fixed; }
+  .mal-ledger-table thead th { background: #EEE4D7; color: #3E3128; }
+  .mal-ledger-table th, .mal-ledger-table td { border-right: 1px solid #DED4C7; color: #3E3128; }
   .mal-ledger-table th:last-child, .mal-ledger-table td:last-child { border-right: none; }
-  .mal-ledger-group-backend { background: #EEF1E4; }
-  .mal-ledger-group-meta { background: #F7EFE0; }
+  .mal-ledger-group-backend { background: #DCE2D6; }
+  .mal-ledger-group-meta { background: #EEE4D7; }
   .mal-ledger-group-gap { background: var(--paper-raised); }
-  .mal-ledger-group-label-backend { color: #5C6B41; }
-  .mal-ledger-group-label-meta { color: #8A6A2E; }
-  /* 表格較寬需要左右滑動時,第一欄(產品代號/日期)凍結不跟著捲動,滑到多右邊都看得到現在是哪一列。 */
+  .mal-ledger-group-label-backend { color: #3E3128; }
+  .mal-ledger-group-label-meta { color: #3E3128; }
+  /* 表格較寬需要左右滑動時,第一欄(產品代號/日期)凍結不跟著捲動,滑到多右邊都看得到現在是哪一列。
+     明確給寬度上限+右側padding,不然sticky欄位的實際渲染寬度可能跟表格版面配置算的不一致,
+     捲動時會蓋住緊接在後面的第一個數據欄,右邊的數字只剩尾數露出來。 */
   .mal-ledger-table th:first-child, .mal-ledger-table td:first-child {
     position: sticky; left: 0; z-index: 1; background: var(--paper);
+    min-width: 88px; max-width: 88px; padding-right: 12px; box-sizing: border-box;
+    border-right: 1px solid var(--sticky-line, #8A6B55);
   }
   .mal-ledger-table thead th:first-child { z-index: 2; }
   .mal-ledger-table tr:hover td:first-child { background: #F7F2EA; }
@@ -304,19 +310,22 @@
   }
   .mal-ad-search-wrap .mal-ad-search-clear:hover { color: var(--red); }
   /* 矩陣表格裡,每個產品代號區塊(4欄一組)交替上底色,跟相鄰代號區塊、跟「全店」都要能一眼分辨,
-     滑動時不會看錯欄位屬於哪個代號。代號名稱那一列用更深的實色,是使用者掃視時第一個對到的錨點。 */
-  .mal-matrix-group-a { background: #D9EBE0; }
-  .mal-matrix-group-b { background: #F3D9E3; }
-  .mal-matrix-group-a-label { color: #1F4A36; }
-  .mal-matrix-group-b-label { color: #6B1F3D; }
-  .mal-matrix-group-start { border-left: 3px solid var(--ink) !important; }
-  .mal-matrix-group-a-header { background: #A9CDBA !important; }
-  .mal-matrix-group-b-header { background: #E3A9C0 !important; }
-  /* 「後台實際數據」區塊——刻意用金色調,跟矩陣表格裡代號分組的綠/粉紅是完全不同的視覺語言,
-     不會讓人誤會兩者是同一套系統;這裡要表達的是「這欄是可信的後台真實數字」,不是分組用途。 */
-  .mal-backend-group-header { background: #D4A537 !important; color: #3A2E0A; font-weight: 700; border-left: 3px solid #8A6D1F !important; }
-  .mal-backend-group { background: #FBF0D6; }
-  .mal-backend-group-start { border-left: 3px solid #8A6D1F !important; }
+     滑動時不會看錯欄位屬於哪個代號。代號名稱那一列用更深的實色,是使用者掃視時第一個對到的錨點。
+     配色改用低飽和的鼠尾草灰/裸粉灰,不要用薄荷綠/糖果粉那種高飽和色塊——背景不能比數字搶眼,
+     暖白/奶油灰/淡米色為主,像高級品牌報表,不是Excel條件式格式設定。 */
+  .mal-matrix-group-a { background: #DCE2D6; }
+  .mal-matrix-group-b { background: #E7D8D2; }
+  .mal-matrix-group-a-label { color: #3E3128; }
+  .mal-matrix-group-b-label { color: #3E3128; }
+  .mal-matrix-group-start { border-left: 1.5px solid #8A6B55 !important; }
+  .mal-matrix-group-a-header { background: #C7D0BF !important; color: #3E3128; }
+  .mal-matrix-group-b-header { background: #DBC5BD !important; color: #3E3128; }
+  /* 「後台實際數據」區塊——用焦糖重點色,跟矩陣表格裡代號分組的鼠尾草灰/裸粉灰是不同的視覺語言,
+     不會讓人誤會兩者是同一套系統;這裡要表達的是「這欄是可信的後台真實數字」,不是分組用途。
+     但同樣要低調,不能是高飽和的金黃色塊。 */
+  .mal-backend-group-header { background: #9C653B !important; color: #FAF6EE; font-weight: 700; border-left: 1.5px solid #7A4E2D !important; }
+  .mal-backend-group { background: #EEE4D7; }
+  .mal-backend-group-start { border-left: 1.5px solid #9C653B !important; }
   .mal-ad-count { color: var(--ink-soft); font-style: italic; margin-left: 4px; }
   .mal-synced-at { color: var(--ink-soft); font-size: 12px; margin: -6px 0 16px; font-family: 'IBM Plex Mono', monospace; }
   .mal-ad-stats { display: flex; gap: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; flex-shrink: 0; }
