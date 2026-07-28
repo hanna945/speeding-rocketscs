@@ -1970,6 +1970,18 @@ function MetaAdsLedger() {
   const [autoSyncStatus, setAutoSyncStatus] = useState(null);
   const [ledgerByMonth, setLedgerByMonth] = useState({});
   const [showLedgerModal, setShowLedgerModal] = useState(false);
+  // 診斷用:error boundary 在這個元件外層,沒辦法直接讀到這裡的 state,錯誤發生時只能靠這個
+  // 全域變數(即時更新)才知道「事情發生的當下,使用者停在哪個頁面/哪個品牌」。純診斷用途,
+  // 不影響任何功能或畫面。
+  useEffect(() => {
+    window.__MAL_DEBUG_STATE__ = {
+      viewMode,
+      activeBrandId,
+      activeBrandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "(無)",
+      brandCount: brands.length,
+      focusWeek,
+    };
+  }, [viewMode, activeBrandId, brands, focusWeek]);
   // 「一次AI分析」按鈕用的ref——月報表、週報表各自的「投放成效」「週報告」元件實例是分開的,
   // 所以要各自一組ref,不能共用(月報表按了不該連動去觸發週報表那邊的分析)。
   const monthlyAdReportRef = useRef(null);
@@ -5218,6 +5230,8 @@ function MetaAdsLedger() {
 // 元件樹卸載掉——這可以解釋「畫面顯示到一半、後面全部消失變空白」這種症狀。加上這層,錯誤發生時
 // 會直接把錯誤訊息印在畫面上,而不是留下一片空白,才能真正知道問題出在哪一行。之後確認問題解決,
 // 這層可以拿掉,但保留著也無害,不影響任何正常功能。
+// 特意不吞掉錯誤、不用空白畫面取代——顯示完整診斷內容才是重點,不是讓畫面看起來「正常」。
+const MAL_DEPLOY_VERSION = "62d676d-diag2"; // 每次部署更新這個標記,方便確認瀏覽器載入的是不是最新版本
 class MalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -5228,16 +5242,36 @@ class MalErrorBoundary extends React.Component {
   }
   componentDidCatch(error, info) {
     this.setState({ info });
-    console.error("MalErrorBoundary 抓到錯誤:", error, info);
+    const debugState = window.__MAL_DEBUG_STATE__ || {};
+    // 用單一字串印出完整內容,不要分成好幾次console.error呼叫——避免瀏覽器主控台把不同呼叫的
+    // 內容混在一起、或摺疊/截斷其中一段,複製起來才會是完整、連續的一份文字。
+    console.error(
+      "=== MalErrorBoundary 完整診斷資訊開始 ===\n" +
+      "部署版本標記: " + MAL_DEPLOY_VERSION + "\n" +
+      "發生當下的頁面(viewMode): " + debugState.viewMode + "\n" +
+      "發生當下選中的品牌: " + debugState.activeBrandName + "(id: " + debugState.activeBrandId + ")\n" +
+      "當下品牌總數: " + debugState.brandCount + "\n" +
+      "當下focusWeek: " + debugState.focusWeek + "\n" +
+      "錯誤訊息(error.message): " + (error && error.message) + "\n" +
+      "錯誤堆疊(error.stack):\n" + (error && error.stack) + "\n" +
+      "元件堆疊(componentStack):\n" + (info && info.componentStack) + "\n" +
+      "=== MalErrorBoundary 完整診斷資訊結束 ==="
+    );
   }
   render() {
     if (this.state.error) {
+      const debugState = window.__MAL_DEBUG_STATE__ || {};
       return (
-        <div style={{ padding: 24, fontFamily: "monospace", whiteSpace: "pre-wrap", color: "#A56357", background: "#FBF7F0" }}>
+        <div style={{ padding: 24, fontFamily: "monospace", fontSize: 12.5, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#A56357", background: "#FBF7F0", minHeight: "100vh" }}>
           <h2 style={{ color: "#3B2F27" }}>畫面發生錯誤(這是診斷用的錯誤邊界,不是正常畫面)</h2>
-          <p><b>錯誤訊息:</b>{String(this.state.error && this.state.error.message)}</p>
-          <p><b>Stack:</b>{this.state.error && this.state.error.stack}</p>
-          <p><b>Component Stack:</b>{this.state.info && this.state.info.componentStack}</p>
+          <p style={{ color: "#3B2F27" }}>下面這段診斷資訊已經完整印在瀏覽器主控台(console),用F12打開Console分頁可以直接複製整段文字。</p>
+          <p><b>部署版本標記:</b>{MAL_DEPLOY_VERSION}</p>
+          <p><b>發生當下的頁面(viewMode):</b>{String(debugState.viewMode)}</p>
+          <p><b>發生當下選中的品牌:</b>{String(debugState.activeBrandName)}(id: {String(debugState.activeBrandId)})</p>
+          <p><b>當下品牌總數:</b>{String(debugState.brandCount)}</p>
+          <p><b>錯誤訊息(error.message):</b>{String(this.state.error && this.state.error.message)}</p>
+          <p><b>錯誤堆疊(error.stack):</b>{"\n"}{this.state.error && this.state.error.stack}</p>
+          <p><b>元件堆疊(componentStack):</b>{"\n"}{this.state.info && this.state.info.componentStack}</p>
         </div>
       );
     }
