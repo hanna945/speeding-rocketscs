@@ -149,7 +149,9 @@
   .mal-week-analysis-title { font-family: 'Noto Serif TC', serif; font-weight: 600; font-size: 14px; margin-bottom: 8px; }
   .mal-week-analysis ul { margin: 0; padding-left: 20px; }
   .mal-week-analysis li { font-size: 13px; line-height: 1.7; color: var(--ink); margin-bottom: 4px; }
-  .mal-ledger-table { background: #FAF6EE; table-layout: fixed; }
+  .mal-ledger-table { background: #FAF6EE; table-layout: auto; width: max-content; min-width: max-content; border-collapse: separate; border-spacing: 0; }
+  .mal-ledger-table th, .mal-ledger-table td { white-space: nowrap; word-break: normal; overflow-wrap: normal; flex-shrink: 0; }
+  .mal-ledger-table th:not(:first-child), .mal-ledger-table td:not(:first-child) { min-width: 96px; }
   .mal-ledger-table thead th { background: #EEE4D8; color: #3E3128; }
   .mal-ledger-table th, .mal-ledger-table td { border-right: 1px solid #DED4C7; color: #3E3128; }
   .mal-ledger-table th:last-child, .mal-ledger-table td:last-child { border-right: none; }
@@ -158,19 +160,23 @@
   .mal-ledger-group-gap { background: var(--paper-raised); }
   .mal-ledger-group-label-backend { color: #3E3128; }
   .mal-ledger-group-label-meta { color: #3E3128; }
-  /* 表格較寬需要左右滑動時,第一欄(產品代號/日期)凍結不跟著捲動,滑到多右邊都看得到現在是哪一列。
-     明確給寬度上限+右側padding,不然sticky欄位的實際渲染寬度可能跟表格版面配置算的不一致,
-     捲動時會蓋住緊接在後面的第一個數據欄,右邊的數字只剩尾數露出來。 */
+  /* 表格較寬需要左右滑動時,第一欄(日期)凍結不跟著捲動,滑到多右邊都看得到現在是哪一列。
+     用box-shadow當分隔線(不是border),避免border影響sticky欄位的box-sizing計算導致寬度跟
+     其他欄位對不齊、進而蓋住後面數字。背景務必不透明,不然捲動時後面的文字會透出來。 */
   .mal-ledger-table th:first-child, .mal-ledger-table td:first-child {
-    position: sticky; left: 0; z-index: 1; background: var(--paper);
-    min-width: 88px; max-width: 88px; padding-right: 12px; box-sizing: border-box;
-    border-right: 1px solid var(--sticky-line, #A8907D);
+    position: sticky; left: 0; z-index: 5; background: #FAF6EE;
+    width: 92px; min-width: 92px; max-width: 92px; box-sizing: border-box;
+    box-shadow: 1px 0 0 #CFC3B5;
   }
-  .mal-ledger-table thead th:first-child { z-index: 2; }
+  .mal-ledger-table thead th:first-child { z-index: 6; background: #EEE4D8; }
   .mal-ledger-table tr:hover td:first-child { background: #F7F2EA; }
   /* 寬表格的捲動容器:滾輪已經可以直接左右捲(見上面的 wheel 事件代理),這裡把捲軸本身加粗、
      常駐顯示、上色,讓「這裡可以往右滑」在視覺上更明顯,不用滑到底部細細一條才發現。 */
-  .mal-scroll-wrap { scrollbar-width: auto; scrollbar-color: var(--blue) var(--rule); padding-bottom: 4px; }
+  .mal-scroll-wrap {
+    width: 100%; overflow-x: auto; overflow-y: visible;
+    -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+    scrollbar-width: auto; scrollbar-color: var(--blue) var(--rule); padding-bottom: 4px;
+  }
   .mal-scroll-wrap::-webkit-scrollbar { height: 11px; }
   .mal-scroll-wrap::-webkit-scrollbar-track { background: var(--rule); border-radius: 999px; }
   .mal-scroll-wrap::-webkit-scrollbar-thumb { background: var(--blue); border-radius: 999px; border: 2px solid var(--rule); }
