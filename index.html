@@ -80,7 +80,8 @@
   /* 標題區塊坐在奶油淺色底上,一般按鈕樣式在這種淺底色上已經看得清楚,不用再疊加深色背景專用樣式——
      只保留「連接Meta API」這顆主按鈕改成玫瑰色,在淺色背景上突顯出來,其餘沿用一般按鈕樣式即可。 */
   .mal-header .mal-btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .mal-notice { background: #F2EEE5; border: 1px solid #DDD4C7; color: #66594E; font-size: 13px; padding: 10px 16px; border-radius: 5px; margin-bottom: 16px; }
+  .mal-notice { background: #F2EEE5; border: 1px solid #DDD4C7; color: #66594E; font-size: 13px; padding: 10px 14px; border-radius: 5px; margin-bottom: 10px; min-height: 44px; display: flex; align-items: center; box-sizing: border-box; box-shadow: none; }
+  .mal-notice:last-of-type { margin-bottom: 16px; }
   .mal-notice-syncing { background: #F3EBDD; border-color: #DFD1BD; color: #7A624E; }
   .mal-error { background: #F3E4E9; border: 1px solid #E3C3D0; color: #8B4A63; font-size: 13px; padding: 10px 16px; border-radius: 5px; margin-bottom: 16px; }
   .mal-empty { border: 1.5px dashed var(--rule); border-radius: 6px; padding: 56px 24px; text-align: center; background: var(--paper-raised); }
@@ -349,16 +350,18 @@
   .mal-field label .mal-req { color: var(--red); }
   .mal-field input { width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 5px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); box-sizing: border-box; }
   .mal-field select { width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 5px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); }
-  /* CPA/廣告費佔比設定,兩個獨立成一列,標題/數值/按鈕的對應關係要清楚,不要擠成一團零散的文字。
-     手機版優先維持單列,真的放不下時只有數值換到第二行(不是整列跳來跳去)。 */
-  .mal-threshold-group { margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }
+  /* CPA/廣告費佔比設定,合併成同一個共用容器,中間用1px分隔線區分兩列,不要兩張各自獨立的大白卡
+     ——降低視覺重量,比較像報表裡的一組資訊,不是兩個各自搶注意力的功能卡片。 */
+  .mal-threshold-group { margin-bottom: 20px; background: var(--paper-raised); border: 1px solid var(--rule-soft); border-radius: 5px; box-shadow: none; overflow: hidden; }
   .mal-threshold-row {
     display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
-    background: var(--paper-raised); border: 1px solid var(--rule-soft); border-radius: 5px; padding: 10px 14px;
+    padding: 0 14px; min-height: 60px; border-bottom: 1px solid var(--rule-soft);
   }
+  .mal-threshold-row:last-child { border-bottom: none; }
   .mal-threshold-label { font-size: 12.5px; color: var(--ink-secondary); flex-shrink: 0; }
-  .mal-threshold-value { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--num-ink); flex: 1; min-width: 60px; }
-  .mal-threshold-btn { height: 40px; padding: 0 16px; font-size: 12.5px; flex-shrink: 0; }
+  .mal-threshold-value { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 13px; color: #76685D; flex: 1; min-width: 60px; }
+  .mal-threshold-value.mal-threshold-value-set { color: #7A563D; }
+  .mal-threshold-btn { height: 38px; padding: 0 15px; font-size: 12.5px; font-weight: 500; flex-shrink: 0; box-shadow: none; }
   .mal-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
   .mal-modal-actions .mal-btn-primary { background: #7A4F30; border-color: #7A4F30; }
   .mal-modal-actions .mal-btn-primary:hover { background: #6B4429; border-color: #6B4429; }
@@ -4123,7 +4126,7 @@ function MetaAdsLedger() {
         <div className="mal-threshold-group">
           <div className="mal-threshold-row">
             <span className="mal-threshold-label">CPA 過高標準</span>
-            <strong className="mal-threshold-value">
+            <strong className={`mal-threshold-value${cpaThresholds[activeBrandId] != null ? " mal-threshold-value-set" : ""}`}>
               {cpaThresholds[activeBrandId] != null ? `$${cpaThresholds[activeBrandId]}` : "尚未設定"}
             </strong>
             <button className="mal-btn mal-threshold-btn" onClick={() => editCpaThreshold(activeBrandId)}>
@@ -4132,7 +4135,7 @@ function MetaAdsLedger() {
           </div>
           <div className="mal-threshold-row">
             <span className="mal-threshold-label">廣告費佔比過高標準</span>
-            <strong className="mal-threshold-value">
+            <strong className={`mal-threshold-value${adRatioThresholds[activeBrandId] != null ? " mal-threshold-value-set" : ""}`}>
               {adRatioThresholds[activeBrandId] != null ? `${adRatioThresholds[activeBrandId]}%` : "尚未設定"}
             </strong>
             <button className="mal-btn mal-threshold-btn" onClick={() => editAdRatioThreshold(activeBrandId)}>
