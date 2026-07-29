@@ -319,7 +319,7 @@
     outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px var(--accent-soft, rgba(169,116,74,0.18));
   }
   .mal-ad-search-wrap .mal-ad-search-icon {
-    position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; pointer-events: none;
+    position: absolute; right: 14px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; pointer-events: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='7' cy='7' r='5.5' fill='none' stroke='%238F8171' stroke-width='1.5'/%3E%3Cline x1='11' y1='11' x2='15' y2='15' stroke='%238F8171' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: center;
   }
@@ -437,6 +437,16 @@
     .mal-cards { grid-template-columns: repeat(2, 1fr); }
     .mal-ad-row { flex-wrap: wrap; }
     .mal-ad-stats { width: 100%; justify-content: space-between; gap: 8px; }
+    /* 搜尋框、排序選單手機版各自獨占一整列,不要跟狀態篩選按鈕擠在同一橫排——
+       這是造成「搜尋框只占右半邊、排序選單只占左半邊、兩者對不齊」的根本原因:
+       桌機版靠flex-wrap自然換行,手機版寬度不夠時只會換到「剩下的那一小塊空間」,
+       不會自動變成滿版寬度,必須明確給width:100%。 */
+    .mal-status-filter { flex-direction: column; align-items: stretch; gap: 0; }
+    .mal-status-filter-group { gap: 8px; }
+    .mal-ad-search-wrap { width: 100%; min-width: 0; margin-left: 0; margin-top: 10px; }
+    .mal-ad-search-wrap input { width: 100%; padding-right: 42px; box-sizing: border-box; }
+    .mal-ad-header-row { flex-direction: column; align-items: stretch; }
+    .mal-ad-header-row .mal-ad-sort-select { width: 100%; min-width: 0; margin-top: 8px; box-sizing: border-box; }
     /* 手機版壓縮上半部控制區的留白高度,避免報表內容被推太下面 */
     .mal-header { padding-top: 16px; padding-bottom: 12px; margin-bottom: 14px; }
     .mal-viewmode-switch { margin-bottom: 12px; }
