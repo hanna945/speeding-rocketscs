@@ -215,11 +215,17 @@
   .mal-dash-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--ink-soft); }
   .mal-dash-legend span { display: flex; align-items: center; gap: 6px; }
   .mal-dash-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-  .mal-perf-card { display: block; width: 100%; text-align: left; font-family: inherit; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
-  .mal-perf-card:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(74,63,53,0.09); }
-  .mal-perf-card:disabled { cursor: default; opacity: 0.5; }
-  .mal-perf-card-label { font-size: 15.5px; font-weight: 700; text-transform: none; letter-spacing: 0.01em; display: flex; align-items: center; gap: 6px; }
-  .mal-perf-card-hint { font-size: 11px; color: var(--ink-soft); font-weight: 400; margin-top: 6px; }
+  /* 成效分類改成書刊式文字頁籤,不是大型卡片——這裡不是真正的篩選(點了會捲動到對應區塊,
+     不是隱藏其他分類),但視覺上要跟其他頁籤(週報表/月報表、投放狀態)用同一套語言。 */
+  .mal-perf-tabs { display: flex; gap: 22px; overflow-x: auto; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
+  .mal-perf-card {
+    display: block; background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0;
+    font-family: inherit; cursor: pointer; padding: 0 2px 10px; white-space: nowrap; transition: all 0.15s ease;
+  }
+  .mal-perf-card:disabled { cursor: default; opacity: 0.4; }
+  .mal-perf-card-active { border-bottom-color: var(--blue-deep); }
+  .mal-perf-card-label { font-size: 13.5px; font-weight: 500; color: var(--ink-secondary); }
+  .mal-perf-card-active .mal-perf-card-label { color: var(--ink); font-weight: 600; }
   .mal-perf-section { scroll-margin-top: 16px; border: 1px solid var(--rule); border-radius: 6px; margin-bottom: 16px; overflow: hidden; }
   .mal-perf-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; cursor: pointer; background: var(--paper-raised); border: none; width: 100%; text-align: left; font-family: inherit; }
   .mal-perf-section-title { font-family: 'Noto Serif TC', serif; font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; }
@@ -252,10 +258,10 @@
   .mal-ad-header-row .mal-section-title-flex { margin: 0; border-bottom: none; padding-bottom: 0; flex: 1; }
   .mal-ad-header-row { border-bottom: none; padding-bottom: 6px; margin-bottom: 12px; }
   .mal-ad-sort-select {
-    padding: 7px 28px 7px 12px; height: 34px; border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-raised); color: var(--ink); font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px;
+    padding: 0 32px 0 14px; height: 42px; border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-raised); color: var(--ink); font-family: 'Noto Sans TC', sans-serif; font-size: 13px; box-sizing: border-box;
     appearance: none; -webkit-appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238F8171' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 10px center;
+    background-repeat: no-repeat; background-position: right 12px center;
   }
   .mal-chart-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 18px; margin-bottom: 22px; box-shadow: 0 2px 10px rgba(74,63,53,0.04); }
   .mal-chart-legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-soft); margin-bottom: 10px; }
@@ -291,27 +297,32 @@
     font-family: 'Noto Sans TC', sans-serif; font-size: 12px; color: var(--ink-soft); font-weight: 600;
     padding: 10px 4px 6px; border-top: 1px dashed var(--rule); margin-top: 8px;
   }
-  .mal-status-filter { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .mal-status-filter { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .mal-status-filter-group { display: flex; gap: 6px; }
   .mal-status-filter-btn {
-    font-family: 'Noto Sans TC', sans-serif; font-size: 12px; font-weight: 500; padding: 7px 14px; height: 34px;
+    font-family: 'Noto Sans TC', sans-serif; font-size: 12px; font-weight: 500; padding: 0 14px; height: 37px;
     border-radius: 3px; border: 1px solid var(--rule); background: var(--paper-raised);
-    color: var(--ink-secondary); cursor: pointer; transition: all 0.15s ease;
+    color: var(--ink-secondary); cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
   }
   .mal-status-filter-btn-active { border-color: var(--blue-deep); color: var(--paper-raised); background: var(--blue-deep); font-weight: 500; }
   .mal-ad-search-wrap { position: relative; margin-left: auto; }
   .mal-ad-search-wrap input {
-    font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; padding: 7px 30px 7px 13px; height: 34px;
+    font-family: 'Noto Sans TC', sans-serif; font-size: 16px; padding: 8px 34px 8px 13px; height: 42px;
     border-radius: 3px; border: 1px solid var(--rule); background: var(--paper-raised);
-    color: var(--ink); width: 190px; transition: border-color 0.15s ease;
+    color: var(--ink); width: 190px; transition: border-color 0.15s ease; box-sizing: border-box;
   }
-  .mal-ad-search-wrap input:focus { outline: none; border-color: var(--blue); }
+  .mal-ad-search-wrap input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px rgba(169,116,74,0.18); }
   /* focus要精緻,不要瀏覽器原生藍色外框——這裡統一處理,不用一個個元件分別補 */
   .mal-plan-input:focus, .mal-plan-textarea:focus, .mal-plan-select:focus,
   .mal-ad-sort-select:focus, .mal-field input:focus, .mal-field select:focus,
   .mal-field textarea:focus {
     outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px var(--accent-soft, rgba(169,116,74,0.18));
   }
-  .mal-ad-search-wrap .mal-ad-search-icon { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--ink-soft); pointer-events: none; }
+  .mal-ad-search-wrap .mal-ad-search-icon {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='7' cy='7' r='5.5' fill='none' stroke='%238F8171' stroke-width='1.5'/%3E%3Cline x1='11' y1='11' x2='15' y2='15' stroke='%238F8171' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center;
+  }
   .mal-ad-search-wrap .mal-ad-search-clear {
     position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: none; background: none;
     color: var(--ink-soft); cursor: pointer; font-size: 13px; padding: 3px 5px; line-height: 1;
@@ -1223,21 +1234,23 @@ function ActiveBadge({ active }) {
 function StatusFilterButtons({ statusValue, onStatusChange, keyword, onKeywordChange }) {
   const options = [
     { key: "all", label: "全部" },
-    { key: "active", label: "● 只看投放中" },
-    { key: "inactive", label: "■ 只看已停止" },
+    { key: "active", label: "只看投放中" },
+    { key: "inactive", label: "只看已停止" },
   ];
   return (
     <div className="mal-status-filter">
-      {options.map((opt) => (
-        <button
-          key={opt.key}
-          type="button"
-          className={`mal-status-filter-btn ${statusValue === opt.key ? "mal-status-filter-btn-active" : ""}`}
-          onClick={() => onStatusChange(opt.key)}
-        >
-          {opt.label}
-        </button>
-      ))}
+      <div className="mal-status-filter-group">
+        {options.map((opt) => (
+          <button
+            key={opt.key}
+            type="button"
+            className={`mal-status-filter-btn ${statusValue === opt.key ? "mal-status-filter-btn-active" : ""}`}
+            onClick={() => onStatusChange(opt.key)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
       <div className="mal-ad-search-wrap">
         <input
           type="text"
@@ -1248,7 +1261,7 @@ function StatusFilterButtons({ statusValue, onStatusChange, keyword, onKeywordCh
         {keyword ? (
           <button type="button" className="mal-ad-search-clear" onClick={() => onKeywordChange("")} title="清除搜尋">✕</button>
         ) : (
-          <span className="mal-ad-search-icon">🔍</span>
+          <span className="mal-ad-search-icon" aria-hidden="true"></span>
         )}
       </div>
     </div>
@@ -3537,18 +3550,16 @@ function MetaAdsLedger() {
         <h2 className="mal-section-title">
           廣告成效分類<span className="mal-section-count">(花費 ≥ {MIN_AD_SPEND} 的廣告共 {qualifyingAds.length} 支,含已停止)</span>
         </h2>
-        <div className="mal-cards">
+        <div className="mal-perf-tabs">
           {PERF_ORDER.map((k) => (
             <button
               type="button"
               key={k}
-              className="mal-card mal-perf-card"
+              className={`mal-perf-card ${!collapsed[k] && buckets[k].length > 0 ? "mal-perf-card-active" : ""}`}
               disabled={!buckets[k].length}
               onClick={() => jumpToBucket(k)}
             >
-              <div className="mal-perf-card-label" style={{ color: PERF_COLORS[k] }}>{PERF_LABELS[k]}</div>
-              <div className="mal-card-value">{buckets[k].length}</div>
-              {buckets[k].length > 0 && <div className="mal-perf-card-hint">↓ 點擊查看廣告明細</div>}
+              <span className="mal-perf-card-label">{PERF_LABELS[k]} {buckets[k].length}</span>
             </button>
           ))}
         </div>
