@@ -264,6 +264,7 @@
     background-repeat: no-repeat; background-position: right 12px center;
   }
   .mal-chart-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 18px; margin-bottom: 22px; box-shadow: 0 2px 10px rgba(74,63,53,0.04); }
+  .mal-chart-svg { display: block; }
   .mal-chart-legend { display: flex; flex-wrap: wrap; justify-content: flex-start; row-gap: 8px; column-gap: 18px; font-size: 13px; font-family: 'Noto Sans TC', sans-serif; color: #76685D; margin-bottom: 10px; }
   .mal-chart-legend span { display: inline-flex; align-items: center; gap: 8px; }
   .mal-chart-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
@@ -436,6 +437,10 @@
     .mal-title { font-size: 22px; }
     .mal-cards { grid-template-columns: repeat(2, 1fr); }
     .mal-ad-row { flex-wrap: wrap; }
+    /* 手機版圖表容器留白縮小、圖表本身矮一點——原本640:208的比例在窄螢幕下容器變窄,
+       固定200px高度會顯得偏方正、留白比例失衡,縮小高度讓長寬比更接近原本設計的樣子。 */
+    .mal-chart-box { padding: 16px 14px; }
+    .mal-chart-svg { height: 168px !important; }
     /* 手機版數據區改成3+2兩列(6欄grid,前3項各佔2欄、後2項各佔3欄)——固定5欄在窄螢幕下
        長金額(7-8位數,例如$12,345,678)會過度擁擠甚至重疊,3+2讓CPA/ROAS有更寬的欄位可用。
        5個數據項目順序固定(廣告費/轉單/轉單金額/CPA/ROAS),用nth-child指定span,不用動JSX結構。 */
@@ -1339,33 +1344,37 @@ function StatusFilterButtons({ statusValue, onStatusChange, keyword, onKeywordCh
 // ---------- lightweight dependency-free charts ----------
 
 function SimpleBarChart({ data, seriesA, seriesB, colorA, colorB, labelA, labelB, fmtA, fmtB }) {
-  const w = 640, h = 200, padL = 6, padR = 6, padT = 10, padB = 26;
+  const w = 640, h = 208, padL = 6, padR = 6, padT = 18, padB = 28;
   const n = data.length;
   const groupW = (w - padL - padR) / n;
-  const barW = Math.min(22, groupW * 0.28);
+  const barW = Math.min(22, groupW * 0.26);
   const maxA = Math.max(1, ...data.map((d) => d[seriesA]));
   const maxB = Math.max(1, ...data.map((d) => d[seriesB]));
+  const gridLines = [0.25, 0.5, 0.75]; // 三條極淡的水平參考線,只是視覺輔助,不代表任何刻度數字
   return (
     <div>
       <div className="mal-chart-legend">
         <span><i className="mal-chart-dot" style={{ background: colorA }}></i>{labelA}</span>
         <span><i className="mal-chart-dot" style={{ background: colorB }}></i>{labelB}</span>
       </div>
-      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="200">
-        <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#EAE2D6" />
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="200" className="mal-chart-svg" preserveAspectRatio="xMidYMid meet">
+        {gridLines.map((g) => (
+          <line key={g} x1={padL} y1={padT + (h - padT - padB) * g} x2={w - padR} y2={padT + (h - padT - padB) * g} stroke="#EFE9DE" strokeWidth="1" />
+        ))}
+        <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#E8E0D3" />
         {data.map((d, i) => {
           const cx = padL + groupW * i + groupW / 2;
           const barH_A = ((h - padT - padB) * d[seriesA]) / maxA;
           const barH_B = ((h - padT - padB) * d[seriesB]) / maxB;
           return (
             <g key={i}>
-              <rect x={cx - barW - 2} y={h - padB - barH_A} width={barW} height={barH_A} fill={colorA} rx="2">
+              <rect x={cx - barW - 1.5} y={h - padB - barH_A} width={barW} height={barH_A} fill={colorA} rx="2">
                 <title>{d.month}: {fmtA(d[seriesA])}</title>
               </rect>
-              <rect x={cx + 2} y={h - padB - barH_B} width={barW} height={barH_B} fill={colorB} rx="2">
+              <rect x={cx + 1.5} y={h - padB - barH_B} width={barW} height={barH_B} fill={colorB} rx="2">
                 <title>{d.month}: {fmtB(d[seriesB])}</title>
               </rect>
-              <text x={cx} y={h - 8} textAnchor="middle" fontSize="11" fontFamily="IBM Plex Mono, monospace" fill="#9C9186">{d.month}</text>
+              <text x={cx} y={h - 10} textAnchor="middle" fontSize="11" fontFamily="IBM Plex Mono, monospace" fill="#8F8171">{d.month}</text>
             </g>
           );
         })}
@@ -1375,7 +1384,7 @@ function SimpleBarChart({ data, seriesA, seriesB, colorA, colorB, labelA, labelB
 }
 
 function SimpleLineChart({ data, seriesA, seriesB, colorA, colorB, labelA, labelB, fmtA, fmtB }) {
-  const w = 640, h = 200, padL = 6, padR = 6, padT = 14, padB = 26;
+  const w = 640, h = 208, padL = 6, padR = 6, padT = 20, padB = 28;
   const n = data.length;
   const stepX = n > 1 ? (w - padL - padR) / (n - 1) : 0;
   const valsA = data.map((d) => d[seriesA]).filter((v) => v !== null && v !== undefined);
@@ -1384,6 +1393,7 @@ function SimpleLineChart({ data, seriesA, seriesB, colorA, colorB, labelA, label
   const maxB = Math.max(1, ...valsB), minB = Math.min(0, ...valsB);
   const yA = (v) => h - padB - ((v - minA) / (maxA - minA || 1)) * (h - padT - padB);
   const yB = (v) => h - padB - ((v - minB) / (maxB - minB || 1)) * (h - padT - padB);
+  const gridLines = [0.25, 0.5, 0.75];
   const pathFor = (key, yf) => {
     let d = "";
     data.forEach((pt, i) => {
@@ -1400,8 +1410,11 @@ function SimpleLineChart({ data, seriesA, seriesB, colorA, colorB, labelA, label
         <span><i className="mal-chart-dot" style={{ background: colorA }}></i>{labelA}</span>
         <span><i className="mal-chart-dot" style={{ background: colorB }}></i>{labelB}</span>
       </div>
-      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="200">
-        <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#EAE2D6" />
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="200" className="mal-chart-svg" preserveAspectRatio="xMidYMid meet">
+        {gridLines.map((g) => (
+          <line key={g} x1={padL} y1={padT + (h - padT - padB) * g} x2={w - padR} y2={padT + (h - padT - padB) * g} stroke="#EFE9DE" strokeWidth="1" />
+        ))}
+        <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#E8E0D3" />
         <path d={pathFor(seriesA, yA)} fill="none" stroke={colorA} strokeWidth="2.5" />
         <path d={pathFor(seriesB, yB)} fill="none" stroke={colorB} strokeWidth="2.5" />
         {data.map((pt, i) => {
@@ -1414,7 +1427,7 @@ function SimpleLineChart({ data, seriesA, seriesB, colorA, colorB, labelA, label
               {pt[seriesB] !== null && pt[seriesB] !== undefined && (
                 <circle cx={x} cy={yB(pt[seriesB])} r="3.2" fill={colorB}><title>{pt.month} {labelB}: {fmtB(pt[seriesB])}</title></circle>
               )}
-              <text x={x} y={h - 8} textAnchor="middle" fontSize="11" fontFamily="IBM Plex Mono, monospace" fill="#9C9186">{pt.month}</text>
+              <text x={x} y={h - 10} textAnchor="middle" fontSize="11" fontFamily="IBM Plex Mono, monospace" fill="#8F8171">{pt.month}</text>
             </g>
           );
         })}
