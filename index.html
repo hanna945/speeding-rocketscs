@@ -436,14 +436,20 @@
     .mal-title { font-size: 22px; }
     .mal-cards { grid-template-columns: repeat(2, 1fr); }
     .mal-ad-row { flex-wrap: wrap; }
+    /* 手機版數據區改成3+2兩列(6欄grid,前3項各佔2欄、後2項各佔3欄)——固定5欄在窄螢幕下
+       長金額(7-8位數,例如$12,345,678)會過度擁擠甚至重疊,3+2讓CPA/ROAS有更寬的欄位可用。
+       5個數據項目順序固定(廣告費/轉單/轉單金額/CPA/ROAS),用nth-child指定span,不用動JSX結構。 */
     .mal-ad-stats {
-      width: 100%; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px;
+      width: 100%; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+      row-gap: 11px; column-gap: 6px;
     }
-    .mal-ad-stats div { align-items: center; min-width: 0; }
-    .mal-ad-stats div > *:last-child {
-      font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis; font-size: 11.5px;
+    .mal-ad-stats > div:nth-child(1), .mal-ad-stats > div:nth-child(2), .mal-ad-stats > div:nth-child(3) {
+      grid-column: span 2;
     }
+    .mal-ad-stats > div:nth-child(4), .mal-ad-stats > div:nth-child(5) {
+      grid-column: span 3;
+    }
+    .mal-ad-stats div { align-items: center; min-width: 0; font-size: 11.5px; white-space: nowrap; }
     .mal-ad-stats span { white-space: nowrap; font-size: 9px; }
     /* 搜尋框、排序選單手機版各自獨占一整列,不要跟狀態篩選按鈕擠在同一橫排——
        這是造成「搜尋框只占右半邊、排序選單只占左半邊、兩者對不齊」的根本原因:
