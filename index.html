@@ -359,8 +359,52 @@
   .mal-field { margin-bottom: 13px; }
   .mal-field label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; }
   .mal-field label .mal-req { color: var(--red); }
-  .mal-field input { width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 5px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); box-sizing: border-box; }
-  .mal-field select { width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 5px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); }
+  .mal-field input { width: 100%; height: 42px; padding: 0 13px; border: 1px solid var(--rule); border-radius: 5px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); box-sizing: border-box; }
+  .mal-field select {
+    width: 100%; height: 42px; padding: 0 32px 0 13px; border: 1px solid var(--rule); border-radius: 5px; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--paper-raised); color: var(--ink); box-sizing: border-box;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238F8171' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  .mal-field input[type="password"] { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.03em; }
+  .mal-field input[type="month"], .mal-field input[type="date"] { color-scheme: light; }
+  /* Chrome/Edge的日期選擇器icon預設是灰藍色系,filter把它調成跟整體一致的灰棕色調 */
+  .mal-field input[type="month"]::-webkit-calendar-picker-indicator,
+  .mal-field input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(48%) sepia(15%) saturate(500%) hue-rotate(340deg) brightness(90%);
+    cursor: pointer;
+  }
+  /* 自訂checkbox:拿掉瀏覽器原生藍色,選中用低飽和焦糖色,checkbox跟文字同一列對齊,
+     文字太長時從文字起點自然換行(不是整個掉到checkbox下面),點文字也能切換勾選狀態。
+     用「原生checkbox視覺隱藏+label偽元素畫方框」,比單靠appearance:none更穩定可靠
+     (appearance:none在部分瀏覽器/情境下無法完全清除原生checkbox保留的內建尺寸)。 */
+  .mal-checkbox-row { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-weight: 400; position: relative; padding-left: 25px; }
+  .mal-checkbox-row input[type="checkbox"] {
+    position: absolute; left: 0; top: 1px; width: 17px; height: 17px; margin: 0; opacity: 0; cursor: pointer;
+  }
+  .mal-checkbox-row .mal-checkbox-box {
+    position: absolute; left: 0; top: 1px; width: 17px; height: 17px; flex-shrink: 0;
+    border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-raised); box-sizing: border-box; pointer-events: none;
+  }
+  .mal-checkbox-row input[type="checkbox"]:checked ~ .mal-checkbox-box {
+    background: var(--blue-deep); border-color: var(--blue-deep);
+  }
+  .mal-checkbox-row input[type="checkbox"]:checked ~ .mal-checkbox-box::after {
+    content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px;
+    border: solid #FAF7F0; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  .mal-checkbox-row input[type="checkbox"]:focus-visible ~ .mal-checkbox-box { box-shadow: 0 0 0 2px rgba(169,116,74,0.25); }
+  /* 廣告帳號ID輸入框+「存為常用」按鈕同一列,輸入框吃滿剩餘空間、按鈕固定寬度,手機版不會擠壓文字 */
+  .mal-input-btn-row { display: flex; gap: 8px; }
+  .mal-input-btn-row input { flex: 1; min-width: 0; }
+  .mal-input-row-btn { height: 42px; flex-shrink: 0; white-space: nowrap; }
+  /* 常用品牌刪除按鈕——低飽和磚紅,給足夠點擊範圍但不要看起來像孤立的小垃圾桶 */
+  .mal-delete-brand-btn {
+    width: 42px; height: 42px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--rule); border-radius: 5px; background: var(--paper-raised); color: var(--red);
+    font-size: 14px; cursor: pointer; padding: 0;
+  }
+  .mal-delete-brand-btn:hover { background: #F3E4E9; border-color: var(--red); }
   /* CPA/廣告費佔比設定,合併成同一個共用容器,中間用1px分隔線區分兩列,不要兩張各自獨立的大白卡
      ——降低視覺重量,比較像報表裡的一組資訊,不是兩個各自搶注意力的功能卡片。 */
   .mal-threshold-group { margin-bottom: 20px; background: var(--paper-raised); border: 1px solid var(--rule-soft); border-radius: 5px; box-shadow: none; overflow: hidden; }
@@ -4952,20 +4996,21 @@ function MetaAdsLedger() {
                 value={apiToken}
                 onChange={(e) => setApiToken(e.target.value)}
                 placeholder="EAAxxxxxxxxxxxxxxxx"
-                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "12px" }}
               />
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, marginTop: 8, fontSize: 12.5 }}>
+              <label className="mal-checkbox-row" style={{ marginTop: 10, fontSize: 12.5 }}>
                 <input type="checkbox" checked={rememberToken} onChange={(e) => toggleRememberToken(e.target.checked)} />
-                記住這組權杖(存在這台瀏覽器,下次開啟自動帶入)
+                <span className="mal-checkbox-box"></span>
+                <span>記住這組權杖(存在這台瀏覽器,下次開啟自動帶入)</span>
               </label>
               {rememberToken && (
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, marginTop: 6, fontSize: 12.5 }}>
+                <label className="mal-checkbox-row" style={{ marginTop: 8, fontSize: 12.5 }}>
                   <input type="checkbox" checked={autoSyncEnabled} onChange={(e) => toggleAutoSync(e.target.checked)} />
-                  開啟網頁時自動檢查並補抓上週 / 上個月的資料
+                  <span className="mal-checkbox-box"></span>
+                  <span>開啟網頁時自動檢查並補抓上週 / 上個月的資料</span>
                 </label>
               )}
               {autoSyncEnabled && rememberToken && (
-                <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 11.5, color: "var(--ink-secondary)", marginTop: 8, lineHeight: 1.5 }}>
                   只在打開這個網頁的當下才會檢查,不會在你沒開網頁時於背景執行。已經抓過的週/月不會重抓。
                 </p>
               )}
@@ -4976,10 +5021,11 @@ function MetaAdsLedger() {
                 <button
                   type="button"
                   className="mal-btn"
+                  style={{ height: 40, fontWeight: 500 }}
                   disabled={!!autoSyncStatus}
                   onClick={runAutoSync}
                 >
-                  {autoSyncStatus ? "同步中…" : "🔄 立即檢查並補抓上週/上月資料"}
+                  {autoSyncStatus ? "同步中…" : "立即檢查並補抓上週/上月資料"}
                 </button>
               </div>
             )}
@@ -4989,7 +5035,7 @@ function MetaAdsLedger() {
                 <label>常用品牌</label>
                 <div style={{ display: "flex", gap: 8 }}>
                   <select
-                    style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "Noto Sans TC, sans-serif", fontSize: "13px", background: "var(--paper-raised)" }}
+                    style={{ flex: 1 }}
                     value={brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")) ? brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")).name : ""}
                     onChange={(e) => selectBrand(e.target.value)}
                   >
@@ -5001,7 +5047,7 @@ function MetaAdsLedger() {
                   {brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")) && (
                     <button
                       type="button"
-                      className="mal-icon-btn"
+                      className="mal-icon-btn mal-delete-brand-btn"
                       title="刪除這個常用品牌"
                       onClick={() => deleteBrand(brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")).name)}
                     >
@@ -5015,15 +5061,14 @@ function MetaAdsLedger() {
             {apiMode !== "multi" && (
               <div className="mal-field">
                 <label>廣告帳號 ID</label>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div className="mal-input-btn-row">
                   <input
                     type="text"
                     value={apiAccountId}
                     onChange={(e) => setApiAccountId(e.target.value)}
                     placeholder="2157995930925784 或 act_2157995930925784"
-                    style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "12px" }}
                   />
-                  <button type="button" className="mal-btn" style={{ padding: "8px 12px", fontSize: 12 }} onClick={saveCurrentAsBrand}>
+                  <button type="button" className="mal-btn mal-input-row-btn" onClick={saveCurrentAsBrand}>
                     存為常用
                   </button>
                 </div>
@@ -5050,13 +5095,13 @@ function MetaAdsLedger() {
               <div className="mal-field">
                 <label>選擇要一起抓的品牌</label>
                 {brands.length === 0 ? (
-                  <p style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
+                  <p style={{ fontSize: 12.5, color: "var(--ink-secondary)" }}>
                     還沒有存過任何常用品牌。先切到「直接抓整月資料」模式,填一次帳號 ID 並「存為常用」,之後就能在這裡勾選批次抓取。
                   </p>
                 ) : (
-                  <div style={{ border: "1px solid var(--rule)", borderRadius: "10px", padding: "8px 10px", maxHeight: 160, overflowY: "auto" }}>
+                  <div style={{ border: "1px solid var(--rule)", borderRadius: "5px", padding: "6px 10px", maxHeight: 160, overflowY: "auto" }}>
                     {brands.map((b) => (
-                      <label key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
+                      <label key={b.id} className="mal-checkbox-row" style={{ padding: "6px 0", fontSize: 13 }}>
                         <input
                           type="checkbox"
                           checked={selectedBatchBrandIds.includes(b.id)}
@@ -5066,7 +5111,8 @@ function MetaAdsLedger() {
                             );
                           }}
                         />
-                        {b.name}
+                        <span className="mal-checkbox-box"></span>
+                        <span>{b.name}</span>
                       </label>
                     ))}
                   </div>
@@ -5077,10 +5123,10 @@ function MetaAdsLedger() {
             {(apiMode === "week" || (apiMode === "multi" && batchGranularity === "week")) && (
               <div className="mal-field">
                 <label>上週日期範圍</label>
-                <div style={{ padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", background: "var(--paper-raised)", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}>
+                <div style={{ height: 42, display: "flex", alignItems: "center", padding: "0 13px", border: "1px solid var(--rule)", borderRadius: "5px", background: "var(--paper-raised)", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px", boxSizing: "border-box" }}>
                   {weekInfo.since} ~ {weekInfo.until}
                 </div>
-                <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 11.5, color: "var(--ink-secondary)", marginTop: 8, lineHeight: 1.5 }}>
                   自動抓「上一個完整的週一到週日」,只統計「購買」類型的轉換。花費 ≥ 500 的廣告會收錄;花費雖然還不到 500,但目前仍在投放中的廣告也會一併收錄,方便觀察剛起步的廣告。
                 </p>
               </div>
@@ -5092,14 +5138,13 @@ function MetaAdsLedger() {
                 <select
                   value={recentWeeksCount}
                   onChange={(e) => setRecentWeeksCount(Number(e.target.value))}
-                  style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", background: "var(--paper-raised)" }}
                 >
                   <option value={2}>過去 2 週</option>
                   <option value={4}>過去 4 週</option>
                   <option value={8}>過去 8 週</option>
                   <option value={12}>過去 12 週</option>
                 </select>
-                <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 11.5, color: "var(--ink-secondary)", marginTop: 8, lineHeight: 1.5 }}>
                   會從「上週」開始,一週一週往前抓(每週都是完整的週一到週日),每抓完一週會間隔 4 秒再抓下一週,避免觸發 Meta 頻率限制。
                   週數越多需要等待的時間越長,過程中請不要關掉這個分頁。已經抓過的週份重新抓取會直接覆蓋更新。
                 </p>
@@ -5113,9 +5158,8 @@ function MetaAdsLedger() {
                   type="month"
                   value={apiMonth}
                   onChange={(e) => setApiMonth(e.target.value)}
-                  style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "Noto Sans TC, sans-serif", fontSize: "13px" }}
                 />
-                <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 11.5, color: "var(--ink-secondary)", marginTop: 8, lineHeight: 1.5 }}>
                   只會統計「購買」類型的轉換(訂單數與金額)。如果你的廣告目標不是導購,轉單數可能會顯示 0,這是正常的。
                 </p>
               </div>
