@@ -281,7 +281,7 @@
   .mal-ad-row { display: flex; align-items: center; gap: 14px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; transition: box-shadow 0.15s ease; }
   .mal-ad-row:hover { box-shadow: 0 3px 12px rgba(74,63,53,0.06); }
   .mal-thumb { width: 52px; height: 52px; object-fit: cover; border-radius: 5px; border: 1px solid var(--rule); flex-shrink: 0; background: var(--paper-raised); }
-  .mal-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--ink-soft); background: var(--rule-soft); font-size: 18px; }
+  .mal-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--ink-soft); background: var(--rule-soft); font-size: 11.5px; font-weight: 500; letter-spacing: 0.05em; }
   .mal-ad-info { flex: 1; min-width: 0; }
   .mal-ad-name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mal-ad-utm { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-secondary); display: flex; align-items: center; gap: 4px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -289,8 +289,8 @@
   .mal-ad-fblink { font-family: 'Noto Sans TC', sans-serif; font-size: 11px; color: var(--blue-deep); text-decoration: none; margin-top: 3px; display: inline-flex; align-items: center; gap: 3px; }
   .mal-ad-fblink:hover { text-decoration: underline; }
   .mal-status-badge { font-family: 'Noto Sans TC', sans-serif; font-size: 10.5px; font-weight: 500; margin-left: 8px; padding: 2px 9px; border-radius: 3px; white-space: nowrap; }
-  .mal-status-on { color: #5B6449; background: #E4E4D6; }
-  .mal-status-off { color: var(--ink-soft); background: var(--rule-soft); }
+  .mal-status-on { color: #8A5E3C; background: #EEE2D4; }
+  .mal-status-off { color: #8A8075; background: #EEEAE3; }
   .mal-ad-row-inactive { opacity: 0.68; }
   .mal-ad-startdate { font-family: 'Noto Sans TC', sans-serif; font-size: 11px; color: var(--ink-soft); margin-top: 3px; display: block; }
   .mal-ad-nopost-divider {
@@ -436,7 +436,15 @@
     .mal-title { font-size: 22px; }
     .mal-cards { grid-template-columns: repeat(2, 1fr); }
     .mal-ad-row { flex-wrap: wrap; }
-    .mal-ad-stats { width: 100%; justify-content: space-between; gap: 8px; }
+    .mal-ad-stats {
+      width: 100%; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px;
+    }
+    .mal-ad-stats div { align-items: center; min-width: 0; }
+    .mal-ad-stats div > *:last-child {
+      font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; font-size: 11.5px;
+    }
+    .mal-ad-stats span { white-space: nowrap; font-size: 9px; }
     /* 搜尋框、排序選單手機版各自獨占一整列,不要跟狀態篩選按鈕擠在同一橫排——
        這是造成「搜尋框只占右半邊、排序選單只占左半邊、兩者對不齊」的根本原因:
        桌機版靠flex-wrap自然換行,手機版寬度不夠時只會換到「剩下的那一小塊空間」,
@@ -1271,7 +1279,7 @@ function renderBoldText(text) {
 
 function AdThumb({ src, alt }) {
   const [errored, setErrored] = useState(false);
-  if (!src || errored) return <div className="mal-thumb mal-thumb-fallback">🖼</div>;
+  if (!src || errored) return <div className="mal-thumb mal-thumb-fallback">素材</div>;
   return <img src={src} alt={alt || "廣告預覽"} className="mal-thumb" onError={() => setErrored(true)} />;
 }
 
