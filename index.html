@@ -348,6 +348,12 @@
   .mal-backend-group-start { border-left: 1.5px solid #9C653B !important; }
   .mal-ad-count { color: var(--ink-soft); font-style: italic; margin-left: 4px; }
   .mal-synced-at { color: var(--ink-soft); font-size: 12px; margin: -6px 0 16px; font-family: 'IBM Plex Mono', monospace; }
+  .mal-netprofit-alert {
+    background: #8B1E2B; color: #fff; border-radius: 5px; padding: 14px 18px; margin-bottom: 18px;
+    font-family: 'Noto Sans TC', sans-serif; font-size: 13.5px; line-height: 1.6;
+  }
+  .mal-netprofit-alert b { font-size: 15px; }
+  .mal-netprofit-alert .mal-netprofit-alert-days { opacity: 0.92; margin-top: 2px; }
   .mal-ad-stats { display: flex; gap: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; flex-shrink: 0; }
   .mal-ad-stats div { display: flex; flex-direction: column; align-items: flex-end; }
   .mal-ad-stats span { font-family: 'Noto Sans TC', sans-serif; font-size: 10px; color: var(--ink-soft); text-transform: uppercase; }
@@ -3963,6 +3969,13 @@ function MetaAdsLedger() {
     () => (dailyMonthRecord ? dailyMonthRecord.days.slice().sort((a, b) => (a.date < b.date ? -1 : 1)) : []),
     [dailyMonthRecord]
   );
+  // 目前這個月裡,淨利潤是負的那幾天——比廣告費佔比超標更嚴重,所以不是放在下面的「基礎分析」裡,
+  // 是顯示在每日報表最上面,一打開就看得到,不用往下滑或切分頁去找。(跟H-J同步補上,原本只有
+  // H-J有這個區塊,speedingscs這邊完全沒有,不是壞掉、是原本就沒做。)
+  const negativeProfitDays = useMemo(
+    () => sortedDailyDays.filter((d) => d.overall && d.overall.netProfit < 0),
+    [sortedDailyDays]
+  );
   const activeFocusDay = (focusDay && sortedDailyDays.some((d) => d.date === focusDay))
     ? focusDay
     : sortedDailyDays.some((d) => d.date === todayParts.dateKey)
@@ -4762,6 +4775,14 @@ function MetaAdsLedger() {
           </div>
         ) : (
           <>
+            {negativeProfitDays.length > 0 && (
+              <div className="mal-netprofit-alert">
+                <b>⚠️ {monthLabel(activeDailyMonth)}有 {negativeProfitDays.length} 天淨利潤是負的</b>
+                <div className="mal-netprofit-alert-days">
+                  {negativeProfitDays.map((d) => `${d.date.slice(5)}(${fmtMoney(d.overall.netProfit)})`).join("、")}
+                </div>
+              </div>
+            )}
             <div className="mal-tabs">
               {ledgerMonthKeys.map((mk) => (
                 <div key={mk} className={`mal-tab ${mk === activeDailyMonth ? "mal-tab-active" : ""}`} onClick={() => { setDailyMonth(mk); setFocusDay(null); }}>
