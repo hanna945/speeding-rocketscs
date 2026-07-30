@@ -2843,12 +2843,42 @@ function MetaAdsLedger() {
     return "。請確認權杖沒過期、廣告帳號 ID 正確,且已授權 ads_read 權限。";
   }
 
+  function parseDateStr(dateStr) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return { y, m, d };
+  }
+  // 跟 shopline-proxy 那邊用的邏輯完全一樣(已經實測驗證過涵蓋完整、無重疊):
+  // 查詢範圍超過20天(月報表等級)時,切成固定約4天一段,單次打給 Meta 的 insights 查詢範圍變小,
+  // 比較不容易在 Meta 那邊逼近逾時/複雜度上限。這條路徑(手動連接Meta API)原本完全沒有這個保護,
+  // 是造成「H-J報表正常、這邊卻常態性失敗」的根本原因——兩邊用同一組token,但H-J是走
+  // shopline-proxy(已經修過),這裡是直接從瀏覽器打Meta,從來沒套用過任何修正。
+  function splitDateRangeIfLarge(since, until) {
+    const { y: sy, m: sm, d: sd } = parseDateStr(since);
+    const { y: uy, m: um, d: ud } = parseDateStr(until);
+    const sinceDate = new Date(Date.UTC(sy, sm - 1, sd));
+    const untilDate = new Date(Date.UTC(uy, um - 1, ud));
+    const totalDays = Math.round((untilDate - sinceDate) / 86400000) + 1;
+    if (totalDays <= 20) return [{ since, until }];
+    const CHUNK_DAYS = 4;
+    const fmt = (d) => {
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+    };
+    const chunks = [];
+    let cursor = sinceDate;
+    while (cursor <= untilDate) {
+      const chunkEnd = new Date(Math.min(cursor.getTime() + (CHUNK_DAYS - 1) * 86400000, untilDate.getTime()));
+      chunks.push({ since: fmt(cursor), until: fmt(chunkEnd) });
+      cursor = new Date(chunkEnd.getTime() + 86400000);
+    }
+    return chunks;
+  }
+
   // relaxThreshold=true(目前只有「上週報表」會用到):篩選階段不會排除掉「目前還在投放中」的廣告,
   // 就算這支廣告這段期間花費還沒到 500,只要現在仍在投放,一樣會保留下來,方便看到剛起步/學習中的廣告。
   // 月報表(fetchOneBrandMonth)沒有帶這個參數,維持原本花費 ≥ 500 才留下的嚴格門檻。
   async function fetchInsightsForRange(token, accountId, since, until, relaxThreshold = false) {
     const encToken = encodeURIComponent(token);
-    const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
 
     // 0) account currency
     let currency = "TWD";
@@ -2857,21 +2887,54 @@ function MetaAdsLedger() {
       if (curJson.currency) currency = curJson.currency;
     } catch { /* fall back to TWD, this call isn't critical */ }
 
-    // 1) per-ad performance for the month
-    // 關鍵參數 use_account_attribution_setting=true:讓這次 API 呼叫套用「這個廣告帳號自己在 Meta 後台設定的歸因窗口」,
-    // 而不是 API 預設的歸因窗口。如果沒有這個參數,API 預設的歸因窗口通常比後台顯示用的寬(例如把 7 天內的點擊、
-    // 甚至瀏覽後很久才發生的購買都算進來),會導致轉單數比 Meta 後台顯示的「結果」多出好幾倍,CPA 被嚴重低估、
-    // ROAS 被嚴重高估——這正是造成轉單數跟後台數字差非常多倍的根本原因,不是重複計算的問題。
-    let insightsUrl =
-      `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
-      `&fields=ad_id,ad_name,spend,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
-    let rows = [];
-    let page = 0;
-    while (insightsUrl && page < 20) {
-      const json = await fetchGraphApi(insightsUrl, "讀取成效資料");
-      rows = rows.concat(json.data || []);
-      insightsUrl = json.paging && json.paging.next ? json.paging.next : null;
-      page++;
+    // 1) per-ad performance——範圍太大(月報表等級)時自動切成約4天一段各自查詢再合併。
+    async function fetchOneRangeRows(rangeSince, rangeUntil) {
+      const timeRange = encodeURIComponent(JSON.stringify({ since: rangeSince, until: rangeUntil }));
+      let insightsUrl =
+        `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
+        `&fields=ad_id,ad_name,spend,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
+      let out = [];
+      let page = 0;
+      while (insightsUrl && page < 20) {
+        const json = await fetchGraphApi(insightsUrl, `讀取成效資料(${rangeSince}~${rangeUntil},第${page + 1}頁)`);
+        out = out.concat(json.data || []);
+        insightsUrl = json.paging && json.paging.next ? json.paging.next : null;
+        page++;
+      }
+      return out;
+    }
+    const ranges = splitDateRangeIfLarge(since, until);
+    let rawRows = [];
+    for (const r of ranges) {
+      const part = await fetchOneRangeRows(r.since, r.until);
+      rawRows = rawRows.concat(part);
+    }
+    // 切段查詢時,同一支廣告會分別出現在不同段的結果裡,依 ad_id 加總合併,避免「花費是否達門檻」
+    // 誤判(平均分散在兩段、單段各自都不到門檻但合計其實達標的廣告不能被錯誤排除)。
+    let rows;
+    if (ranges.length <= 1) {
+      rows = rawRows;
+    } else {
+      const mergedByAdId = {};
+      rawRows.forEach((r) => {
+        const key = r.ad_id || `__no_id_${Math.random()}`;
+        if (!mergedByAdId[key]) {
+          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, spend: 0, actions: [], action_values: [] };
+        }
+        const m = mergedByAdId[key];
+        m.spend = (parseFloat(m.spend) || 0) + (parseFloat(r.spend) || 0);
+        ["actions", "action_values"].forEach((field) => {
+          (r[field] || []).forEach((entry) => {
+            const existing = m[field].find((e) => e.action_type === entry.action_type);
+            if (existing) {
+              existing.value = String((parseFloat(existing.value) || 0) + (parseFloat(entry.value) || 0));
+            } else {
+              m[field].push({ action_type: entry.action_type, value: entry.value });
+            }
+          });
+        });
+      });
+      rows = Object.values(mergedByAdId);
     }
 
     if (!rows.length) {
@@ -2881,7 +2944,10 @@ function MetaAdsLedger() {
     // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
     // 這一步要放在篩選門檻「之前」,因為 relaxThreshold 模式需要用投放狀態來決定要不要放行低花費的廣告。
     // 只查「這段期間真的有花費紀錄」的廣告 ID,不要掃整個帳號的歷史廣告,避免觸發 Meta 帳號層級的頻率限制。
-    const periodAdIds = [...new Set(rows.map((r) => r.ad_id).filter(Boolean))];
+    // 非relax模式(月報表)時,只對「花費有機會達標」的廣告抓細節,高流量帳號常常有大量低花費、
+    // 之後反正會被篩掉的廣告,不用每支都白跑一次查詢,減少總請求數。
+    const detailTargetRows = relaxThreshold ? rows : rows.filter((r) => (parseFloat(r.spend) || 0) >= MIN_FETCH_SPEND);
+    const periodAdIds = [...new Set(detailTargetRows.map((r) => r.ad_id).filter(Boolean))];
     let thumbMap = {};
     let utmMap = {};
     let statusMap = {};
