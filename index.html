@@ -2847,31 +2847,12 @@ function MetaAdsLedger() {
     const [y, m, d] = dateStr.split("-").map(Number);
     return { y, m, d };
   }
-  // 跟 shopline-proxy 那邊用的邏輯完全一樣(已經實測驗證過涵蓋完整、無重疊):
-  // 查詢範圍超過20天(月報表等級)時,切成固定約4天一段,單次打給 Meta 的 insights 查詢範圍變小,
-  // 比較不容易在 Meta 那邊逼近逾時/複雜度上限。這條路徑(手動連接Meta API)原本完全沒有這個保護,
-  // 是造成「H-J報表正常、這邊卻常態性失敗」的根本原因——兩邊用同一組token,但H-J是走
-  // shopline-proxy(已經修過),這裡是直接從瀏覽器打Meta,從來沒套用過任何修正。
+  // 2026-07-30 二次修正:確認這個Meta App目前是Dev Tier,額度上限是「每個廣告帳號每小時300次請求」,
+  // 按總呼叫次數算,不是按單次查詢複雜度算。切成越多段,總呼叫次數反而越多,方向是錯的。改回單一次
+  // 查詢,讓Meta自己的分頁機制(paging.next)處理大資料量。函式保留但固定回傳單一段,之後如果
+  // Dev Tier額度有調整,方便重新啟用切段邏輯。
   function splitDateRangeIfLarge(since, until) {
-    const { y: sy, m: sm, d: sd } = parseDateStr(since);
-    const { y: uy, m: um, d: ud } = parseDateStr(until);
-    const sinceDate = new Date(Date.UTC(sy, sm - 1, sd));
-    const untilDate = new Date(Date.UTC(uy, um - 1, ud));
-    const totalDays = Math.round((untilDate - sinceDate) / 86400000) + 1;
-    if (totalDays <= 20) return [{ since, until }];
-    const CHUNK_DAYS = 4;
-    const fmt = (d) => {
-      const pad = (n) => String(n).padStart(2, "0");
-      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-    };
-    const chunks = [];
-    let cursor = sinceDate;
-    while (cursor <= untilDate) {
-      const chunkEnd = new Date(Math.min(cursor.getTime() + (CHUNK_DAYS - 1) * 86400000, untilDate.getTime()));
-      chunks.push({ since: fmt(cursor), until: fmt(chunkEnd) });
-      cursor = new Date(chunkEnd.getTime() + 86400000);
-    }
-    return chunks;
+    return [{ since, until }];
   }
 
   // relaxThreshold=true(目前只有「上週報表」會用到):篩選階段不會排除掉「目前還在投放中」的廣告,
