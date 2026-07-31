@@ -629,10 +629,15 @@ const WEEKLY_PLAN_PREFIX = "weekly-plan:";
 const MONTHLY_PLAN_PREFIX = "monthly-plan:";
 const ADPERF_AI_WEEK_PREFIX = "adperf-ai-week:";
 const ADPERF_AI_MONTH_PREFIX = "adperf-ai-month:";
+// 2026-07-30新增:H-J那邊已經在同步真實Shopline訂單資料(shopline-week:/shopline-month:),
+// key格式完全一致,speedingscs這裡只要讀,不用自己另外抓——H&J一頁業績透過speedingscs看矩陣總覽時,
+// 就能顯示跟H-J同一套「真實Shopline訂單」欄位,不用speedingscs自己重新建一套API呼叫/同步邏輯。
+const SHOPLINE_WEEK_PREFIX = "shopline-week:";
+const SHOPLINE_MONTH_PREFIX = "shopline-month:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
 const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-product-names"]);
-const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX];
+const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_WEEK_PREFIX, SHOPLINE_MONTH_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
   return SHARED_PREFIXES.some((p) => key.startsWith(p));
@@ -797,6 +802,31 @@ function weekKeyFor(brandId, weekStart) {
 // 每個品牌、每個月存一筆,key 格式跟月報表/週報表一致,方便重複匯入時直接覆蓋更新。
 function ledgerKeyFor(brandId, monthKey) {
   return LEDGER_STORAGE_PREFIX + (brandId ? brandId + "::" : "") + monthKey;
+}
+// Shopline 資料不分品牌(一個商店對應所有廣告帳號),所以這裡的 key 不像 Meta 那樣帶品牌 id——
+// 跟 H-J 那邊用的是完全一樣的 key 格式,這樣才能真的讀到同一份共用資料,不是自己另外開一份。
+function shoplineMonthKey(monthKey) {
+  return SHOPLINE_MONTH_PREFIX + monthKey;
+}
+function shoplineWeekKey(weekStart) {
+  return SHOPLINE_WEEK_PREFIX + weekStart;
+}
+// 把一批 Shopline 訂單(record.orders)依下單日期分組,算出每天的訂單數、原價營收、折扣金額、實收營收。
+// 跟 H-J 那邊的版本邏輯完全一致,直接port過來,不是重新設計一套。
+function groupShoplineOrdersByDay(orders) {
+  const byDay = {};
+  (orders || [])
+    .filter((o) => o.paymentStatus === "completed" && o.status !== "cancelled")
+    .forEach((o) => {
+      const day = (o.createdAt || "").slice(0, 10);
+      if (!day) return;
+      if (!byDay[day]) byDay[day] = { date: day, orderCount: 0, grossRevenue: 0, discountAmount: 0, netRevenue: 0 };
+      byDay[day].orderCount += 1;
+      byDay[day].grossRevenue += o.subtotal || 0;
+      byDay[day].discountAmount += o.discountAmount || 0;
+      byDay[day].netRevenue += o.amount || 0;
+    });
+  return Object.values(byDay).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 function fmtDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -2151,6 +2181,10 @@ function MetaAdsLedger() {
   const [ledgerImportError, setLedgerImportError] = useState(null);
   const [ledgerImportNotice, setLedgerImportNotice] = useState(null);
   const [dailyMonth, setDailyMonth] = useState(null);
+  // 真實Shopline訂單資料(不是試算表手動打的數字)——H&J一頁業績(2157995930925784)專用,
+  // 直接讀H-J那邊已經在同步、共用的 shopline-month: 資料,不用speedingscs自己另外抓一次。
+  const [shoplineMonthsData, setShoplineMonthsData] = useState({});
+  const HJ_ONEPAGE_ACCOUNT_ID = "2157995930925784";
   const [dailySubMode, setDailySubMode] = useState("single"); // "single"(選一天) | "matrix"(矩陣總覽)
   const [focusDay, setFocusDay] = useState(null);
   const [sheetIdInput, setSheetIdInput] = useState("");
@@ -4041,6 +4075,30 @@ function MetaAdsLedger() {
   const focusDayIdx = activeFocusDay ? sortedDailyDays.findIndex((d) => d.date === activeFocusDay) : -1;
   const prevDayRecord = focusDayIdx > 0 ? sortedDailyDays[focusDayIdx - 1] : null;
   const dailyMatrixCodes = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
+  // H&J一頁業績專用:讀取H-J那邊已經同步好的真實Shopline訂單資料(共用儲存,不用speedingscs自己抓)。
+  // 只在真的在看這個品牌、且這個月份還沒讀過時才讀一次,不是每次重新render都讀。
+  useEffect(() => {
+    if (activeBrandId !== HJ_ONEPAGE_ACCOUNT_ID || !activeDailyMonth) return;
+    if (shoplineMonthsData[activeDailyMonth]) return; // 已經讀過這個月,不用重讀
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await storage.get(shoplineMonthKey(activeDailyMonth));
+        if (!cancelled && res && res.value) {
+          const record = JSON.parse(res.value);
+          setShoplineMonthsData((prev) => ({ ...prev, [activeDailyMonth]: record }));
+        }
+      } catch { /* 這個月份還沒有共用的Shopline資料(H-J那邊還沒抓過),維持顯示—— */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeBrandId, activeDailyMonth, shoplineMonthsData]);
+  const shopeRealDailyMap = useMemo(() => {
+    if (activeBrandId !== HJ_ONEPAGE_ACCOUNT_ID) return {};
+    const monthRecord = activeDailyMonth ? shoplineMonthsData[activeDailyMonth] : null;
+    if (!monthRecord || !monthRecord.orders) return {};
+    const grouped = groupShoplineOrdersByDay(monthRecord.orders);
+    return Object.fromEntries(grouped.map((g) => [g.date, g]));
+  }, [activeBrandId, shoplineMonthsData, activeDailyMonth]);
   // adPct / AD_RATIO_CRITICAL_PCT 已經移到檔案最上面的頂層,這裡不用重複定義。
   // 淨利潤是負的(虧錢)時,用比廣告費佔比超標更重的標紅樣式(深紅底色+粗體),兩種警示程度做出區別。
   const netProfitCell = (value) => {
@@ -4977,6 +5035,9 @@ function MetaAdsLedger() {
                       <tr>
                         <th rowSpan={2} style={{ verticalAlign: "bottom" }}>日期</th>
                         <th colSpan={4} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🏬 全店</th>
+                        {activeBrandId === HJ_ONEPAGE_ACCOUNT_ID && (
+                          <th colSpan={2} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>✅ 真實Shopline訂單</th>
+                        )}
                         {dailyMatrixCodes.map((code, i) => (
                           <th
                             key={code}
@@ -4993,6 +5054,12 @@ function MetaAdsLedger() {
                         <th className="mal-ledger-group-backend">廣告費</th>
                         <th className="mal-ledger-group-backend">廣告費佔比</th>
                         <th className="mal-ledger-group-backend">淨利潤</th>
+                        {activeBrandId === HJ_ONEPAGE_ACCOUNT_ID && (
+                          <>
+                            <th className="mal-ledger-group-backend mal-matrix-group-start">訂單數</th>
+                            <th className="mal-ledger-group-backend">實收營收</th>
+                          </>
+                        )}
                         {dailyMatrixCodes.map((code, i) => {
                           const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
                           return (
@@ -5014,6 +5081,12 @@ function MetaAdsLedger() {
                           <td className="mal-ledger-group-backend">{fmtMoney(d.overall.adSpend)}</td>
                           <td className="mal-ledger-group-backend">{adPct(d.overall.adSpend, d.overall.revenue, adRatioThresholds[activeBrandId])}</td>
                           <td className="mal-ledger-group-backend">{netProfitCell(d.overall.netProfit)}</td>
+                          {activeBrandId === HJ_ONEPAGE_ACCOUNT_ID && (
+                            <>
+                              <td className="mal-ledger-group-backend mal-matrix-group-start">{shopeRealDailyMap[d.date] ? shopeRealDailyMap[d.date].orderCount : "—"}</td>
+                              <td className="mal-ledger-group-backend">{shopeRealDailyMap[d.date] ? fmtMoney(shopeRealDailyMap[d.date].netRevenue) : "—"}</td>
+                            </>
+                          )}
                           {dailyMatrixCodes.map((code, i) => {
                             const v = d.byCode[code];
                             const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
