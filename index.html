@@ -813,10 +813,15 @@ function shoplineWeekKey(weekStart) {
 }
 // 把一批 Shopline 訂單(record.orders)依下單日期分組,算出每天的訂單數、原價營收、折扣金額、實收營收。
 // 跟 H-J 那邊的版本邏輯完全一致,直接port過來,不是重新設計一套。
+// 2026-07-30再次修正:先後試過paymentStatus==='completed'(太窄,低估)、==='paid'(更窄,直接變成0),
+// 兩次都證明對Shopline實際欄位值的假設是錯的,不能再繼續猜「成功狀態」到底精確寫什麼字串。
+// 改成反過來:只排除「明確不算錢」的狀態(未付款/等待中/已授權未請款/已退款),不在這份清單裡的
+// 一律算數——即使對Shopline確切用字的理解還有落差,也不會像之前那樣被錯誤的精確比對直接砍成0。
+const UNPAID_STATUSES = new Set(["unpaid", "pending", "authorized", "refunded", "voided", "failed"]);
 function groupShoplineOrdersByDay(orders) {
   const byDay = {};
   (orders || [])
-    .filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled")
+    .filter((o) => !UNPAID_STATUSES.has(o.paymentStatus) && o.status !== "cancelled")
     .forEach((o) => {
       const day = (o.createdAt || "").slice(0, 10);
       if (!day) return;
@@ -829,7 +834,7 @@ function groupShoplineOrdersByDay(orders) {
   return Object.values(byDay).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 function sumShoplineOrders(orders) {
-  const valid = (orders || []).filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled");
+  const valid = (orders || []).filter((o) => !UNPAID_STATUSES.has(o.paymentStatus) && o.status !== "cancelled");
   return {
     orderCount: valid.length,
     netRevenue: valid.reduce((sum, o) => sum + (o.amount || 0), 0),
