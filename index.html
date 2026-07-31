@@ -816,7 +816,7 @@ function shoplineWeekKey(weekStart) {
 function groupShoplineOrdersByDay(orders) {
   const byDay = {};
   (orders || [])
-    .filter((o) => o.paymentStatus === "completed" && o.status !== "cancelled")
+    .filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled")
     .forEach((o) => {
       const day = (o.createdAt || "").slice(0, 10);
       if (!day) return;
@@ -829,7 +829,7 @@ function groupShoplineOrdersByDay(orders) {
   return Object.values(byDay).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 function sumShoplineOrders(orders) {
-  const valid = (orders || []).filter((o) => o.paymentStatus === "completed" && o.status !== "cancelled");
+  const valid = (orders || []).filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled");
   return {
     orderCount: valid.length,
     netRevenue: valid.reduce((sum, o) => sum + (o.amount || 0), 0),
