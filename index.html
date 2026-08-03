@@ -1359,10 +1359,23 @@ function renderBoldText(text) {
   });
 }
 
+// 廣告縮圖:Meta 回傳的 fbcdn 網址只有「登入 FB 且對這個廣告帳號有權限的人」(管理員)
+// 載得出來,品牌方直接連 fbcdn 會被擋掉、看不到縮圖。改成透過 shopline-proxy 的 /api/img
+// 端點由伺服器端代抓、再回傳,任何人(含品牌方)都看得到,不需要自己有 FB 權限。
+// 不是 fbcdn 的網址(例如 data: 或已經代理過的)就原樣使用,不重複包。
+// ⚠️ 這段跟 H-J/index.html 的 AdThumb 完全一致,兩邊要同步改。
+const IMG_PROXY_BASE = "https://shopline-proxy.hanna-104.workers.dev";
+function proxiedImg(src) {
+  if (!src) return src;
+  if (src.startsWith("data:") || src.includes("/api/img?u=")) return src;
+  if (!/fbcdn\.net|facebook\.com/.test(src)) return src;
+  return IMG_PROXY_BASE + "/api/img?u=" + encodeURIComponent(src);
+}
 function AdThumb({ src, alt }) {
   const [errored, setErrored] = useState(false);
-  if (!src || errored) return <div className="mal-thumb mal-thumb-fallback">素材</div>;
-  return <img src={src} alt={alt || "廣告預覽"} className="mal-thumb" onError={() => setErrored(true)} />;
+  const finalSrc = proxiedImg(src);
+  if (!finalSrc || errored) return <div className="mal-thumb mal-thumb-fallback">素材</div>;
+  return <img src={finalSrc} alt={alt || "廣告預覽"} className="mal-thumb" onError={() => setErrored(true)} />;
 }
 
 // 統一顯示「投放中 / 已停止」狀態,若沒有這個資訊(active 是 undefined),就完全不顯示,
