@@ -1330,6 +1330,67 @@ function deriveMetrics(agg) {
   const roas = agg.spend > 0 && agg.revenue > 0 ? agg.revenue / agg.spend : null;
   return { ...agg, cpa, roas };
 }
+// 依排序模式把廣告清單排序(每月/每週報表共用同一套邏輯,回傳新陣列、不改動原陣列)。
+// mode:spend(廣告費 高→低,預設)/ cpa / roas / composite / startDate(投放時間 新→舊)
+//      / postPublishDate(貼文前台發佈時間 新→舊;後台直接發佈=抓不到前台發佈時間的排最前面)
+// ⚠️ 這個函式跟 H-J/index.html 的同名函式要保持一致,兩邊同步改。
+function sortAdsByMode(ads, mode) {
+  const withMetrics = (ads || []).map((ad) => ({
+    ad,
+    cpa: ad.conversions > 0 ? ad.spend / ad.conversions : null,
+    roas: ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null,
+  }));
+  if (mode === "cpa") {
+    return withMetrics.slice().sort((a, b) => {
+      if (a.cpa === null) return 1;
+      if (b.cpa === null) return -1;
+      return a.cpa - b.cpa;
+    }).map((x) => x.ad);
+  }
+  if (mode === "roas") {
+    return withMetrics.slice().sort((a, b) => {
+      if (a.roas === null) return 1;
+      if (b.roas === null) return -1;
+      return b.roas - a.roas;
+    }).map((x) => x.ad);
+  }
+  if (mode === "composite") {
+    const n = withMetrics.length;
+    const byCpa = withMetrics.map((x, i) => i).sort((i, j) => {
+      const a = withMetrics[i].cpa, b = withMetrics[j].cpa;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return a - b;
+    });
+    const byRoas = withMetrics.map((x, i) => i).sort((i, j) => {
+      const a = withMetrics[i].roas, b = withMetrics[j].roas;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return b - a;
+    });
+    const cpaRank = new Array(n), roasRank = new Array(n);
+    byCpa.forEach((idx, rank) => { cpaRank[idx] = rank; });
+    byRoas.forEach((idx, rank) => { roasRank[idx] = rank; });
+    return withMetrics.map((x, i) => ({ ad: x.ad, score: cpaRank[i] + roasRank[i] })).sort((a, b) => a.score - b.score).map((x) => x.ad);
+  }
+  if (mode === "startDate") {
+    return withMetrics.slice().sort((a, b) => {
+      if (!a.ad.startDate) return 1;
+      if (!b.ad.startDate) return -1;
+      return a.ad.startDate < b.ad.startDate ? 1 : a.ad.startDate > b.ad.startDate ? -1 : 0;
+    }).map((x) => x.ad);
+  }
+  if (mode === "postPublishDate") {
+    return withMetrics.slice().sort((a, b) => {
+      const pa = a.ad.postPublishDate, pb = b.ad.postPublishDate;
+      if (!pa && !pb) return 0;
+      if (!pa) return -1; // 後台直接發佈(沒有前台發佈時間)排最前面
+      if (!pb) return 1;
+      return pa < pb ? 1 : pa > pb ? -1 : 0; // 有前台發佈時間:新→舊
+    }).map((x) => x.ad);
+  }
+  return withMetrics.map((x) => x.ad).sort((a, b) => b.spend - a.spend);
+}
 function pctChange(curr, prev) {
   if (prev === null || prev === undefined || prev === 0) return null;
   if (curr === null || curr === undefined) return null;
@@ -4231,85 +4292,7 @@ function MetaAdsLedger() {
     return `${fmt2(start)}~${fmt2(end)}`;
   }
 
-  const sortedVisibleAds = useMemo(() => {
-    const withMetrics = visibleAds.map((ad) => ({
-      ad,
-      cpa: ad.conversions > 0 ? ad.spend / ad.conversions : null,
-      roas: ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null,
-    }));
-    if (adSortMode === "cpa") {
-      return withMetrics
-        .slice()
-        .sort((a, b) => {
-          if (a.cpa === null) return 1;
-          if (b.cpa === null) return -1;
-          return a.cpa - b.cpa;
-        })
-        .map((x) => x.ad);
-    }
-    if (adSortMode === "roas") {
-      return withMetrics
-        .slice()
-        .sort((a, b) => {
-          if (a.roas === null) return 1;
-          if (b.roas === null) return -1;
-          return b.roas - a.roas;
-        })
-        .map((x) => x.ad);
-    }
-    if (adSortMode === "composite") {
-      // rank-based composite: best CPA (lowest) and best ROAS (highest) each contribute a rank;
-      // lower combined rank = better overall performance. Ads missing a metric get the worst rank.
-      const n = withMetrics.length;
-      const byCpa = withMetrics
-        .map((x, i) => i)
-        .sort((i, j) => {
-          const a = withMetrics[i].cpa, b = withMetrics[j].cpa;
-          if (a === null) return 1;
-          if (b === null) return -1;
-          return a - b;
-        });
-      const byRoas = withMetrics
-        .map((x, i) => i)
-        .sort((i, j) => {
-          const a = withMetrics[i].roas, b = withMetrics[j].roas;
-          if (a === null) return 1;
-          if (b === null) return -1;
-          return b - a;
-        });
-      const cpaRank = new Array(n), roasRank = new Array(n);
-      byCpa.forEach((idx, rank) => { cpaRank[idx] = rank; });
-      byRoas.forEach((idx, rank) => { roasRank[idx] = rank; });
-      return withMetrics
-        .map((x, i) => ({ ad: x.ad, score: cpaRank[i] + roasRank[i] }))
-        .sort((a, b) => a.score - b.score)
-        .map((x) => x.ad);
-    }
-    if (adSortMode === "startDate") {
-      return withMetrics
-        .slice()
-        .sort((a, b) => {
-          if (!a.ad.startDate) return 1;
-          if (!b.ad.startDate) return -1;
-          return a.ad.startDate < b.ad.startDate ? 1 : a.ad.startDate > b.ad.startDate ? -1 : 0;
-        })
-        .map((x) => x.ad);
-    }
-    if (adSortMode === "postPublishDate") {
-      // 查得到前台發表時間的排前面(新到舊),查不到的排最後——查不到的那一段,畫面上會另外用分隔線標示出來,
-      // 不會讓人誤以為那些廣告也有排進時間順序裡。
-      return withMetrics
-        .slice()
-        .sort((a, b) => {
-          if (!a.ad.postPublishDate) return 1;
-          if (!b.ad.postPublishDate) return -1;
-          return a.ad.postPublishDate < b.ad.postPublishDate ? 1 : a.ad.postPublishDate > b.ad.postPublishDate ? -1 : 0;
-        })
-        .map((x) => x.ad);
-    }
-    // default: by spend, high to low
-    return withMetrics.map((x) => x.ad).sort((a, b) => b.spend - a.spend);
-  }, [visibleAds, adSortMode]);
+  const sortedVisibleAds = useMemo(() => sortAdsByMode(visibleAds, adSortMode), [visibleAds, adSortMode]);
 
   return (
     <div className="mal-shell">
@@ -4583,7 +4566,7 @@ function MetaAdsLedger() {
                   const displayAds = showAllAds ? sortedVisibleAds : sortedVisibleAds.slice(0, 6);
                   // 只有在用「前台發表時間」排序時才需要標示分界——這個排序模式底下,查不到發表時間的廣告
                   // 已經被排到陣列最後面,這裡只是找出「從哪一筆開始查不到」,好插入一條分隔線。
-                  const noPostDividerIndex = adSortMode === "postPublishDate" ? displayAds.findIndex((a) => !a.postPublishDate) : -1;
+                  const noPostDividerIndex = adSortMode === "postPublishDate" ? displayAds.findIndex((a) => a.postPublishDate) : -1;
                   return displayAds.map((ad, i) => {
                   const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                   const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
@@ -4593,8 +4576,8 @@ function MetaAdsLedger() {
                   const fbLink = fbAdsManagerLink(focusData.accountId, ad.adIds);
                   return (
                     <React.Fragment key={ad.name + i}>
-                      {i === noPostDividerIndex && (
-                        <div className="mal-ad-nopost-divider">⬇ 以下廣告沒有找到對應的前台貼文,無法排序</div>
+                      {i === noPostDividerIndex && noPostDividerIndex > 0 && (
+                        <div className="mal-ad-nopost-divider">⬇ 以下為有前台發佈時間的廣告(新→舊);上方為後台直接發佈(無前台貼文)</div>
                       )}
                     <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`}>
                       <AdThumb src={resolvedImage} alt={ad.name} />
@@ -4611,7 +4594,7 @@ function MetaAdsLedger() {
                           <div className="mal-ad-utm" title={ad.utm}>{ad.utm}{ad.adCount > 1 && <span className="mal-ad-count">· 合併 {ad.adCount} 支廣告</span>}</div>
                         ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
                         {ad.startDate && <span className="mal-ad-startdate">{fmtStartDate(ad.startDate)} 開始投放</span>}
-                        {ad.postPublishDate && <span className="mal-ad-startdate">📰 {fmtStartDate(ad.postPublishDate)} 前台發表</span>}
+                        {ad.postPublishDate ? <span className="mal-ad-startdate">📰 {fmtStartDate(ad.postPublishDate)} 前台發表</span> : <span className="mal-ad-startdate">📌 後台直接發佈</span>}
                         {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
                         {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
                         {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(focusData.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(focusData.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
@@ -4793,9 +4776,19 @@ function MetaAdsLedger() {
 
                 {focusWeekData.ads && filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter, adSearchKeyword).length > 0 && (
                   <>
-                    <h2 className="mal-section-title">{weekLabel(focusWeek)} 廣告明細</h2>
+                    <div className="mal-ad-header-row">
+                      <h2 className="mal-section-title mal-section-title-flex">{weekLabel(focusWeek)} 廣告明細</h2>
+                      <select className="mal-ad-sort-select" value={adSortMode} onChange={(e) => setAdSortMode(e.target.value)}>
+                        <option value="spend">排序:廣告費（高→低）</option>
+                        <option value="cpa">排序:CPA（好→壞）</option>
+                        <option value="roas">排序:ROAS（好→壞）</option>
+                        <option value="composite">排序:綜合成效（好→壞）</option>
+                        <option value="startDate">排序:投放時間（新→舊）</option>
+                        <option value="postPublishDate">排序:前台發表時間（新→舊）</option>
+                      </select>
+                    </div>
                     <div className="mal-ad-list">
-                      {filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter, adSearchKeyword).slice(0, 10).map((ad, i) => {
+                      {sortAdsByMode(filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter, adSearchKeyword), adSortMode).slice(0, 10).map((ad, i) => {
                         const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                         const fbLibLink = fbPostLink(ad.postId);
                         const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
@@ -4816,6 +4809,7 @@ function MetaAdsLedger() {
                                 <div className="mal-ad-utm" title={ad.utm}>{ad.utm}</div>
                               ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
                               {ad.startDate && <span className="mal-ad-startdate">{fmtStartDate(ad.startDate)} 開始投放</span>}
+                              {ad.postPublishDate ? <span className="mal-ad-startdate">📰 {fmtStartDate(ad.postPublishDate)} 前台發表</span> : <span className="mal-ad-startdate">📌 後台直接發佈</span>}
                               {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
                               {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
                         {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(focusWeekData.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(focusWeekData.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
