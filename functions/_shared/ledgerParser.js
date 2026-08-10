@@ -23,6 +23,12 @@ export function parseLedgerSheet(matrix, year) {
   const row1 = matrix[0] || [];
   const row2 = matrix[1] || [];
   const blocks = [];
+  // fallback 防呆用:文字比對找不到欄位、要用固定位移量保底之前,先確認那一欄「沒有寫任何標籤」。
+  // 那一欄已經寫著別的欄位名(例:SHOPLINE 區塊的 c+4 是 GOOGLE、KP 門市/經銷的 c+2 是抽成費用/貨物成本,
+  // 或已經跨進下一個代號的區塊),就代表這個區塊根本沒有這個欄位——硬用固定位移會把別人的數字當成
+  // 自己的廣告費/利潤(SHOPLINE 的帳面利潤曾因此顯示成 GOOGLE 廣告費)。回傳 null,讀值時 toNum(row[null])
+  // 自然是 0,寧可空白也不要錯的數字。
+  const emptyLabelCol = (col) => (((row2[col] || "").toString().trim()) ? null : col);
   // 不再寫死從T欄(index19)開始掃描——這個假設對某些品牌是錯的(例如宥凱的整體總表只到第8欄,
   // 產品代號第9欄就開始了,寫死19會把前面的代號整批跳過)。改成從第1欄開始逐欄掃描,
   // 但「帳面營業額」第一次出現一定是整體/全店總表本身(不是產品代號),要跳過不當成代號,
@@ -41,7 +47,13 @@ export function parseLedgerSheet(matrix, year) {
       let colProfit = null;
       let colNetProfit = null;
       let colGoogleSpend = null; // 只有少數代號(目前已知:H&J一頁業績的SHOPLINE區塊)會有這欄,大部分代號沒有
-      for (let k = c + 1; k < c + SEARCH_LIMIT; k++) {
+      let blockEnd = c + SEARCH_LIMIT;
+      // 搜尋界線加一道保險:碰到下一個區塊的起點(下一個「帳面營業額」)就停,絕不跨進下一個代號的
+      // 欄位範圍——SHOPLINE 區塊比標準區塊窄,原本的搜尋範圍會越界「偷到」隔壁 SR 的平均客單價。
+      for (let n = c + 1; n < blockEnd; n++) {
+        if ((row2[n] || "").toString().trim() === "帳面營業額") { blockEnd = n; break; }
+      }
+      for (let k = c + 1; k < blockEnd; k++) {
         const label = (row2[k] || "").toString().trim();
         if (colAov === null && label === "平均客單價") colAov = k;
         // 廣告費/帳面利潤,原本用精確比對,MOMO、LINE禮物的欄名其實是「廣告費(平台抽成)」,
@@ -64,9 +76,9 @@ export function parseLedgerSheet(matrix, year) {
         name: (row1[c + 1] || "").toString().trim(),
         colRevenue: c,
         colAov: colAov,
-        colSpend: colSpend !== null ? colSpend : c + 2,
-        colProfit: colProfit !== null ? colProfit : c + 4,
-        colNetProfit: colNetProfit !== null ? colNetProfit : c + 6,
+        colSpend: colSpend !== null ? colSpend : emptyLabelCol(c + 2),
+        colProfit: colProfit !== null ? colProfit : emptyLabelCol(c + 4),
+        colNetProfit: colNetProfit !== null ? colNetProfit : emptyLabelCol(c + 6),
         colGoogleSpend,
       });
       // Google廣告費比照其他通路(蝦皮、MOMO等)的做法,獨立列成自己的一個代號區塊,不是塞在SHOPLINE
@@ -86,6 +98,26 @@ export function parseLedgerSheet(matrix, year) {
       }
     }
   }
+  // 全店(整體)的「淨利」欄位改用文字比對定位——原本寫死 row[7]||row[6] 其實只符合 H&J 的版型:
+  // KP 的真實利潤在第6欄、第7欄是百分比(被當成 0.28 這種數字,畫面顯示 $0);Mavis/J.GAO 的第7欄是
+  // 另外登記的廣告費(直接把廣告費金額當成全店淨利顯示)。改成依「稅後淨利 → 真實利潤 → 實際利潤」的
+  // 優先順序,在全店區塊的範圍內(第2欄起、到第一個產品代號區塊之前)找標籤;全部找不到才退回舊的
+  // row[7]||row[6] 行為(對未知版型維持原本結果,不會更糟)。H&J 的「(改)稅後淨利」會被第一優先命中、
+  // 「(原)」不含這些關鍵字所以自然跳過,跟原本取值一致。
+  const firstBlockCol = blocks.length ? blocks[0].colRevenue : Math.max(row1.length, row2.length);
+  let overallNetCol = null;
+  const OVERALL_NET_TIERS = [
+    (l) => l.includes("稅後淨利"),
+    (l) => l.startsWith("真實利潤"),
+    (l) => l.startsWith("實際利潤"),
+  ];
+  for (const tierMatches of OVERALL_NET_TIERS) {
+    for (let k = 2; k < firstBlockCol; k++) {
+      const l = (row2[k] || "").toString().trim();
+      if (l && tierMatches(l)) { overallNetCol = k; break; }
+    }
+    if (overallNetCol !== null) break;
+  }
   const days = [];
   let totalRow = null;
   for (let r = 2; r < matrix.length; r++) {
@@ -95,7 +127,7 @@ export function parseLedgerSheet(matrix, year) {
       const iso = excelDateToISO(dateCell);
       const overall = {
         revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
-        netProfit: toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
+        netProfit: overallNetCol !== null ? toNum(row[overallNetCol]) : toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
       };
       const byCode = {};
       blocks.forEach((b) => {
@@ -114,7 +146,7 @@ export function parseLedgerSheet(matrix, year) {
     } else if (typeof dateCell === "string" && dateCell.trim() === "總結") {
       const overall = {
         revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
-        netProfit: toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
+        netProfit: overallNetCol !== null ? toNum(row[overallNetCol]) : toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
       };
       const byCode = {};
       blocks.forEach((b) => {
