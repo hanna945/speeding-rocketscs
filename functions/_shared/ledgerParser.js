@@ -53,7 +53,7 @@ const FIELD_MATCHERS = {
   aov: [isExact("平均客單價")],
   blockSpend: [
     isExact("FB廣告費"),
-    startsWithAny("廣告費", "廣告費用"),
+    startsWithAny("廣告費", "廣告費用", "抽成費用"),
   ],
   genericNetProfit: [
     includesAny("稅後淨利"),
@@ -61,6 +61,25 @@ const FIELD_MATCHERS = {
     startsWithAny("實際利潤"),
   ],
 };
+
+const SALES_PLATFORM_CODES = ["SHOPLINE", "SHOPIFY", "蝦皮", "MOMO", "LINE 禮物", "門市", "經銷"];
+
+function normalizeBlockCode(raw) {
+  const text = cleanText(raw);
+  const upper = text.toUpperCase();
+  if (upper.includes("SHOPLINE")) return "SHOPLINE";
+  if (upper.includes("SHOPIFY")) return "SHOPIFY";
+  if (text.includes("蝦皮")) return "蝦皮";
+  if (upper.includes("MOMO")) return "MOMO";
+  if (text.replace(/\s+/g, "").includes("LINE禮物")) return "LINE 禮物";
+  if (text.startsWith("門市")) return "門市";
+  if (text.startsWith("經銷")) return "經銷";
+  return upper;
+}
+
+function isSalesPlatformCode(code) {
+  return SALES_PLATFORM_CODES.includes(code);
+}
 
 // Profiles only decide semantic priority and detection. They do not hard-code column numbers.
 export const LEDGER_PROFILES = [
@@ -214,25 +233,38 @@ export function parseLedgerSheet(matrix, year, context = {}) {
   if (overallProfitCol == null) diagnostics.warnings.push("找不到全店「帳面利潤」欄位，帳面利潤將以 0 顯示");
 
   const blocks = [];
+  const adSourceColumns = [];
   for (let i = 0; i < productStarts.length; i += 1) {
     const start = productStarts[i];
     const end = i + 1 < productStarts.length ? productStarts[i + 1] : width;
-    const code = upperText(row1[start]);
+    const rawCode = cleanText(row1[start]);
+    const code = normalizeBlockCode(rawCode);
     if (!code) continue;
+
+    const colSpend = findColumn(row2, start + 1, end, FIELD_MATCHERS.blockSpend);
+    const colGoogleSpend = findGoogleSpendInsideBlock(row1, row2, start, end);
+    const kind = isSalesPlatformCode(code) ? "sales_platform" : "product";
+    const spendCols = [colSpend];
+    if (kind === "sales_platform" && colGoogleSpend != null) spendCols.push(colGoogleSpend);
 
     const block = {
       code,
+      rawCode,
+      kind,
       name: cleanText(row1[start + 1]),
       colRevenue: start,
       colAov: findColumn(row2, start + 1, end, FIELD_MATCHERS.aov),
-      colSpend: findColumn(row2, start + 1, end, FIELD_MATCHERS.blockSpend),
+      colSpend,
+      spendCols: [...new Set(spendCols.filter((c) => c != null))],
       colProfit: findColumn(row2, start + 1, end, FIELD_MATCHERS.profit),
       colNetProfit: findColumn(row2, start + 1, end, FIELD_MATCHERS.genericNetProfit),
-      colGoogleSpend: findGoogleSpendInsideBlock(row1, row2, start, end),
+      colGoogleSpend,
     };
 
     diagnostics.blocks.push({
       code,
+      rawCode,
+      kind,
       start,
       end,
       revenue: columnMeta(row1, row2, block.colRevenue),
@@ -243,70 +275,29 @@ export function parseLedgerSheet(matrix, year, context = {}) {
       googleSpend: columnMeta(row1, row2, block.colGoogleSpend),
     });
 
-    // Not every channel has AOV/ad spend/profit/net profit, so these are warnings rather than hard errors.
     if (block.colSpend == null && block.colProfit == null && block.colNetProfit == null) {
       diagnostics.warnings.push(`${code}: 只辨識到營收，沒有找到廣告費/利潤欄位`);
     }
 
     blocks.push(block);
 
-    // Preserve the existing H&J behavior: if a block itself contains a GOOGLE spend column,
-    // expose it as a separate spend-only code in the daily matrix.
     if (block.colGoogleSpend != null) {
-      blocks.push({
-        code: "GOOGLE",
-        name: "Google廣告",
-        colRevenue: null,
-        colAov: null,
-        colSpend: block.colGoogleSpend,
-        colProfit: null,
-        colNetProfit: null,
-        isSpendOnly: true,
-      });
+      adSourceColumns.push({ code: "GOOGLE", label: "Google Ads", colSpend: block.colGoogleSpend });
     }
   }
 
-  // Google ad spend is a channel-level field in several brand sheets, but its physical
-  // location differs by brand (inside SHOPLINE for H&J, standalone for J.GAO/Mavis/KP).
-  // Add standalone Google columns as spend-only channel blocks without assuming a fixed column.
-  const claimedSpendCols = new Set(blocks.map((b) => b.colSpend).filter((c) => c != null));
+  const claimedGoogleCols = new Set(adSourceColumns.map((a) => a.colSpend));
   for (let c = 0; c < width; c += 1) {
-    if (claimedSpendCols.has(c)) continue;
+    if (claimedGoogleCols.has(c)) continue;
     const h1 = upperText(row1[c]);
     const h2 = upperText(row2[c]);
     const isGoogle = h1.includes("GOOGLE") || h2.includes("GOOGLE");
     const isSpend = h2.includes("廣告費") || h2 === "GOOGLE";
     if (!isGoogle || !isSpend) continue;
-
-    const code = h1.includes("門市") ? "門市GOOGLE" : "GOOGLE";
-    // Do not duplicate an already-resolved Google column (for example H&J SHOPLINE).
-    if (blocks.some((b) => b.code === code && b.colSpend === c)) continue;
-    blocks.push({
-      code,
-      name: cleanText(row1[c]) || "Google廣告",
-      colRevenue: null,
-      colAov: null,
-      colSpend: c,
-      colProfit: null,
-      colNetProfit: null,
-      isSpendOnly: true,
-    });
-    diagnostics.blocks.push({
-      code,
-      start: c,
-      end: c + 1,
-      revenue: null,
-      aov: null,
-      spend: columnMeta(row1, row2, c),
-      profit: null,
-      netProfit: null,
-      googleSpend: columnMeta(row1, row2, c),
-      isSpendOnly: true,
-    });
-    claimedSpendCols.add(c);
+    adSourceColumns.push({ code: "GOOGLE", label: cleanText(row1[c]) || "Google Ads", colSpend: c });
+    claimedGoogleCols.add(c);
   }
 
-  // Fail closed for core overall fields. Caller should not overwrite previously-good KV data.
   if (diagnostics.errors.length) {
     return { days: [], monthTotal: null, productCodes: blocks.map((b) => b.code), diagnostics };
   }
@@ -326,7 +317,8 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     const byCode = {};
     for (const b of blocks) {
       const revenue = safeCellNumber(row, b.colRevenue);
-      const spend = safeCellNumber(row, b.colSpend);
+      const spend = (b.spendCols && b.spendCols.length ? b.spendCols : [b.colSpend])
+        .reduce((sum, col) => sum + safeCellNumber(row, col), 0);
       const aov = safeCellNumber(row, b.colAov);
       const profit = safeCellNumber(row, b.colProfit);
       const netProfit = safeCellNumber(row, b.colNetProfit);
@@ -343,10 +335,22 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     return byCode;
   };
 
+  const buildAdSources = (row) => {
+    const adSources = {};
+    for (const source of adSourceColumns) {
+      const spend = safeCellNumber(row, source.colSpend);
+      if (!spend) continue;
+      if (!adSources[source.code]) adSources[source.code] = { spend: 0, label: source.label };
+      adSources[source.code].spend += spend;
+    }
+    return adSources;
+  };
+
   const mergeAdjustmentIntoLastDay = (row, label) => {
     if (!days.length) return false;
     const overall = buildOverall(row);
     const byCode = buildByCode(row, false);
+    const adSources = buildAdSources(row);
     const hasOverall = Object.values(overall).some((v) => Number.isFinite(v) && v !== 0);
     const hasByCode = Object.values(byCode).some((v) =>
       [v.revenue, v.spend, v.profit, v.netProfit].some((n) => Number.isFinite(n) && n !== 0)
@@ -368,9 +372,13 @@ export function parseLedgerSheet(matrix, year, context = {}) {
       dest.spend += v.spend || 0;
       dest.profit += v.profit || 0;
       dest.netProfit += v.netProfit || 0;
-      // A month-level adjustment has no meaningful order/AOV date attribution.
-      // Preserve an existing real-day estimate, otherwise leave it unknown.
       if (dest.orders === undefined) dest.orders = null;
+    });
+
+    Object.entries(adSources).forEach(([code, v]) => {
+      if (!target.adSources) target.adSources = {};
+      if (!target.adSources[code]) target.adSources[code] = { spend: 0, label: v.label };
+      target.adSources[code].spend += v.spend || 0;
     });
 
     adjustments.push({
@@ -378,6 +386,7 @@ export function parseLedgerSheet(matrix, year, context = {}) {
       appliedDate: target.date,
       overall,
       byCode,
+      adSources,
     });
     return true;
   };
@@ -389,19 +398,15 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     if (dateCell instanceof Date) {
       const iso = excelDateToISO(dateCell);
       if (!iso) continue;
-      days.push({ date: iso, overall: buildOverall(row), byCode: buildByCode(row, true) });
+      days.push({ date: iso, overall: buildOverall(row), byCode: buildByCode(row, true), adSources: buildAdSources(row) });
       continue;
     }
 
     if (typeof dateCell === "string" && cleanText(dateCell) === "總結") {
-      totalRow = { overall: buildOverall(row), byCode: buildByCode(row, false) };
+      totalRow = { overall: buildOverall(row), byCode: buildByCode(row, false), adSources: buildAdSources(row) };
       break;
     }
 
-    // Some brand sheets intentionally place month-level accounting rows such as
-    // "經銷" / "額外" (or an unlabeled adjustment row) after the dated rows but
-    // before "總結". Their SUM formulas include these rows. Treat them as month-end
-    // adjustments instead of silently dropping them just because column A is not a date.
     if (days.length) mergeAdjustmentIntoLastDay(row, dateCell);
   }
 
@@ -410,9 +415,42 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     return { days: [], monthTotal: totalRow, productCodes: blocks.map((b) => b.code), diagnostics };
   }
 
-  // Reconcile the core month total against the dated rows plus explicit adjustment rows.
-  // A mismatch is a source-sheet warning, not a parser failure: some historical sheets have
-  // broken SUM ranges (for example a total that accidentally excludes the last calendar day).
+  if (totalRow && days.length) {
+    const lastDay = days[days.length - 1];
+    for (const code of [...new Set(blocks.filter((b) => b.kind === "sales_platform").map((b) => b.code))]) {
+      const sourceTotal = totalRow.byCode?.[code];
+      if (!sourceTotal) continue;
+      const summed = { revenue: 0, spend: 0, profit: 0, netProfit: 0 };
+      days.forEach((d) => {
+        const v = d.byCode?.[code];
+        if (!v) return;
+        Object.keys(summed).forEach((k) => { summed[k] += v[k] || 0; });
+      });
+      const delta = {};
+      Object.keys(summed).forEach((k) => {
+        const diff = (sourceTotal[k] || 0) - summed[k];
+        if (Math.abs(diff) > 1) delta[k] = diff;
+      });
+      if (!Object.keys(delta).length) continue;
+
+      if (!lastDay.byCode[code]) {
+        lastDay.byCode[code] = { revenue: 0, spend: 0, aov: 0, profit: 0, netProfit: 0, orders: null };
+      }
+      const dest = lastDay.byCode[code];
+      Object.entries(delta).forEach(([k, diff]) => { dest[k] = (dest[k] || 0) + diff; });
+      dest.orders = null;
+
+      adjustments.push({
+        label: `${code} 月結調整`,
+        appliedDate: lastDay.date,
+        overall: { revenue: 0, adSpend: 0, profit: 0, netProfit: 0 },
+        byCode: { [code]: delta },
+        adSources: {},
+      });
+      diagnostics.warnings.push(`${code}: 已套用平台月結差額 ${Object.entries(delta).map(([k, v]) => `${k}${v > 0 ? "+" : ""}${Math.round(v * 100) / 100}`).join("、")}`);
+    }
+  }
+
   const reconciliation = { overallDiff: {} };
   if (totalRow) {
     const summed = { revenue: 0, adSpend: 0, profit: 0, netProfit: 0 };
@@ -436,6 +474,8 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     days,
     monthTotal: totalRow,
     productCodes: [...new Set(blocks.map((b) => b.code))],
+    salesPlatformCodes: [...new Set(blocks.filter((b) => b.kind === "sales_platform").map((b) => b.code))],
+    adSourceCodes: [...new Set(adSourceColumns.map((a) => a.code))],
     adjustments,
     diagnostics: {
       ...diagnostics,
