@@ -1,25 +1,14 @@
 // POST /api/sheets/sync
 // body: { accountId: "廣告帳號ID", sheetId: "Google 試算表ID(選填,留空沿用上次記住的)", year: 2026 }
-//
-// 這支 Function 會:
-//   1. 用公司的 Google 服務帳號金鑰(存在 Secret 環境變數 GOOGLE_SERVICE_ACCOUNT_KEY)跟 Google 換一個短期 access token
-//   2. 依序讀取試算表裡「1月」~「12月」這些分頁(只要存在的都會讀,沒有的分頁略過)
-//   3. 用跟 xlsx 匯入完全同一套解析邏輯(functions/_shared/ledgerParser.js)轉成後台每日資料
-//   4. 直接寫進跟前端「匯入後台每日收益表」按鈕同一個 KV 位置,
-//      所以匯入完之後,報表頁面重新整理就會直接看到,不用再手動下載/上傳 xlsx。
-//
-// 這份試算表完全不需要公開分享——只要分享給服務帳號的 email(檢視者權限)就好。
-// 同一個 accountId 之後也會記住對應的 sheetId(存在 KV 的 sheet-map:accountId),
-// 所以之後可以只帶 accountId 觸發重新同步,不用每次都重複帶 sheetId。
-//
-// 權限:這個帳號(accountId)必須在目前登入身份的允許品牌清單裡,否則 403——
-// 避免「品牌C部」的密碼被拿去同步/查詢其他部門品牌的試算表。
 
 import { getGoogleAccessToken } from "../../_shared/googleAuth.js";
 import { syncAccountLedger, todayInTaiwan } from "../../_shared/sheetSync.js";
 
-function jsonError(message, status) {
-  return new Response(JSON.stringify({ error: message }), { status, headers: { "Content-Type": "application/json" } });
+function jsonError(message, status, extra = {}) {
+  return new Response(JSON.stringify({ error: message, ...extra }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 export async function onRequestPost({ request, env, data }) {
@@ -65,24 +54,41 @@ export async function onRequestPost({ request, env, data }) {
     return jsonError("跟 Google 驗證失敗:" + e.message + "(請確認金鑰內容正確、且這份試算表已經分享給服務帳號的 email)", 502);
   }
 
-  const { importedMonths, errors: tabErrors } = await syncAccountLedger(env, accessToken, accountId, sheetId, year);
+  const {
+    importedMonths,
+    errors: tabErrors,
+    warnings,
+    validationErrors,
+  } = await syncAccountLedger(env, accessToken, accountId, sheetId, year);
 
-  // 記住這個帳號對應的試算表,下次可以只帶 accountId;同時順手記一筆「今天已經人工同步過」,
-  // 讓登入後的自動背景同步(/api/sheets/auto)今天不會再重複打一次。
+  // Remember the mapping even when validation fails, so the user does not need to paste sheetId again.
   await env.REPORT_KV.put(`sheet-map:${accountId}`, sheetId);
-  await env.REPORT_KV.put(`last-sync-date:${accountId}`, todayInTaiwan());
+
+  // Only mark today as successfully synced when there was no parser/schema validation failure.
+  // Ordinary missing future tabs do not block this flag; dangerous field mis-mapping does.
+  if (importedMonths.length && !validationErrors.length) {
+    await env.REPORT_KV.put(`last-sync-date:${accountId}`, todayInTaiwan());
+  }
 
   if (!importedMonths.length) {
     return jsonError(
-      "沒有成功匯入任何月份。" + (tabErrors.length ? " 錯誤詳情:" + tabErrors.join(";") : "請確認分頁名稱是不是「1月」~「12月」這種格式,且欄位排列跟範例表單一致。"),
-      422
+      "沒有成功匯入任何月份。" +
+        (validationErrors.length
+          ? " 試算表欄位結構無法安全辨識，已保留原本資料、不會覆蓋。"
+          : tabErrors.length
+            ? " 錯誤詳情:" + tabErrors.join(";")
+            : "請確認分頁名稱是不是「1月」~「12月」這種格式。"),
+      422,
+      { errors: tabErrors, warnings, validationErrors }
     );
   }
 
-  return new Response(JSON.stringify({ importedMonths, errors: tabErrors }), { headers: { "Content-Type": "application/json" } });
+  return new Response(
+    JSON.stringify({ importedMonths, errors: tabErrors, warnings, validationErrors }),
+    { headers: { "Content-Type": "application/json" } }
+  );
 }
 
-// GET /api/sheets/sync?accountId=xxx  查目前記住的 sheetId 對照(方便前端顯示,不用另外做一支 API)。
 export async function onRequestGet({ request, env, data }) {
   const credential = data.credential;
   const accountId = (new URL(request.url).searchParams.get("accountId") || "").trim().replace(/^act_/, "");

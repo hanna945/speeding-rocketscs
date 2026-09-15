@@ -1,164 +1,333 @@
-// 跟 index.html 裡「後台每日收益表(.xlsx)解析」那段邏輯完全一致(逐字同步過來),
-// 只是抽成獨立檔案,讓 /api/sheets/sync.js 這支 Function 也能用同一套規則解析 Google Sheet 抓回來的資料,
-// 不用另外寫一份、也不用擔心兩邊邏輯之後跑掉不一致。
-// 如果之後 index.html 裡這段邏輯有調整(例如欄位寬度、起始欄變了),這裡跟 H-J/functions/_shared/ledgerParser.js、brand-report-cron-sync/src/ledgerParser.js
-// 也要跟著手動同步更新——三份是否一致,可以用 tools/check-ledger-parser-sync.js 檢查。
+// Google Sheets daily ledger parser.
+// Goal: parse by semantic labels and brand/profile markers, never by fragile fixed offsets.
+// Critical overall fields fail closed through diagnostics.errors so syncAccountLedger can avoid overwriting good KV data.
 
-export const LEDGER_PRODUCT_BLOCK_START_COL = 19; // 從 T 欄(0-indexed 19)開始才是「產品代號」區塊
 export const LEDGER_MONTH_SHEET_RE = /^(\d{1,2})\s*月/;
 
+function cleanText(v) {
+  return (v == null ? "" : String(v))
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function upperText(v) {
+  return cleanText(v).toUpperCase();
+}
+
 function excelDateToISO(v) {
-  if (v instanceof Date) {
-    return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, "0")}-${String(v.getUTCDate()).padStart(2, "0")}`;
+  if (!(v instanceof Date)) return null;
+  return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, "0")}-${String(v.getUTCDate()).padStart(2, "0")}`;
+}
+
+function toNum(v) {
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function isExact(...labels) {
+  const wanted = new Set(labels.map(cleanText));
+  return (label) => wanted.has(cleanText(label));
+}
+
+function startsWithAny(...prefixes) {
+  const wanted = prefixes.map(cleanText);
+  return (label) => {
+    const s = cleanText(label);
+    return wanted.some((p) => s.startsWith(p));
+  };
+}
+
+function includesAny(...parts) {
+  const wanted = parts.map(cleanText);
+  return (label) => {
+    const s = cleanText(label);
+    return wanted.some((p) => s.includes(p));
+  };
+}
+
+const FIELD_MATCHERS = {
+  revenue: [isExact("帳面營業額")],
+  adSpend: [isExact("廣告費"), isExact("廣告費用")],
+  profit: [startsWithAny("帳面利潤")],
+  aov: [isExact("平均客單價")],
+  blockSpend: [
+    isExact("FB廣告費"),
+    startsWithAny("廣告費", "廣告費用"),
+  ],
+  genericNetProfit: [
+    includesAny("稅後淨利"),
+    startsWithAny("真實利潤"),
+    startsWithAny("實際利潤"),
+  ],
+};
+
+// Profiles only decide semantic priority and detection. They do not hard-code column numbers.
+export const LEDGER_PROFILES = [
+  {
+    id: "hj",
+    label: "H&J",
+    detect: ({ row1, row2 }) =>
+      row2.some((v) => cleanText(v).includes("(改)稅後淨利")) ||
+      row2.some((v) => cleanText(v) === "全品FB廣告費") ||
+      row1.some((v) => cleanText(v).includes("H&J官網")),
+    overallNetProfit: [
+      (label) => cleanText(label).includes("(改)稅後淨利"),
+      isExact("稅後淨利"),
+      includesAny("稅後淨利"),
+    ],
+  },
+  {
+    id: "kp",
+    label: "KP",
+    detect: ({ row1, row2 }) =>
+      row2.some((v) => cleanText(v) === "(全品項)廣告費用") ||
+      row2.some((v) => cleanText(v) === "(活動用)廣告費用") ||
+      row1.some((v) => cleanText(v) === "門市Google"),
+    overallNetProfit: [startsWithAny("真實利潤")],
+  },
+  {
+    id: "jgao",
+    label: "J.GAO",
+    detect: ({ row1, row2 }) =>
+      row2.some((v) => cleanText(v).includes("行銷分析用")) ||
+      row2.some((v) => cleanText(v).includes("綜合品項行銷活動 FB廣告費")) ||
+      row1.some((v) => cleanText(v) === "J.GAO"),
+    overallNetProfit: [startsWithAny("實際利潤")],
+  },
+  {
+    id: "mavis",
+    label: "Mavis",
+    detect: ({ row1, row2 }) =>
+      row2.some((v) => cleanText(v) === "FB (ASC) 廣告費") ||
+      row1.some((v) => cleanText(v) === "Google ads"),
+    overallNetProfit: [startsWithAny("實際利潤"), startsWithAny("真實利潤")],
+  },
+  {
+    id: "yk",
+    label: "YK",
+    detect: ({ row1 }) => {
+      const labels = row1.map(cleanText);
+      return labels.includes("蝦皮") && labels.some((v) => v.startsWith("門市(")) && labels.includes("經銷");
+    },
+    overallNetProfit: [startsWithAny("真實利潤"), startsWithAny("實際利潤")],
+  },
+  {
+    id: "generic",
+    label: "Generic",
+    detect: () => true,
+    overallNetProfit: FIELD_MATCHERS.genericNetProfit,
+  },
+];
+
+function detectProfile(row1, row2) {
+  const ctx = { row1, row2 };
+  return LEDGER_PROFILES.find((profile) => profile.detect(ctx)) || LEDGER_PROFILES[LEDGER_PROFILES.length - 1];
+}
+
+function findColumn(row2, start, end, matchers) {
+  for (const matcher of matchers) {
+    for (let c = start; c < end; c += 1) {
+      if (matcher(row2[c])) return c;
+    }
   }
   return null;
 }
-function toNum(v) {
-  const n = typeof v === "number" ? v : parseFloat(v);
-  return isFinite(n) ? n : 0;
+
+function findAllRevenueStarts(row1, row2) {
+  const out = [];
+  const width = Math.max(row1.length, row2.length);
+  for (let c = 0; c < width; c += 1) {
+    if (cleanText(row2[c]) === "帳面營業額") out.push(c);
+  }
+  return out;
 }
 
-export function parseLedgerSheet(matrix, year) {
+function columnMeta(row1, row2, col) {
+  if (col == null) return null;
+  return {
+    col,
+    header1: cleanText(row1[col]),
+    header2: cleanText(row2[col]),
+  };
+}
+
+function safeCellNumber(row, col) {
+  return col == null ? 0 : toNum(row[col]);
+}
+
+function findGoogleSpendInsideBlock(row1, row2, start, end) {
+  for (let c = start + 1; c < end; c += 1) {
+    const h1 = upperText(row1[c]);
+    const h2 = upperText(row2[c]);
+    if (h2 === "GOOGLE" || h1 === "GOOGLE" || h1 === "GOOGLE ADS") return c;
+  }
+  return null;
+}
+
+export function parseLedgerSheet(matrix, year, context = {}) {
   if (!matrix || matrix.length < 3) return null;
+
   const row1 = matrix[0] || [];
   const row2 = matrix[1] || [];
+  const width = Math.max(row1.length, row2.length);
+  const profile = detectProfile(row1, row2);
+  const diagnostics = {
+    accountId: context.accountId || null,
+    sheetId: context.sheetId || null,
+    tab: context.tab || null,
+    profile: profile.id,
+    errors: [],
+    warnings: [],
+    columns: {},
+    blocks: [],
+  };
+
+  const revenueStarts = findAllRevenueStarts(row1, row2);
+  if (!revenueStarts.length) {
+    diagnostics.errors.push("找不到任何「帳面營業額」欄位");
+    return { days: [], monthTotal: null, productCodes: [], diagnostics };
+  }
+
+  const overallStart = revenueStarts[0];
+  const productStarts = revenueStarts.slice(1).filter((c) => cleanText(row1[c]));
+  const overallEnd = productStarts.length ? productStarts[0] : width;
+
+  const overallRevenueCol = overallStart;
+  const overallAdSpendCol = findColumn(row2, overallStart, overallEnd, FIELD_MATCHERS.adSpend);
+  const overallProfitCol = findColumn(row2, overallStart, overallEnd, FIELD_MATCHERS.profit);
+  const overallNetProfitCol = findColumn(
+    row2,
+    overallStart,
+    overallEnd,
+    profile.overallNetProfit && profile.overallNetProfit.length ? profile.overallNetProfit : FIELD_MATCHERS.genericNetProfit
+  );
+
+  diagnostics.columns.overallRevenue = columnMeta(row1, row2, overallRevenueCol);
+  diagnostics.columns.overallAdSpend = columnMeta(row1, row2, overallAdSpendCol);
+  diagnostics.columns.overallProfit = columnMeta(row1, row2, overallProfitCol);
+  diagnostics.columns.overallNetProfit = columnMeta(row1, row2, overallNetProfitCol);
+
+  if (overallRevenueCol == null) diagnostics.errors.push("找不到全店營收欄位「帳面營業額」");
+  if (overallAdSpendCol == null) diagnostics.errors.push("找不到全店廣告費欄位「廣告費」");
+  if (overallNetProfitCol == null) diagnostics.errors.push(`找不到 ${profile.label} 的全店淨利欄位`);
+  if (overallProfitCol == null) diagnostics.warnings.push("找不到全店「帳面利潤」欄位，帳面利潤將以 0 顯示");
+
   const blocks = [];
-  // fallback 防呆用:文字比對找不到欄位、要用固定位移量保底之前,先確認那一欄「沒有寫任何標籤」。
-  // 那一欄已經寫著別的欄位名(例:SHOPLINE 區塊的 c+4 是 GOOGLE、KP 門市/經銷的 c+2 是抽成費用/貨物成本,
-  // 或已經跨進下一個代號的區塊),就代表這個區塊根本沒有這個欄位——硬用固定位移會把別人的數字當成
-  // 自己的廣告費/利潤(SHOPLINE 的帳面利潤曾因此顯示成 GOOGLE 廣告費)。回傳 null,讀值時 toNum(row[null])
-  // 自然是 0,寧可空白也不要錯的數字。
-  const emptyLabelCol = (col) => (((row2[col] || "").toString().trim()) ? null : col);
-  // 不再寫死從T欄(index19)開始掃描——這個假設對某些品牌是錯的(例如宥凱的整體總表只到第8欄,
-  // 產品代號第9欄就開始了,寫死19會把前面的代號整批跳過)。改成從第1欄開始逐欄掃描,
-  // 但「帳面營業額」第一次出現一定是整體/全店總表本身(不是產品代號),要跳過不當成代號,
-  // 從第二次出現開始才是真正的產品代號區塊——不管整體總表實際多寬,都能正確定位。
-  let skippedOverall = false;
-  for (let c = 1; c < Math.max(row1.length, row2.length); c += 1) {
-    if ((row2[c] || "").toString().trim() === "帳面營業額") {
-      if (!skippedOverall) { skippedOverall = true; continue; }
-      const code = (row1[c] || "").toString().trim().toUpperCase();
-      if (!code) continue;
-      // 蝦皮、MOMO 這兩個代號沒有「平均客單價」這一欄,導致後面欄位整批往左遞補一格,
-      // 固定位移量在這兩個代號上會直接抓錯欄——平均客單價/廣告費/帳面利潤/稅後淨利全部改用文字比對定位。
-      const SEARCH_LIMIT = 12;
-      let colAov = null;
-      let colSpend = null;
-      let colProfit = null;
-      let colNetProfit = null;
-      let colGoogleSpend = null; // 只有少數代號(目前已知:H&J一頁業績的SHOPLINE區塊)會有這欄,大部分代號沒有
-      let blockEnd = c + SEARCH_LIMIT;
-      // 搜尋界線加一道保險:碰到下一個區塊的起點(下一個「帳面營業額」)就停,絕不跨進下一個代號的
-      // 欄位範圍——SHOPLINE 區塊比標準區塊窄,原本的搜尋範圍會越界「偷到」隔壁 SR 的平均客單價。
-      for (let n = c + 1; n < blockEnd; n++) {
-        if ((row2[n] || "").toString().trim() === "帳面營業額") { blockEnd = n; break; }
-      }
-      for (let k = c + 1; k < blockEnd; k++) {
-        const label = (row2[k] || "").toString().trim();
-        if (colAov === null && label === "平均客單價") colAov = k;
-        // 廣告費/帳面利潤,原本用精確比對,MOMO、LINE禮物的欄名其實是「廣告費(平台抽成)」,
-        // 門市、經銷的利潤欄名是「帳面利潤:扣貨物成本」「帳面利潤:貨物成本」這種帶冒號後綴的寫法,
-        // 精確比對全部對不上、會落到後面的固定位移量保底(而保底位移量對這幾個代號來說是錯的,
-        // 通常會抓到旁邊的百分比顯示欄,數字很小但不是0,不會被『沒資料』的判斷擋下來)。
-        // 改成 startsWith,只要開頭是這幾個字就算數,涵蓋全部後綴變體。
-        // 2026-07-30新增:「FB廣告費」也算數(H&J一頁業績SHOPLINE區塊的實際欄名不是「廣告費」,是
-        // 「FB廣告費」,原本比對不到、導致搜尋一路延伸到緊接著的下一個代號區塊,誤抓別人的廣告費欄位當
-        // 成自己的,兩個代號因此顯示出一模一樣的數字。加上這個比對後,能在自己的欄位範圍內就找到符合的
-        // 標籤,不會再往下一個區塊搜尋——SEARCH_LIMIT刻意維持12不變,這是所有品牌共用的搜尋範圍,
-        // 縮小範圍風險較高(可能連累其他品牌原本就需要搜尋較遠欄位的情況),只用更精確的標籤比對來解決。
-        if (colSpend === null && (label.startsWith("廣告費") || label === "FB廣告費")) colSpend = k;
-        if (colGoogleSpend === null && label === "GOOGLE") colGoogleSpend = k;
-        if (colProfit === null && label.startsWith("帳面利潤")) colProfit = k;
-        if (colNetProfit === null && (label === "稅後淨利" || label.startsWith("實際利潤") || label.startsWith("真實利潤"))) colNetProfit = k;
-      }
+  for (let i = 0; i < productStarts.length; i += 1) {
+    const start = productStarts[i];
+    const end = i + 1 < productStarts.length ? productStarts[i + 1] : width;
+    const code = upperText(row1[start]);
+    if (!code) continue;
+
+    const block = {
+      code,
+      name: cleanText(row1[start + 1]),
+      colRevenue: start,
+      colAov: findColumn(row2, start + 1, end, FIELD_MATCHERS.aov),
+      colSpend: findColumn(row2, start + 1, end, FIELD_MATCHERS.blockSpend),
+      colProfit: findColumn(row2, start + 1, end, FIELD_MATCHERS.profit),
+      colNetProfit: findColumn(row2, start + 1, end, FIELD_MATCHERS.genericNetProfit),
+      colGoogleSpend: findGoogleSpendInsideBlock(row1, row2, start, end),
+    };
+
+    diagnostics.blocks.push({
+      code,
+      start,
+      end,
+      revenue: columnMeta(row1, row2, block.colRevenue),
+      aov: columnMeta(row1, row2, block.colAov),
+      spend: columnMeta(row1, row2, block.colSpend),
+      profit: columnMeta(row1, row2, block.colProfit),
+      netProfit: columnMeta(row1, row2, block.colNetProfit),
+      googleSpend: columnMeta(row1, row2, block.colGoogleSpend),
+    });
+
+    // Not every channel has AOV/ad spend/profit/net profit, so these are warnings rather than hard errors.
+    if (block.colSpend == null && block.colProfit == null && block.colNetProfit == null) {
+      diagnostics.warnings.push(`${code}: 只辨識到營收，沒有找到廣告費/利潤欄位`);
+    }
+
+    blocks.push(block);
+
+    // Preserve the existing H&J behavior: if a block itself contains a GOOGLE spend column,
+    // expose it as a separate spend-only code in the daily matrix.
+    if (block.colGoogleSpend != null) {
       blocks.push({
-        code,
-        name: (row1[c + 1] || "").toString().trim(),
-        colRevenue: c,
-        colAov: colAov,
-        colSpend: colSpend !== null ? colSpend : emptyLabelCol(c + 2),
-        colProfit: colProfit !== null ? colProfit : emptyLabelCol(c + 4),
-        colNetProfit: colNetProfit !== null ? colNetProfit : emptyLabelCol(c + 6),
-        colGoogleSpend,
+        code: "GOOGLE",
+        name: "Google廣告",
+        colRevenue: null,
+        colAov: null,
+        colSpend: block.colGoogleSpend,
+        colProfit: null,
+        colNetProfit: null,
+        isSpendOnly: true,
       });
-      // Google廣告費比照其他通路(蝦皮、MOMO等)的做法,獨立列成自己的一個代號區塊,不是塞在SHOPLINE
-      // 裡面的附屬欄位——這樣矩陣總覽/選一天/每週/每月才能跟其他代號一樣,自動出現在同樣的地方。
-      // 這是純廣告費支出(不是產品線),沒有自己的營收/利潤,固定填0,不是沒抓到資料。
-      if (colGoogleSpend !== null) {
-        blocks.push({
-          code: "GOOGLE",
-          name: "Google廣告",
-          colRevenue: null,
-          colAov: null,
-          colSpend: colGoogleSpend,
-          colProfit: null,
-          colNetProfit: null,
-          isSpendOnly: true,
-        });
-      }
     }
   }
-  // 全店(整體)的「淨利」欄位改用文字比對定位——原本寫死 row[7]||row[6] 其實只符合 H&J 的版型:
-  // KP 的真實利潤在第6欄、第7欄是百分比(被當成 0.28 這種數字,畫面顯示 $0);Mavis/J.GAO 的第7欄是
-  // 另外登記的廣告費(直接把廣告費金額當成全店淨利顯示)。改成依「稅後淨利 → 真實利潤 → 實際利潤」的
-  // 優先順序,在全店區塊的範圍內(第2欄起、到第一個產品代號區塊之前)找標籤;全部找不到才退回舊的
-  // row[7]||row[6] 行為(對未知版型維持原本結果,不會更糟)。H&J 的「(改)稅後淨利」會被第一優先命中、
-  // 「(原)」不含這些關鍵字所以自然跳過,跟原本取值一致。
-  const firstBlockCol = blocks.length ? blocks[0].colRevenue : Math.max(row1.length, row2.length);
-  let overallNetCol = null;
-  const OVERALL_NET_TIERS = [
-    (l) => l.includes("稅後淨利"),
-    (l) => l.startsWith("真實利潤"),
-    (l) => l.startsWith("實際利潤"),
-  ];
-  for (const tierMatches of OVERALL_NET_TIERS) {
-    for (let k = 2; k < firstBlockCol; k++) {
-      const l = (row2[k] || "").toString().trim();
-      if (l && tierMatches(l)) { overallNetCol = k; break; }
-    }
-    if (overallNetCol !== null) break;
+
+  // Fail closed for core overall fields. Caller should not overwrite previously-good KV data.
+  if (diagnostics.errors.length) {
+    return { days: [], monthTotal: null, productCodes: blocks.map((b) => b.code), diagnostics };
   }
+
   const days = [];
   let totalRow = null;
-  for (let r = 2; r < matrix.length; r++) {
+
+  const buildOverall = (row) => ({
+    revenue: safeCellNumber(row, overallRevenueCol),
+    adSpend: safeCellNumber(row, overallAdSpendCol),
+    profit: safeCellNumber(row, overallProfitCol),
+    netProfit: safeCellNumber(row, overallNetProfitCol),
+  });
+
+  const buildByCode = (row, includeOrders) => {
+    const byCode = {};
+    for (const b of blocks) {
+      const revenue = safeCellNumber(row, b.colRevenue);
+      const spend = safeCellNumber(row, b.colSpend);
+      const aov = safeCellNumber(row, b.colAov);
+      const profit = safeCellNumber(row, b.colProfit);
+      const netProfit = safeCellNumber(row, b.colNetProfit);
+      if (revenue === 0 && spend === 0 && profit === 0 && netProfit === 0) continue;
+      byCode[b.code] = {
+        revenue,
+        spend,
+        aov,
+        profit,
+        netProfit,
+        ...(includeOrders ? { orders: aov > 0 ? revenue / aov : null } : {}),
+      };
+    }
+    return byCode;
+  };
+
+  for (let r = 2; r < matrix.length; r += 1) {
     const row = matrix[r] || [];
     const dateCell = row[0];
+
     if (dateCell instanceof Date) {
       const iso = excelDateToISO(dateCell);
-      const overall = {
-        revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
-        netProfit: overallNetCol !== null ? toNum(row[overallNetCol]) : toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
-      };
-      const byCode = {};
-      blocks.forEach((b) => {
-        const revenue = toNum(row[b.colRevenue]);
-        const spend = toNum(row[b.colSpend]);
-        const aov = toNum(row[b.colAov]);
-        if (revenue === 0 && spend === 0) return;
-        byCode[b.code] = {
-          revenue, spend, aov,
-          profit: toNum(row[b.colProfit]),
-          netProfit: toNum(row[b.colNetProfit]),
-          orders: aov > 0 ? revenue / aov : null,
-        };
-      });
-      days.push({ date: iso, overall, byCode });
-    } else if (typeof dateCell === "string" && dateCell.trim() === "總結") {
-      const overall = {
-        revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
-        netProfit: overallNetCol !== null ? toNum(row[overallNetCol]) : toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
-      };
-      const byCode = {};
-      blocks.forEach((b) => {
-        byCode[b.code] = {
-          revenue: toNum(row[b.colRevenue]), spend: toNum(row[b.colSpend]),
-          profit: toNum(row[b.colProfit]), netProfit: toNum(row[b.colNetProfit]),
-        };
-      });
-      totalRow = { overall, byCode };
+      if (!iso) continue;
+      days.push({ date: iso, overall: buildOverall(row), byCode: buildByCode(row, true) });
+      continue;
+    }
+
+    if (typeof dateCell === "string" && cleanText(dateCell) === "總結") {
+      totalRow = { overall: buildOverall(row), byCode: buildByCode(row, false) };
       break;
     }
   }
-  if (!days.length) return null;
-  return { days, monthTotal: totalRow, productCodes: blocks.map((b) => b.code) };
+
+  if (!days.length) {
+    diagnostics.errors.push("沒有辨識到任何日期資料列");
+    return { days: [], monthTotal: totalRow, productCodes: blocks.map((b) => b.code), diagnostics };
+  }
+
+  return {
+    days,
+    monthTotal: totalRow,
+    productCodes: [...new Set(blocks.map((b) => b.code))],
+    diagnostics,
+  };
 }

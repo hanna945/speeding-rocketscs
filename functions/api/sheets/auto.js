@@ -1,13 +1,5 @@
 // GET /api/sheets/auto
-// 登入(團隊密碼驗證通過)之後,前端會背景打這支 API 一次,自動幫目前身份能看的每個品牌
-// 檢查「今天有沒有同步過 Google 試算表」,沒有的話自動抓一次,不用再手動點「從 Google 試算表同步」。
-//
-// 用 last-sync-date:{accountId} 這個 KV key 記錄「這個帳號最後一次成功同步的日期(台灣時區)」,
-// 一天只會真的打一次 Google API——不管同一天內重新整理頁面幾次、幾個人同時打開網站,
-// 都不會重複觸發,避免撞到 Google Sheets API 的額度上限。
-//
-// 「測試」這種 brands === "*" 的最高權限身份,會自動掃過所有「已經綁定過試算表」的品牌
-// (用 KV 的 sheet-map: 前綴列出來),包含以後新增的品牌也會自動含進去,不用手動維護清單。
+// Background daily sync. Parser/schema validation failures are treated as unsafe and do not overwrite good KV data.
 
 import { getGoogleAccessToken } from "../../_shared/googleAuth.js";
 import { syncAccountLedger, todayInTaiwan } from "../../_shared/sheetSync.js";
@@ -18,21 +10,19 @@ export async function onRequestGet({ env, data }) {
     return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
   }
   if (!env.GOOGLE_SERVICE_ACCOUNT_KEY) {
-    // 還沒設定 Google 服務帳號金鑰,安靜地跳過(不算錯誤),前端不用特別顯示什麼。
-    return new Response(JSON.stringify({ synced: [], skipped: [], errors: [] }), { headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ synced: [], skipped: [], errors: [], warnings: [] }), { headers: { "Content-Type": "application/json" } });
   }
 
   let serviceAccount;
   try {
     serviceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_KEY);
   } catch {
-    return new Response(JSON.stringify({ synced: [], skipped: [], errors: ["GOOGLE_SERVICE_ACCOUNT_KEY 不是合法的 JSON"] }), {
+    return new Response(JSON.stringify({ synced: [], skipped: [], errors: ["GOOGLE_SERVICE_ACCOUNT_KEY 不是合法的 JSON"], warnings: [] }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  // 決定要檢查哪些帳號:最高權限身份 -> 掃過所有已經綁定過試算表的帳號;範圍受限的身份 -> 只看自己權限內的。
   let accountIds = [];
   if (credential.brands === "*") {
     const list = await env.REPORT_KV.list({ prefix: "sheet-map:", limit: 1000 });
@@ -46,8 +36,8 @@ export async function onRequestGet({ env, data }) {
   const synced = [];
   const skipped = [];
   const errors = [];
-
-  let accessToken = null; // 同一次 request 裡,所有帳號共用同一個服務帳號 access token,不用每個帳號各換一次。
+  const warnings = [];
+  let accessToken = null;
 
   for (const accountId of accountIds) {
     const lastSync = await env.REPORT_KV.get(`last-sync-date:${accountId}`);
@@ -58,10 +48,20 @@ export async function onRequestGet({ env, data }) {
 
     try {
       if (!accessToken) accessToken = await getGoogleAccessToken(serviceAccount);
-      const { importedMonths, errors: tabErrors } = await syncAccountLedger(env, accessToken, accountId, sheetId, year);
-      if (importedMonths.length) {
+      const {
+        importedMonths,
+        errors: tabErrors,
+        warnings: tabWarnings,
+        validationErrors,
+      } = await syncAccountLedger(env, accessToken, accountId, sheetId, year);
+
+      if (tabWarnings.length) warnings.push(...tabWarnings.map((w) => `${accountId}: ${w}`));
+
+      if (importedMonths.length && !validationErrors.length) {
         await env.REPORT_KV.put(`last-sync-date:${accountId}`, today);
         synced.push(accountId);
+      } else if (validationErrors.length) {
+        errors.push(`${accountId}: ${validationErrors[0]}`);
       } else if (tabErrors.length) {
         errors.push(`${accountId}: ${tabErrors[0]}`);
       }
@@ -70,5 +70,5 @@ export async function onRequestGet({ env, data }) {
     }
   }
 
-  return new Response(JSON.stringify({ synced, skipped, errors, date: today }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ synced, skipped, errors, warnings, date: today }), { headers: { "Content-Type": "application/json" } });
 }
