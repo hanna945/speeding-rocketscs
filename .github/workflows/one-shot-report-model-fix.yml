@@ -1,0 +1,176 @@
+name: One-shot report model patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/one-shot-report-model-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'chore: run report model patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch report grouping
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('index.html')
+          text = p.read_text(encoding='utf-8')
+
+          start_marker = '// 已知的「通路」名稱'
+          end_marker = 'function buildProductBreakdown(ads, minSpend) {'
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit('unexpected helper markers')
+          start = text.index(start_marker)
+          end = text.index(end_marker)
+
+          helper = r'''// 業績來源分三層：商品代號=一頁式網站、SHOPIFY/SHOPLINE=官網、其餘平台=外部通路。
+          // 花費不靠平台名稱猜歸屬；後端 parser 已依「欄位所在區塊」歸入各自網站/通路。
+          const OFFICIAL_SITE_NAMES = ["SHOPIFY", "SHOPLINE"];
+          const EXTERNAL_CHANNEL_NAMES = ["蝦皮", "MOMO", "門市", "經銷", "LINE 禮物", "LINE禮物"];
+          function isOfficialSiteCode(code) {
+            const s = (code || "").toString().toUpperCase();
+            return OFFICIAL_SITE_NAMES.some((name) => s.includes(name));
+          }
+          function isExternalChannelCode(code) {
+            const s = (code || "").toString();
+            return EXTERNAL_CHANNEL_NAMES.some((name) => s.includes(name));
+          }
+          // 舊 KV 可能殘留 GOOGLE / 門市GOOGLE 這種只有花費的 pseudo code；它們不是業績網站或通路。
+          function isLegacyAdOnlyCode(code) {
+            const s = (code || "").toString().toUpperCase().replace(/\s+/g, "");
+            return s === "GOOGLE" || s === "門市GOOGLE";
+          }
+          // 向下相容：舊程式若還問「是不是通路」，官網+外部通路都算，但 GOOGLE 不算。
+          function isChannelCode(code) {
+            return !isLegacyAdOnlyCode(code) && (isOfficialSiteCode(code) || isExternalChannelCode(code));
+          }
+
+          // 把帳本資料拆成三個業績來源。投放成效/AI 分析只吃 rows，也就是一頁式商品代號；
+          // 官網與外部通路另外列表，不會再跟商品代號混在一起。
+          function buildLedgerProductBreakdown(ledgerAgg) {
+            const allCodes = Object.keys(ledgerAgg.byCode).sort();
+            const officialSiteCodes = allCodes.filter((c) => !isLegacyAdOnlyCode(c) && isOfficialSiteCode(c));
+            const externalChannelCodes = allCodes.filter((c) => !isLegacyAdOnlyCode(c) && isExternalChannelCode(c) && !isOfficialSiteCode(c));
+            const productCodes = allCodes.filter((c) =>
+              !isLegacyAdOnlyCode(c) && !isOfficialSiteCode(c) && !isExternalChannelCode(c)
+            );
+            function toRow(code) {
+              const v = ledgerAgg.byCode[code];
+              return { code, spend: v.spend, revenue: v.revenue, conversions: v.hasOrderEst ? v.orderEst : 0, profit: v.profit, netProfit: v.netProfit, aov: v.aov };
+            }
+            const rows = productCodes.map(toRow);
+            const officialSiteRows = officialSiteCodes.map(toRow);
+            const externalChannelRows = externalChannelCodes.map(toRow);
+            const totalProductSpend = rows.reduce((s, r) => s + r.spend, 0);
+            rows.forEach((r) => { r.spendShare = totalProductSpend > 0 ? (r.spend / totalProductSpend) * 100 : 0; });
+            const totalOfficialSpend = officialSiteRows.reduce((s, r) => s + r.spend, 0);
+            officialSiteRows.forEach((r) => { r.spendShare = totalOfficialSpend > 0 ? (r.spend / totalOfficialSpend) * 100 : 0; });
+            const totalExternalSpend = externalChannelRows.reduce((s, r) => s + r.spend, 0);
+            externalChannelRows.forEach((r) => { r.spendShare = totalExternalSpend > 0 ? (r.spend / totalExternalSpend) * 100 : 0; });
+            return { rows, officialSiteRows, externalChannelRows };
+          }
+
+          '''
+          text = text[:start] + helper + text[end:]
+
+          old = 'const { rows, channelRows } = buildLedgerProductBreakdown(ledgerAgg);'
+          new = 'const { rows, officialSiteRows, externalChannelRows } = buildLedgerProductBreakdown(ledgerAgg);'
+          if text.count(old) != 1:
+              raise SystemExit(f'unexpected breakdown destructure count: {text.count(old)}')
+          text = text.replace(old, new, 1)
+
+          old = 'if (!rows.length && !channelRows.length) {'
+          new = 'if (!rows.length && !officialSiteRows.length && !externalChannelRows.length) {'
+          if text.count(old) != 1:
+              raise SystemExit(f'unexpected empty-check count: {text.count(old)}')
+          text = text.replace(old, new, 1)
+
+          ui_start = '      {channelRows.length > 0 && ('
+          ui_end = '      <div className="mal-roas-legend">'
+          if text.count(ui_start) != 1 or text.count(ui_end) != 1:
+              raise SystemExit('unexpected channel UI markers')
+          a = text.index(ui_start)
+          b = text.index(ui_end, a)
+          tables = r'''      {officialSiteRows.length > 0 && (
+            <>
+              <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 14.5, margin: "24px 0 12px" }}>官網業績</h3>
+              <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+                <table className="mal-table">
+                  <thead>
+                    <tr>
+                      <th>網站</th><th>業績</th><th>花費</th><th>帳面利潤</th><th>客單價</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {officialSiteRows.map((r) => (
+                      <tr key={r.code}>
+                        <td>{r.code}</td>
+                        <td>{fmtMoney(r.revenue, currencyCode)}</td>
+                        <td>{fmtMoney(r.spend, currencyCode)}</td>
+                        <td>{fmtMoney(r.profit, currencyCode)}</td>
+                        <td>{r.aov !== null ? fmtMoney(r.aov, currencyCode) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {externalChannelRows.length > 0 && (
+            <>
+              <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 14.5, margin: "24px 0 12px" }}>其他通路業績</h3>
+              <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+                <table className="mal-table">
+                  <thead>
+                    <tr>
+                      <th>通路</th><th>業績</th><th>花費</th><th>帳面利潤</th><th>客單價</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {externalChannelRows.map((r) => (
+                      <tr key={r.code}>
+                        <td>{r.code}</td>
+                        <td>{fmtMoney(r.revenue, currencyCode)}</td>
+                        <td>{fmtMoney(r.spend, currencyCode)}</td>
+                        <td>{fmtMoney(r.profit, currencyCode)}</td>
+                        <td>{r.aov !== null ? fmtMoney(r.aov, currencyCode) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          '''
+          text = text[:a] + tables + text[b:]
+
+          text = text.replace('投放成效(含通路業績)', '投放成效(含官網/通路業績)')
+
+          if 'channelRows' in text:
+              raise SystemExit('legacy channelRows still remains')
+          for required in ['officialSiteRows', 'externalChannelRows', '官網業績', '其他通路業績']:
+              if required not in text:
+                  raise SystemExit(f'missing {required}')
+
+          p.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "fix(report): separate one-page, official-site and channel revenue"
+          git push origin HEAD:main
