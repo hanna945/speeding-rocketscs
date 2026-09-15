@@ -1,6 +1,8 @@
 // Google Sheets daily ledger parser.
 // Goal: parse by semantic labels and brand/profile markers, never by fragile fixed offsets.
 // Critical overall fields fail closed through diagnostics.errors so syncAccountLedger can avoid overwriting good KV data.
+// Revenue blocks are classified by business surface: one-page site, official site, or external channel.
+// Spend ownership follows the physical block where the spend column lives.
 
 export const LEDGER_MONTH_SHEET_RE = /^(\d{1,2})\s*月/;
 
@@ -62,7 +64,8 @@ const FIELD_MATCHERS = {
   ],
 };
 
-const SALES_PLATFORM_CODES = ["SHOPLINE", "SHOPIFY", "蝦皮", "MOMO", "LINE 禮物", "門市", "經銷"];
+const OFFICIAL_SITE_CODES = new Set(["SHOPLINE", "SHOPIFY"]);
+const EXTERNAL_CHANNEL_CODES = new Set(["蝦皮", "MOMO", "LINE 禮物", "門市", "經銷"]);
 
 function normalizeBlockCode(raw) {
   const text = cleanText(raw);
@@ -77,8 +80,10 @@ function normalizeBlockCode(raw) {
   return upper;
 }
 
-function isSalesPlatformCode(code) {
-  return SALES_PLATFORM_CODES.includes(code);
+function classifyBlock(code) {
+  if (OFFICIAL_SITE_CODES.has(code)) return "official_site";
+  if (EXTERNAL_CHANNEL_CODES.has(code)) return "external_channel";
+  return "one_page";
 }
 
 // Profiles only decide semantic priority and detection. They do not hard-code column numbers.
@@ -164,11 +169,7 @@ function findAllRevenueStarts(row1, row2) {
 
 function columnMeta(row1, row2, col) {
   if (col == null) return null;
-  return {
-    col,
-    header1: cleanText(row1[col]),
-    header2: cleanText(row2[col]),
-  };
+  return { col, header1: cleanText(row1[col]), header2: cleanText(row2[col]) };
 }
 
 function safeCellNumber(row, col) {
@@ -196,10 +197,7 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     sheetId: context.sheetId || null,
     tab: context.tab || null,
     profile: profile.id,
-    errors: [],
-    warnings: [],
-    columns: {},
-    blocks: [],
+    errors: [], warnings: [], columns: {}, blocks: [],
   };
 
   const revenueStarts = findAllRevenueStarts(row1, row2);
@@ -209,17 +207,15 @@ export function parseLedgerSheet(matrix, year, context = {}) {
   }
 
   const overallStart = revenueStarts[0];
-  const productStarts = revenueStarts.slice(1).filter((c) => cleanText(row1[c]));
-  const overallEnd = productStarts.length ? productStarts[0] : width;
+  const blockStarts = revenueStarts.slice(1).filter((c) => cleanText(row1[c]));
+  const overallEnd = blockStarts.length ? blockStarts[0] : width;
 
   const overallRevenueCol = overallStart;
   const overallAdSpendCol = findColumn(row2, overallStart, overallEnd, FIELD_MATCHERS.adSpend);
   const overallProfitCol = findColumn(row2, overallStart, overallEnd, FIELD_MATCHERS.profit);
   const overallNetProfitCol = findColumn(
-    row2,
-    overallStart,
-    overallEnd,
-    profile.overallNetProfit && profile.overallNetProfit.length ? profile.overallNetProfit : FIELD_MATCHERS.genericNetProfit
+    row2, overallStart, overallEnd,
+    profile.overallNetProfit?.length ? profile.overallNetProfit : FIELD_MATCHERS.genericNetProfit
   );
 
   diagnostics.columns.overallRevenue = columnMeta(row1, row2, overallRevenueCol);
@@ -233,24 +229,23 @@ export function parseLedgerSheet(matrix, year, context = {}) {
   if (overallProfitCol == null) diagnostics.warnings.push("找不到全店「帳面利潤」欄位，帳面利潤將以 0 顯示");
 
   const blocks = [];
-  const adSourceColumns = [];
-  for (let i = 0; i < productStarts.length; i += 1) {
-    const start = productStarts[i];
-    const end = i + 1 < productStarts.length ? productStarts[i + 1] : width;
+  for (let i = 0; i < blockStarts.length; i += 1) {
+    const start = blockStarts[i];
+    const end = i + 1 < blockStarts.length ? blockStarts[i + 1] : width;
     const rawCode = cleanText(row1[start]);
     const code = normalizeBlockCode(rawCode);
     if (!code) continue;
 
+    const kind = classifyBlock(code);
     const colSpend = findColumn(row2, start + 1, end, FIELD_MATCHERS.blockSpend);
     const colGoogleSpend = findGoogleSpendInsideBlock(row1, row2, start, end);
-    const kind = isSalesPlatformCode(code) ? "sales_platform" : "product";
     const spendCols = [colSpend];
-    if (kind === "sales_platform" && colGoogleSpend != null) spendCols.push(colGoogleSpend);
+    // Only an official-site block may absorb a Google spend column, and only when
+    // that Google column is physically inside the same official-site block.
+    if (kind === "official_site" && colGoogleSpend != null) spendCols.push(colGoogleSpend);
 
     const block = {
-      code,
-      rawCode,
-      kind,
+      code, rawCode, kind,
       name: cleanText(row1[start + 1]),
       colRevenue: start,
       colAov: findColumn(row2, start + 1, end, FIELD_MATCHERS.aov),
@@ -262,14 +257,11 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     };
 
     diagnostics.blocks.push({
-      code,
-      rawCode,
-      kind,
-      start,
-      end,
+      code, rawCode, kind, start, end,
       revenue: columnMeta(row1, row2, block.colRevenue),
       aov: columnMeta(row1, row2, block.colAov),
       spend: columnMeta(row1, row2, block.colSpend),
+      spendColumns: block.spendCols.map((col) => columnMeta(row1, row2, col)),
       profit: columnMeta(row1, row2, block.colProfit),
       netProfit: columnMeta(row1, row2, block.colNetProfit),
       googleSpend: columnMeta(row1, row2, block.colGoogleSpend),
@@ -278,25 +270,24 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     if (block.colSpend == null && block.colProfit == null && block.colNetProfit == null) {
       diagnostics.warnings.push(`${code}: 只辨識到營收，沒有找到廣告費/利潤欄位`);
     }
-
     blocks.push(block);
-
-    if (block.colGoogleSpend != null) {
-      adSourceColumns.push({ code: "GOOGLE", label: "Google Ads", colSpend: block.colGoogleSpend });
-    }
   }
 
-  const claimedGoogleCols = new Set(adSourceColumns.map((a) => a.colSpend));
+  // Keep standalone Google-like columns only as summary diagnostics. They are NOT
+  // business rows and are never assigned to a one-page site / official site / channel.
+  const claimedBlockSpendCols = new Set(blocks.flatMap((b) => b.spendCols || []));
+  const standaloneSpendSummaries = [];
   for (let c = 0; c < width; c += 1) {
-    if (claimedGoogleCols.has(c)) continue;
+    if (claimedBlockSpendCols.has(c)) continue;
     const h1 = upperText(row1[c]);
     const h2 = upperText(row2[c]);
     const isGoogle = h1.includes("GOOGLE") || h2.includes("GOOGLE");
     const isSpend = h2.includes("廣告費") || h2 === "GOOGLE";
-    if (!isGoogle || !isSpend) continue;
-    adSourceColumns.push({ code: "GOOGLE", label: cleanText(row1[c]) || "Google Ads", colSpend: c });
-    claimedGoogleCols.add(c);
+    if (isGoogle && isSpend) {
+      standaloneSpendSummaries.push({ code: "GOOGLE", label: cleanText(row1[c]) || "Google Ads", colSpend: c });
+    }
   }
+  diagnostics.standaloneSpendSummaries = standaloneSpendSummaries.map((s) => columnMeta(row1, row2, s.colSpend));
 
   if (diagnostics.errors.length) {
     return { days: [], monthTotal: null, productCodes: blocks.map((b) => b.code), diagnostics };
@@ -317,18 +308,14 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     const byCode = {};
     for (const b of blocks) {
       const revenue = safeCellNumber(row, b.colRevenue);
-      const spend = (b.spendCols && b.spendCols.length ? b.spendCols : [b.colSpend])
+      const spend = (b.spendCols?.length ? b.spendCols : [b.colSpend])
         .reduce((sum, col) => sum + safeCellNumber(row, col), 0);
       const aov = safeCellNumber(row, b.colAov);
       const profit = safeCellNumber(row, b.colProfit);
       const netProfit = safeCellNumber(row, b.colNetProfit);
       if (revenue === 0 && spend === 0 && profit === 0 && netProfit === 0) continue;
       byCode[b.code] = {
-        revenue,
-        spend,
-        aov,
-        profit,
-        netProfit,
+        revenue, spend, aov, profit, netProfit,
         ...(includeOrders ? { orders: aov > 0 ? revenue / aov : null } : {}),
       };
     }
@@ -337,7 +324,7 @@ export function parseLedgerSheet(matrix, year, context = {}) {
 
   const buildAdSources = (row) => {
     const adSources = {};
-    for (const source of adSourceColumns) {
+    for (const source of standaloneSpendSummaries) {
       const spend = safeCellNumber(row, source.colSpend);
       if (!spend) continue;
       if (!adSources[source.code]) adSources[source.code] = { spend: 0, label: source.label };
@@ -381,32 +368,23 @@ export function parseLedgerSheet(matrix, year, context = {}) {
       target.adSources[code].spend += v.spend || 0;
     });
 
-    adjustments.push({
-      label: cleanText(label) || "未標示調整",
-      appliedDate: target.date,
-      overall,
-      byCode,
-      adSources,
-    });
+    adjustments.push({ label: cleanText(label) || "未標示調整", appliedDate: target.date, overall, byCode, adSources });
     return true;
   };
 
   for (let r = 2; r < matrix.length; r += 1) {
     const row = matrix[r] || [];
     const dateCell = row[0];
-
     if (dateCell instanceof Date) {
       const iso = excelDateToISO(dateCell);
       if (!iso) continue;
       days.push({ date: iso, overall: buildOverall(row), byCode: buildByCode(row, true), adSources: buildAdSources(row) });
       continue;
     }
-
     if (typeof dateCell === "string" && cleanText(dateCell) === "總結") {
       totalRow = { overall: buildOverall(row), byCode: buildByCode(row, false), adSources: buildAdSources(row) };
       break;
     }
-
     if (days.length) mergeAdjustmentIntoLastDay(row, dateCell);
   }
 
@@ -415,9 +393,15 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     return { days: [], monthTotal: totalRow, productCodes: blocks.map((b) => b.code), diagnostics };
   }
 
+  // Reconcile only official sites and external channels to their explicit month-total rows.
+  // One-page product totals are not auto-forced because several historical sheets contain
+  // product-level total formulas that intentionally differ or have broken ranges.
   if (totalRow && days.length) {
     const lastDay = days[days.length - 1];
-    for (const code of [...new Set(blocks.filter((b) => b.kind === "sales_platform").map((b) => b.code))]) {
+    const reconcilableCodes = [...new Set(
+      blocks.filter((b) => b.kind === "official_site" || b.kind === "external_channel").map((b) => b.code)
+    )];
+    for (const code of reconcilableCodes) {
       const sourceTotal = totalRow.byCode?.[code];
       if (!sourceTotal) continue;
       const summed = { revenue: 0, spend: 0, profit: 0, netProfit: 0 };
@@ -439,24 +423,19 @@ export function parseLedgerSheet(matrix, year, context = {}) {
       const dest = lastDay.byCode[code];
       Object.entries(delta).forEach(([k, diff]) => { dest[k] = (dest[k] || 0) + diff; });
       dest.orders = null;
-
       adjustments.push({
-        label: `${code} 月結調整`,
-        appliedDate: lastDay.date,
+        label: `${code} 月結調整`, appliedDate: lastDay.date,
         overall: { revenue: 0, adSpend: 0, profit: 0, netProfit: 0 },
-        byCode: { [code]: delta },
-        adSources: {},
+        byCode: { [code]: delta }, adSources: {},
       });
-      diagnostics.warnings.push(`${code}: 已套用平台月結差額 ${Object.entries(delta).map(([k, v]) => `${k}${v > 0 ? "+" : ""}${Math.round(v * 100) / 100}`).join("、")}`);
+      diagnostics.warnings.push(`${code}: 已套用月結差額 ${Object.entries(delta).map(([k, v]) => `${k}${v > 0 ? "+" : ""}${Math.round(v * 100) / 100}`).join("、")}`);
     }
   }
 
   const reconciliation = { overallDiff: {} };
   if (totalRow) {
     const summed = { revenue: 0, adSpend: 0, profit: 0, netProfit: 0 };
-    days.forEach((d) => {
-      Object.keys(summed).forEach((k) => { summed[k] += d.overall[k] || 0; });
-    });
+    days.forEach((d) => Object.keys(summed).forEach((k) => { summed[k] += d.overall[k] || 0; }));
     Object.keys(summed).forEach((k) => {
       const diff = summed[k] - (totalRow.overall[k] || 0);
       if (Math.abs(diff) > 1) reconciliation.overallDiff[k] = diff;
@@ -464,18 +443,25 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     if (Object.keys(reconciliation.overallDiff).length) {
       const labels = { revenue: "營收", adSpend: "廣告費", profit: "帳面利潤", netProfit: "淨利" };
       const detail = Object.entries(reconciliation.overallDiff)
-        .map(([k, v]) => `${labels[k] || k}${v > 0 ? "+" : ""}${Math.round(v * 100) / 100}`)
-        .join("、");
+        .map(([k, v]) => `${labels[k] || k}${v > 0 ? "+" : ""}${Math.round(v * 100) / 100}`).join("、");
       diagnostics.warnings.push(`來源表「總結」與逐日加總不一致：${detail}`);
     }
   }
+
+  const onePageProductCodes = [...new Set(blocks.filter((b) => b.kind === "one_page").map((b) => b.code))];
+  const officialSiteCodes = [...new Set(blocks.filter((b) => b.kind === "official_site").map((b) => b.code))];
+  const externalChannelCodes = [...new Set(blocks.filter((b) => b.kind === "external_channel").map((b) => b.code))];
 
   return {
     days,
     monthTotal: totalRow,
     productCodes: [...new Set(blocks.map((b) => b.code))],
-    salesPlatformCodes: [...new Set(blocks.filter((b) => b.kind === "sales_platform").map((b) => b.code))],
-    adSourceCodes: [...new Set(adSourceColumns.map((a) => a.code))],
+    onePageProductCodes,
+    officialSiteCodes,
+    externalChannelCodes,
+    // Backward compatibility for any older consumer that still expects one channel list.
+    salesPlatformCodes: [...officialSiteCodes, ...externalChannelCodes],
+    adSourceCodes: [...new Set(standaloneSpendSummaries.map((a) => a.code))],
     adjustments,
     diagnostics: {
       ...diagnostics,
