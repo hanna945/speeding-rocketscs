@@ -13,7 +13,14 @@ export async function syncAccountLedger(env, accessToken, accountId, sheetId, ye
   const warnings = [];
   const validationErrors = [];
 
-  for (const tab of MONTH_TABS) {
+  // For the current year, do not treat future calendar months as missing-sheet errors.
+  // Historical years still scan all 12 months; future years keep the old behavior.
+  const twNow = new Date(Date.now() + 8 * 3600 * 1000);
+  const twYear = twNow.getUTCFullYear();
+  const twMonth = twNow.getUTCMonth() + 1;
+  const tabsToSync = year === twYear ? MONTH_TABS.slice(0, twMonth) : MONTH_TABS;
+
+  for (const tab of tabsToSync) {
     let values;
     try {
       values = await fetchSheetMonthValues(accessToken, sheetId, tab);
