@@ -83,3 +83,30 @@ test('preview without configured authentication cannot write/read/list financial
  const list=await onRequestGet({request:new Request('https://preview.example/api/kv/list'),env:{REPORT_KV:{list:async()=>({keys:[{name:'autopilot-history:123::run'},{name:'meta-api-brands'}]})}},data:{credential:{brands:'*'}}});
  assert.deepEqual((await list.json()).keys,['meta-api-brands']);
 });
+
+
+test('preview-only team secret is restricted to its configured brand and coexists with TEAM_CREDENTIALS',async()=>{
+ const {onRequest}=await import('../functions/api/kv/_middleware.js');
+ const env={
+  PREVIEW_TEAM_SECRET:'preview-fixture-key',
+  PREVIEW_TEAM_BRAND_ID:'123',
+  PREVIEW_TEAM_BRAND_NAME:'H&J fixture',
+  TEAM_CREDENTIALS:JSON.stringify({'prod-fixture-key':{name:'prod',brands:['456']}})
+ };
+ const data={};
+ const allowedReq=new Request('https://preview.example/api/kv/item/metaads-month%3A123%3A%3A2026-10',{headers:{'X-Team-Key':'preview-fixture-key'}});
+ const allowed=await onRequest({request:allowedReq,env,data,next:()=>new Response('ok',{status:204})});
+ assert.equal(allowed.status,204);
+ assert.deepEqual(data.credential.brands,['123']);
+ assert.equal(data.credential.name,'H&J fixture');
+
+ const deniedReq=new Request('https://preview.example/api/kv/item/autopilot-history%3A456%3A%3Arun',{headers:{'X-Team-Key':'preview-fixture-key'}});
+ const denied=await onRequest({request:deniedReq,env,data:{},next:()=>{throw Error('must not pass');}});
+ assert.equal(denied.status,403);
+
+ const prodReq=new Request('https://preview.example/api/kv/item/metaads-month%3A456%3A%3A2026-10',{headers:{'X-Team-Key':'prod-fixture-key'}});
+ const prodData={};
+ const prodAllowed=await onRequest({request:prodReq,env,data:prodData,next:()=>new Response('ok',{status:204})});
+ assert.equal(prodAllowed.status,204);
+ assert.deepEqual(prodData.credential.brands,['456']);
+});
