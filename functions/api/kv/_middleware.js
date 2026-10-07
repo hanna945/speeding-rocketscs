@@ -21,7 +21,7 @@ export async function onRequest({ request, env, next, data }) {
   const targetKey = targetKeyFromRequest(request);
   // New financial snapshots must not inherit the legacy unauthenticated fallback.
   if (targetKey && targetKey.startsWith("autopilot-history:")) {
-    if (!env.TEAM_CREDENTIALS && !env.TEAM_SECRET) {
+    if (!env.TEAM_CREDENTIALS && !env.TEAM_SECRET && !env.PREVIEW_TEAM_SECRET) {
       return new Response(JSON.stringify({ error: "Shadow History requires configured team authentication" }), {
         status: 503, headers: { "Content-Type": "application/json" },
       });
@@ -33,7 +33,23 @@ export async function onRequest({ request, env, next, data }) {
     }
   }
   let credential;
-  if (env.TEAM_CREDENTIALS) {
+  const provided = request.headers.get("X-Team-Key") || "";
+  const previewSecret = env.PREVIEW_TEAM_SECRET || "";
+  const previewBrandId = String(env.PREVIEW_TEAM_BRAND_ID || "").trim();
+  if (previewSecret && provided === previewSecret) {
+    if (!previewBrandId) {
+      return new Response(JSON.stringify({ error: "Preview authentication is missing PREVIEW_TEAM_BRAND_ID" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const previewBrandName = String(env.PREVIEW_TEAM_BRAND_NAME || "H&J Preview").trim() || "H&J Preview";
+    credential = {
+      name: previewBrandName,
+      brands: [previewBrandId],
+      roster: [{ id: previewBrandId, name: previewBrandName }],
+    };
+  } else if (env.TEAM_CREDENTIALS) {
     credential = resolveCredential(request, env);
     if (!credential) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -45,7 +61,6 @@ export async function onRequest({ request, env, next, data }) {
     // 還沒設定 TEAM_CREDENTIALS 就退回舊的單一密碼(TEAM_SECRET)機制,行為跟這個功能還沒上線前一樣。
     const secret = env.TEAM_SECRET;
     if (secret) {
-      const provided = request.headers.get("X-Team-Key") || "";
       if (provided !== secret) {
         return new Response(JSON.stringify({ error: "unauthorized" }), {
           status: 401,
