@@ -43,7 +43,7 @@ Each successful **manual** run saves one unique account-scoped KV snapshot:
 
 Envelope: timestamp (`syncedAt`), brand/account, timezone, currency, period boundaries, rule version + parameters, target snapshot and attribution setting. Each row contains ad ID, decision, diagnosis, confidence, both metric sets, changes, explanation and delivery/status metadata. No token is persisted. Existing strict cloud save is used; failures are shown explicitly, not silently reported as saved locally. No retention deletion or outcome validation job is introduced. KV listing may be eventually consistent; a history browser and 24/48/72-hour validation are future work.
 
-History namespace participates in existing brand-scoped middleware and list filtering. Render-time context invalidation plus request IDs prevent old-brand/old-target requests repopulating the current result. New manual requests supersede old ones. Missing pages and duplicate period ad rows fail closed rather than silently undercounting.
+History namespace participates in existing brand-scoped middleware and list filtering. New history access fails closed unless TEAM_SECRET or TEAM_CREDENTIALS is configured; unauthenticated legacy list requests do not expose history keys. The first branch preview was observed with no team challenge, so real history requires configuring Preview authentication separately before use. Render-time context invalidation plus request IDs prevent old-brand/old-target requests repopulating the current result. New manual requests supersede old ones. Missing pages and duplicate period ad rows fail closed rather than silently undercounting.
 
 ## Verification
 

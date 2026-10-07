@@ -18,6 +18,20 @@ function targetKeyFromRequest(request) {
 }
 
 export async function onRequest({ request, env, next, data }) {
+  const targetKey = targetKeyFromRequest(request);
+  // New financial snapshots must not inherit the legacy unauthenticated fallback.
+  if (targetKey && targetKey.startsWith("autopilot-history:")) {
+    if (!env.TEAM_CREDENTIALS && !env.TEAM_SECRET) {
+      return new Response(JSON.stringify({ error: "Shadow History requires configured team authentication" }), {
+        status: 503, headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (!/^autopilot-history:[0-9]+::/.test(targetKey)) {
+      return new Response(JSON.stringify({ error: "invalid history scope" }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
   let credential;
   if (env.TEAM_CREDENTIALS) {
     credential = resolveCredential(request, env);
@@ -42,7 +56,6 @@ export async function onRequest({ request, env, next, data }) {
     credential = { name: "", brands: "*" };
   }
 
-  const targetKey = targetKeyFromRequest(request);
   if (targetKey) {
     const brandId = extractBrandFromKey(targetKey);
     if (brandId && !canAccessBrand(credential, brandId)) {

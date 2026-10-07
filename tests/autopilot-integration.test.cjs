@@ -73,3 +73,13 @@ test('history read/write is denied across brand scopes and ROAS writes preserve 
  await onRequestPut({params:{key:'meta-api-roas-targets'},env:{REPORT_KV:{get:async()=>JSON.stringify({123:3,456:4}),put:async(k,v)=>saved=JSON.parse(v)}},request:new Request('https://preview.example',{method:'PUT',body:JSON.stringify({123:999,456:5})}),data:{credential:{brands:['456']}}});
  assert.deepEqual(saved,{123:3,456:5});
 });
+
+test('preview without configured authentication cannot write/read/list financial history',async()=>{
+ const {onRequest}=await import('../functions/api/kv/_middleware.js');
+ const {onRequestGet}=await import('../functions/api/kv/list.js');
+ const request=new Request('https://preview.example/api/kv/item/autopilot-history%3A123%3A%3Arun');
+ const response=await onRequest({request,env:{},data:{},next:()=>{throw Error('must not pass');}});
+ assert.equal(response.status,503);
+ const list=await onRequestGet({request:new Request('https://preview.example/api/kv/list'),env:{REPORT_KV:{list:async()=>({keys:[{name:'autopilot-history:123::run'},{name:'meta-api-brands'}]})}},data:{credential:{brands:'*'}}});
+ assert.deepEqual((await list.json()).keys,['meta-api-brands']);
+});
