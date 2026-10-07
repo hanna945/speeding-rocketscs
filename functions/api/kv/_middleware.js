@@ -57,6 +57,11 @@ export async function onRequest({ request, env, next, data }) {
         headers: { "Content-Type": "application/json" },
       });
     }
+  } else if (previewSecret) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   } else {
     // 還沒設定 TEAM_CREDENTIALS 就退回舊的單一密碼(TEAM_SECRET)機制,行為跟這個功能還沒上線前一樣。
     const secret = env.TEAM_SECRET;
