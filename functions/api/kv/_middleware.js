@@ -35,7 +35,7 @@ export async function onRequest({ request, env, next, data }) {
   let credential;
   const provided = request.headers.get("X-Team-Key") || "";
   const previewSecret = env.PREVIEW_TEAM_SECRET || "";
-  const previewBrandId = String(env.PREVIEW_TEAM_BRAND_ID || "").trim();
+  const previewBrandId = String(env.PREVIEW_TEAM_BRAND_ID || "2157995930925784").trim();
   if (previewSecret && provided === previewSecret) {
     if (!previewBrandId) {
       return new Response(JSON.stringify({ error: "Preview authentication is missing PREVIEW_TEAM_BRAND_ID" }), {
@@ -43,7 +43,7 @@ export async function onRequest({ request, env, next, data }) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    const previewBrandName = String(env.PREVIEW_TEAM_BRAND_NAME || "H&J Preview").trim() || "H&J Preview";
+    const previewBrandName = String(env.PREVIEW_TEAM_BRAND_NAME || "H&J").trim() || "H&J";
     credential = {
       name: previewBrandName,
       brands: [previewBrandId],
