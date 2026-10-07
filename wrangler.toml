@@ -11,6 +11,9 @@ binding = "REPORT_KV"
 id = "d283e1d9fa8f4ec1b1a64f2818649cb0"
 
 [vars]
+PREVIEW_TEAM_BRAND_ID = "2157995930925784"
+PREVIEW_TEAM_BRAND_NAME = "H&J"
+
 # 建議一定要設定,否則任何拿到網址的人都能讀寫你的報表資料庫
 # TEAM_SECRET = "設一個團隊都知道的密碼"
 
