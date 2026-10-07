@@ -183,6 +183,9 @@
   .mal-autopilot-sub { font-family: 'Noto Sans TC', sans-serif; font-size: 10.5px; color: var(--ink-soft); white-space: normal; margin-top: 3px; }
   .mal-autopilot-action { display: inline-flex; align-items: center; justify-content: center; min-width: 72px; padding: 5px 8px; border-radius: 4px; font-family: 'Noto Sans TC', sans-serif; font-weight: 700; font-size: 10.5px; }
   .mal-autopilot-action-scale { background: #E7EEE4; color: #56704E; }
+  .mal-autopilot-action-learning { background: #e6eaf0; color: #53667d; }
+  .mal-autopilot-detail { min-width: 390px; width: 100%; margin: 8px 0; }
+  .mal-autopilot-table .mal-autopilot-detail th:first-child, .mal-autopilot-table .mal-autopilot-detail td:first-child { min-width: 90px; }
   .mal-autopilot-action-hold { background: #EFECE6; color: #756C60; }
   .mal-autopilot-action-down { background: #F2E8D7; color: #8B693A; }
   .mal-autopilot-action-pause { background: #F1DFDC; color: #914F47; }
@@ -640,6 +643,7 @@
 <body>
 <div id="root"></div>
 
+<script src="/assets/autopilot.js"></script>
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo, useImperativeHandle } = React;
 
@@ -685,7 +689,7 @@ const SHOPLINE_MONTH_PREFIX = "shopline-month:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
 const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-product-names"]);
-const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_WEEK_PREFIX, SHOPLINE_MONTH_PREFIX];
+const SHARED_PREFIXES = ["autopilot-history:", STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_WEEK_PREFIX, SHOPLINE_MONTH_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
   return SHARED_PREFIXES.some((p) => key.startsWith(p));
@@ -2327,6 +2331,11 @@ function MetaAdsLedger() {
   const [autopilotLoading, setAutopilotLoading] = useState(false);
   const [autopilotError, setAutopilotError] = useState("");
   const [autopilotData, setAutopilotData] = useState(null);
+  const [autopilotActiveOnly, setAutopilotActiveOnly] = useState(true);
+  const [autopilotSort, setAutopilotSort] = useState('risk');
+  const [autopilotHistoryStatus, setAutopilotHistoryStatus] = useState('');
+  const autopilotRequestRef = useRef(0);
+  const autopilotContextRef = useRef('');
   const [weeksData, setWeeksData] = useState({});
   const [focusWeek, setFocusWeek] = useState(null);
   const [batchGranularity, setBatchGranularity] = useState("month");
@@ -2485,10 +2494,18 @@ function MetaAdsLedger() {
     loadAllWeeks(activeBrandId, () => cancelled);
     return () => { cancelled = true; };
   }, [activeBrandId]);
+  // Update context at render time; even A→B→A invalidates in-flight requests.
+  const autopilotContextKey = JSON.stringify([activeBrandId, apiAccountId, apiToken, roasTargets[activeBrandId], cpaThresholds[activeBrandId]]);
+  if (autopilotContextRef.current !== autopilotContextKey) {
+    autopilotContextRef.current = autopilotContextKey;
+    autopilotRequestRef.current++;
+  }
   useEffect(() => {
     setAutopilotData(null);
-    setAutopilotError("");
-  }, [activeBrandId]);
+    setAutopilotError('');
+    setAutopilotLoading(false);
+    setAutopilotHistoryStatus('');
+  }, [autopilotContextKey]);
   useEffect(() => {
     let cancelled = false;
     loadLedger(activeBrandId, () => cancelled);
@@ -3060,226 +3077,114 @@ function MetaAdsLedger() {
     }
   }
 
-  // ---------- H&J Ads Autopilot V1 ----------
-  // 第一版只讀 Meta,不執行任何寫入。比較「最近3個完整日」vs「之前7個完整日」,
-  // 避免把今天尚未跑完的半天數據拿去跟完整天比較而造成誤判。
-  function autopilotDateDaysAgo(daysAgo, utcOffsetHours) {
-    const shifted = new Date(Date.now() + utcOffsetHours * 3600 * 1000);
-    shifted.setUTCDate(shifted.getUTCDate() - daysAgo);
-    const y = shifted.getUTCFullYear();
-    const m = String(shifted.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(shifted.getUTCDate()).padStart(2, "0");
-    return y + "-" + m + "-" + d;
+  // ---------- Ads radar: manual, SHADOW ONLY ----------
+  async function autopilotGet(url, context, isCurrent) {
+    if (!isCurrent()) throw new Error('分析已取消（品牌或設定已切換）');
+    const parsed = new URL(url);
+    if (parsed.origin !== 'https://graph.facebook.com' || parsed.searchParams.has('method')) throw new Error('不允許的 Meta 讀取網址');
+    return fetchGraphApi(url, context); // Shared throttling, GET only; no mutation adapter.
   }
-
-  function autopilotMetrics(row) {
-    if (!row) return { spend: 0, conversions: 0, revenue: 0, roas: null, cpa: null, ctr: 0, cpm: 0, frequency: 0, clicks: 0, impressions: 0 };
-    const spend = parseFloat(row.spend) || 0;
-    const conversions = pickPurchaseValue(row.actions);
-    const revenue = pickPurchaseValue(row.action_values);
-    const impressions = parseFloat(row.impressions) || 0;
-    const clicks = parseFloat(row.inline_link_clicks || row.clicks) || 0;
-    return {
-      spend,
-      conversions,
-      revenue,
-      roas: spend > 0 && revenue > 0 ? revenue / spend : null,
-      cpa: conversions > 0 ? spend / conversions : null,
-      ctr: parseFloat(row.ctr) || 0,
-      cpm: parseFloat(row.cpm) || 0,
-      frequency: parseFloat(row.frequency) || 0,
-      clicks,
-      impressions,
-    };
-  }
-
-  async function fetchAutopilotRange(token, accountId, since, until) {
-    const encToken = encodeURIComponent(token);
-    const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
-    let url =
-      "https://graph.facebook.com/v19.0/act_" + accountId +
-      "/insights?level=ad&use_account_attribution_setting=true" +
-      "&fields=ad_id,ad_name,campaign_name,adset_name,spend,actions,action_values,impressions,reach,clicks,inline_link_clicks,ctr,cpc,cpm,frequency" +
-      "&time_range=" + timeRange + "&limit=500&access_token=" + encToken;
-    let rows = [];
-    let page = 0;
-    while (url && page < 20) {
-      const json = await fetchGraphApi(url, "Autopilot讀取成效(" + since + "~" + until + ",第" + (page + 1) + "頁)");
-      rows = rows.concat(json.data || []);
-      url = json.paging && json.paging.next ? json.paging.next : null;
-      page++;
+  async function autopilotPages(url, context, isCurrent) {
+    const rows = [], seen = new Set();
+    while (url) {
+      if (seen.has(url) || seen.size >= 100) throw new Error(context + '分頁不完整，停止分析以免低估花費');
+      seen.add(url);
+      const json = await autopilotGet(url, context, isCurrent);
+      if (!Array.isArray(json.data)) throw new Error(context + '缺少有效資料陣列');
+      rows.push(...json.data);
+      url = json.paging && json.paging.next;
     }
     return rows;
   }
-
-  async function fetchAutopilotStatuses(token, accountId, adIds) {
-    const out = {};
-    const encToken = encodeURIComponent(token);
-    const ids = [...new Set((adIds || []).filter(Boolean))];
-    const chunkSize = 50;
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize);
-      const filtering = encodeURIComponent(JSON.stringify([{ field: "id", operator: "IN", value: chunk }]));
-      let url =
-        "https://graph.facebook.com/v19.0/act_" + accountId +
-        "/ads?fields=id,effective_status,campaign{name},adset{id,name,daily_budget,lifetime_budget}" +
-        "&filtering=" + filtering + "&limit=500&access_token=" + encToken;
-      let page = 0;
-      while (url && page < 5) {
-        const json = await fetchGraphApi(url, "Autopilot讀取廣告狀態");
-        (json.data || []).forEach((ad) => {
-          out[ad.id] = {
-            active: ad.effective_status === "ACTIVE",
-            effectiveStatus: ad.effective_status || "UNKNOWN",
-            campaign: ad.campaign && ad.campaign.name ? ad.campaign.name : "",
-            adsetId: ad.adset && ad.adset.id ? ad.adset.id : "",
-            adsetName: ad.adset && ad.adset.name ? ad.adset.name : "",
-            dailyBudget: ad.adset && ad.adset.daily_budget ? Number(ad.adset.daily_budget) / 100 : null,
-            lifetimeBudget: ad.adset && ad.adset.lifetime_budget ? Number(ad.adset.lifetime_budget) / 100 : null,
-          };
-        });
-        url = json.paging && json.paging.next ? json.paging.next : null;
-        page++;
-      }
-    }
-    return out;
-  }
-
-  function evaluateAutopilotRow(recent, baseline, status, targetRoas, targetCpa) {
-    if (!status || status.active !== true) {
-      return { decision: "HOLD", reason: "目前不是投放中廣告,Shadow 不做動作。" };
-    }
-
-    const stopSpend = targetCpa != null && targetCpa > 0 ? Math.max(500, targetCpa * 2) : 1000;
-    if (recent.spend >= stopSpend && recent.conversions === 0) {
-      return { decision: "PAUSE", reason: "近3日花費 " + Math.round(recent.spend) + "、0 購買,已達停損觀察門檻。" };
-    }
-
-    const ctrFalling = baseline.ctr > 0 && recent.ctr < baseline.ctr * 0.75;
-    const efficiencyWorse =
-      (baseline.cpa != null && recent.cpa != null && recent.cpa > baseline.cpa * 1.15) ||
-      (baseline.roas != null && recent.roas != null && recent.roas < baseline.roas * 0.8);
-    if (recent.frequency >= 2.5 && ctrFalling && efficiencyWorse) {
-      return { decision: "FATIGUE", reason: "Frequency 偏高,且 CTR 比基準下降超過25%,效率同步轉差,優先檢查素材疲乏。" };
-    }
-
-    const cpaBad = targetCpa != null && targetCpa > 0
-      ? recent.cpa != null && recent.cpa > targetCpa * 1.25
-      : recent.roas != null && recent.roas < targetRoas * 0.7;
-    const trendBad =
-      (baseline.cpa != null && recent.cpa != null && recent.cpa > baseline.cpa * 1.2) ||
-      (baseline.roas != null && recent.roas != null && recent.roas < baseline.roas * 0.8);
-    if (recent.conversions >= 3 && cpaBad && trendBad) {
-      return { decision: "DOWN", reason: "近3日效率明顯低於目標且較前7日惡化,Shadow 建議預算 -10%。" };
-    }
-
-    const cpaOk = targetCpa == null || targetCpa <= 0 || (recent.cpa != null && recent.cpa <= targetCpa);
-    const trendOk = baseline.roas == null || recent.roas == null || recent.roas >= baseline.roas;
-    if (recent.conversions >= 5 && recent.roas != null && recent.roas >= targetRoas * 1.15 && cpaOk && trendOk) {
-      return { decision: "SCALE", reason: "近3日購買量足夠、ROAS 高於目標且沒有低於前7日基準,Shadow 建議 +10%。" };
-    }
-
-    return { decision: "HOLD", reason: "目前沒有達到擴量、降量或停損條件,先維持觀察。" };
-  }
-
   async function runAutopilotAnalysis() {
-    const token = (apiToken || "").trim();
-    const accountId = (activeBrandId || apiAccountId || "").trim().replace(/^act_/, "");
-    if (!token) {
-      setAutopilotError("目前瀏覽器沒有可用的 Meta Access Token。請先用「連接 Meta API」貼上權杖,第一版 Shadow 分析才有辦法抓即時 3D/7D 數據。");
-      return;
-    }
-    if (!accountId) {
-      setAutopilotError("目前沒有選到廣告帳號。");
-      return;
-    }
-
-    setAutopilotLoading(true);
-    setAutopilotError("");
+    const token = (apiToken || '').trim();
+    const brandId = activeBrandId;
+    const accountId = (brandId || apiAccountId || '').trim().replace(/^act_/, '');
+    if (!token || !accountId) { setAutopilotError('請先選擇品牌並連接 Meta API。'); return; }
+    const requestId = ++autopilotRequestRef.current;
+    const contextKey = autopilotContextRef.current;
+    const isCurrent = () => autopilotRequestRef.current === requestId && autopilotContextRef.current === contextKey;
+    setAutopilotLoading(true); setAutopilotError(''); setAutopilotData(null); setAutopilotHistoryStatus('');
+    const A = HJAutopilot;
+    const base = `https://graph.facebook.com/${A.API_VERSION}/`;
+    const account = base + 'act_' + accountId;
+    const query = params => new URLSearchParams({ ...params, access_token: token }).toString();
     try {
-      const accountOffset = await fetchAccountUtcOffset(token, accountId);
-      const fallbackOffset = -new Date().getTimezoneOffset() / 60;
-      const offset = accountOffset == null ? fallbackOffset : accountOffset;
-      const recentSince = autopilotDateDaysAgo(3, offset);
-      const recentUntil = autopilotDateDaysAgo(1, offset);
-      const baseSince = autopilotDateDaysAgo(10, offset);
-      const baseUntil = autopilotDateDaysAgo(4, offset);
-
-      const recentRows = await fetchAutopilotRange(token, accountId, recentSince, recentUntil);
-      const baselineRows = await fetchAutopilotRange(token, accountId, baseSince, baseUntil);
-      const recentById = {};
-      const baselineById = {};
-      recentRows.forEach((r) => { if (r.ad_id) recentById[r.ad_id] = r; });
-      baselineRows.forEach((r) => { if (r.ad_id) baselineById[r.ad_id] = r; });
-
-      const statuses = await fetchAutopilotStatuses(token, accountId, Object.keys(recentById));
-      let currency = "TWD";
-      try {
-        const cur = await fetchGraphApi(
-          "https://graph.facebook.com/v19.0/act_" + accountId + "?fields=currency&access_token=" + encodeURIComponent(token),
-          "Autopilot讀取帳號幣別"
-        );
-        if (cur && cur.currency) currency = cur.currency;
-      } catch {}
-
-      const targetRoas = Number(roasTargets[activeBrandId] != null ? roasTargets[activeBrandId] : 3);
-      const targetCpa = cpaThresholds[activeBrandId] != null ? Number(cpaThresholds[activeBrandId]) : null;
-      const rows = Object.keys(recentById).map((adId) => {
-        const raw = recentById[adId];
-        const recent = autopilotMetrics(raw);
-        const baseline = autopilotMetrics(baselineById[adId]);
-        const status = statuses[adId] || {
-          active: true,
-          effectiveStatus: "UNKNOWN",
-          campaign: raw.campaign_name || "",
-          adsetName: raw.adset_name || "",
-          adsetId: "",
-          dailyBudget: null,
-        };
-        const verdict = evaluateAutopilotRow(recent, baseline, status, targetRoas, targetCpa);
-        return {
-          adId,
-          name: raw.ad_name || adId,
-          campaign: status.campaign || raw.campaign_name || "",
-          adsetName: status.adsetName || raw.adset_name || "",
-          status,
-          recent,
-          baseline,
-          decision: verdict.decision,
-          reason: verdict.reason,
-        };
+      const meta = await autopilotGet(account + '?' + query({ fields: 'currency,timezone_name' }), '讀取帳號時區與幣別', isCurrent);
+      if (!meta.timezone_name || !meta.currency) throw new Error('無法確認帳號時區或幣別，停止分析以免日期／金額誤判');
+      const time = A.ranges(Date.now(), meta.timezone_name);
+      const target = A.targets(roasTargets[brandId] ?? 3, cpaThresholds[brandId], meta.currency);
+      const warnings = [];
+      async function insights(since, until, daily = false) {
+        return autopilotPages(account + '/insights?' + query({ level: 'ad', use_account_attribution_setting: 'true',
+          fields: daily ? 'ad_id,impressions,date_start' : 'ad_id,ad_name,campaign_name,adset_name,spend,actions,action_values,impressions,reach,inline_link_clicks,frequency',
+          time_range: JSON.stringify({ since, until }), ...(daily ? { time_increment: '1' } : {}), limit: '500' }), 'Autopilot 讀取成效', isCurrent);
+      }
+      const recentRows = await insights(time.recentSince, time.recentUntil);
+      const baselineRows = await insights(time.baseSince, time.baseUntil);
+      const dailyRows = await insights(time.baseSince, time.recentUntil, true);
+      const recentById = Object.fromEntries(recentRows.map(r => [r.ad_id, r]));
+      const baselineById = Object.fromEntries(baselineRows.map(r => [r.ad_id, r]));
+      if (Object.keys(recentById).length !== recentRows.length || Object.keys(baselineById).length !== baselineRows.length) throw new Error('成效出現重複 Ad ID，停止分析以免覆蓋或重複加總');
+      const adMap = {};
+      const required = 'id,name,effective_status';
+      const extended = required + ',created_time,campaign{name},adset{id,name,start_time,daily_budget,lifetime_budget}';
+      async function ads(filtering) {
+        const params = { fields: extended, filtering: JSON.stringify(filtering), limit: '500' };
+        let found;
+        try { found = await autopilotPages(account + '/ads?' + query(params), 'Autopilot 讀取廣告', isCurrent); }
+        catch (e) {
+          if (![100, 10, 200].includes(e.code)) throw e;
+          warnings.push('部分廣告預算／時間欄位無法讀取，已改讀基本狀態；不推測缺失值。');
+          found = await autopilotPages(account + '/ads?' + query({ ...params, fields: required }), 'Autopilot 讀取基本狀態', isCurrent);
+        }
+        found.forEach(ad => { adMap[ad.id] = ad; });
+      }
+      // Include active ads with no recent delivery, plus historical ads from either window.
+      await ads([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]);
+      const ids = [...new Set([...Object.keys(recentById), ...Object.keys(baselineById)])].filter(id => !adMap[id]);
+      for (let i = 0; i < ids.length; i += 50) await ads([{ field: 'id', operator: 'IN', value: ids.slice(i, i + 50) }]);
+      const daysById = {};
+      dailyRows.forEach(r => {
+        if (Number(r.impressions) > 0 && r.date_start >= time.baseSince && r.date_start <= time.recentUntil) {
+          (daysById[r.ad_id] ||= new Set()).add(r.date_start);
+        }
       });
-
-      const order = { PAUSE: 0, DOWN: 1, FATIGUE: 2, SCALE: 3, HOLD: 4 };
-      rows.sort((a, b) => (order[a.decision] - order[b.decision]) || (b.recent.spend - a.recent.spend));
-
-      const totals = recentRows.reduce((acc, r) => {
-        const m = autopilotMetrics(r);
-        acc.spend += m.spend;
-        acc.revenue += m.revenue;
-        acc.conversions += m.conversions;
-        return acc;
-      }, { spend: 0, revenue: 0, conversions: 0 });
-      totals.roas = totals.spend > 0 && totals.revenue > 0 ? totals.revenue / totals.spend : null;
+      const rows = [...new Set([...Object.keys(recentById), ...Object.keys(baselineById), ...Object.keys(adMap)])].map(adId => {
+        const raw = recentById[adId] || baselineById[adId] || {}, ad = adMap[adId] || {}, adset = ad.adset || {};
+        const status = { active: ad.effective_status === 'ACTIVE', effectiveStatus: ad.effective_status || 'UNKNOWN',
+          createdTime: ad.created_time || null, adsetStartTime: adset.start_time || null, adsetId: adset.id || null,
+          // Preserve exact API budget units; do not assume every currency uses /100.
+          dailyBudgetRaw: adset.daily_budget ?? null, lifetimeBudgetRaw: adset.lifetime_budget ?? null };
+        const dates = [...(daysById[adId] || [])].sort();
+        const delivery = { firstObserved: dates[0] || null, recentDays: dates.filter(d => d >= time.recentSince).length, observedWindowDays: dates.length };
+        const recent = A.metrics(recentById[adId], pickPurchaseValue), baseline = A.metrics(baselineById[adId], pickPurchaseValue);
+        const verdict = A.evaluate(recent, baseline, status, target, delivery);
+        if (!status.active && status.effectiveStatus !== 'UNKNOWN') verdict.reason = '目前非投放中；以下僅回顧期間表現。' + verdict.reason;
+        return { adId, name: ad.name || raw.ad_name || adId, campaign: ad.campaign?.name || raw.campaign_name || '', adsetName: adset.name || raw.adset_name || '', status, delivery, recent, baseline,
+          changes: Object.fromEntries(['spend', 'revenue', 'conversions', 'impressions', 'reach', 'clicks', 'roas', 'cpa', 'ctr', 'cpc', 'cpm', 'frequency', 'cvr'].map(k => [k, A.change(recent[k], baseline[k])])), ...verdict };
+      });
+      const totals = rows.reduce((t, r) => ({ spend: t.spend + r.recent.spend, revenue: t.revenue + r.recent.revenue, conversions: t.conversions + r.recent.conversions }), { spend: 0, revenue: 0, conversions: 0 });
+      totals.roas = totals.spend > 0 ? totals.revenue / totals.spend : null;
       totals.cpa = totals.conversions > 0 ? totals.spend / totals.conversions : null;
-
-      setAutopilotData({
-        accountId,
-        currency,
-        recentSince,
-        recentUntil,
-        baseSince,
-        baseUntil,
-        targetRoas,
-        targetCpa,
-        rows,
-        totals,
-        syncedAt: new Date().toISOString(),
-      });
+      const snapshot = { schemaVersion: 2, rulesVersion: A.VERSION, rules: A.RULES, mode: 'SHADOW_ONLY', brandId, accountId, currency: meta.currency, timezone: meta.timezone_name,
+        ...time, target, targetRoas: target.targetRoas, targetCpa: target.targetCpa, rows, totals, warnings: [...new Set(warnings)],
+        attribution: 'use_account_attribution_setting=true', syncedAt: new Date().toISOString() };
+      if (!isCurrent()) return;
+      setAutopilotData(snapshot);
+      setAutopilotHistoryStatus('正在儲存 Shadow History…');
+      // A unique snapshot per manual run avoids concurrent last-write-wins and preserves every Ad.
+      const key = `autopilot-history:${accountId}::${snapshot.syncedAt}:${crypto.randomUUID()}`;
+      try {
+        await storageSetStrict(key, JSON.stringify(snapshot));
+        if (isCurrent()) setAutopilotHistoryStatus('Shadow History 已儲存（本次全部廣告）');
+      } catch (e) {
+        if (isCurrent()) setAutopilotHistoryStatus('本次分析完成，但 Shadow History 儲存失敗：' + e.message);
+      }
     } catch (e) {
-      setAutopilotError("Autopilot 分析失敗:" + (e.message || e) + apiErrorHint(e));
+      if (isCurrent()) setAutopilotError('Autopilot 分析失敗：' + (e.message || e) + apiErrorHint(e));
     } finally {
-      setAutopilotLoading(false);
+      if (isCurrent()) setAutopilotLoading(false);
     }
   }
 
@@ -4750,10 +4655,10 @@ function MetaAdsLedger() {
           <div className="mal-autopilot-hero">
             <div>
               <div className="mal-autopilot-eyebrow">H&J ADS AUTOPILOT / V1</div>
-              <h2 className="mal-autopilot-title">廣告自動駕駛預判</h2>
+              <h2 className="mal-autopilot-title">廣告雷達 / 廣告診斷中心</h2>
               <p className="mal-autopilot-desc">
                 第一版只做 Shadow 判斷,不會修改 Meta。使用最近 3 個完整日,和它前面的 7 個完整日做基準比較,
-                先驗證 SCALE / HOLD / DOWN / PAUSE / FATIGUE 是否符合實際投放判斷。
+                先驗證 SCALE / HOLD / DOWN / PAUSE / FATIGUE / LEARNING，所有結果只供人工判讀。
               </p>
             </div>
             <span className="mal-autopilot-badge">● SHADOW ONLY</span>
@@ -4776,11 +4681,11 @@ function MetaAdsLedger() {
             <div className="mal-empty">
               <div style={{ fontSize: 30 }}>⚡</div>
               <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>Shadow Mode 準備好了</h3>
-              <p>先跑第一輪即時判斷。這一步完全不會改預算、不會暫停廣告,只是把「如果今天讓系統接手,它會做什麼」列出來。</p>
+              <p>手動讀取最近完整日成效，查看可能原因與資料可信度。</p>
             </div>
           )}
 
-          {autopilotData && (
+          {autopilotData && autopilotData.brandId === activeBrandId && (
             <>
               <div className="mal-autopilot-meta" style={{ marginBottom: 12 }}>
                 最近3日: {autopilotData.recentSince} ~ {autopilotData.recentUntil}
@@ -4806,15 +4711,24 @@ function MetaAdsLedger() {
                   <div className="mal-autopilot-summary-value">{autopilotData.totals.cpa != null ? fmtMoney(autopilotData.totals.cpa, autopilotData.currency) : "—"}</div>
                 </div>
                 <div className="mal-autopilot-summary-card">
-                  <div className="mal-autopilot-summary-label">需注意</div>
-                  <div className="mal-autopilot-summary-value">{autopilotData.rows.filter((r) => r.decision !== "HOLD").length}</div>
+                  <div className="mal-autopilot-summary-label">3D Revenue</div>
+                  <div className="mal-autopilot-summary-value">{fmtMoney(autopilotData.totals.revenue, autopilotData.currency)}</div>
                 </div>
               </div>
 
+              <div className="mal-autopilot-toolbar">
+                <label>狀態 <select value={autopilotActiveOnly ? 'active' : 'all'} onChange={e => setAutopilotActiveOnly(e.target.value === 'active')}><option value="active">只看投放中</option><option value="all">全部（含狀態未知）</option></select></label>
+                <label>排序 <select value={autopilotSort} onChange={e => setAutopilotSort(e.target.value)}>{[['risk','Risk'],['spend','Spend'],['roas','ROAS'],['cpa','CPA'],['ctr','CTR'],['frequency','Frequency']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+                {Object.keys(HJAutopilot.ORDER).map(d => <span key={d} className={'mal-autopilot-action mal-autopilot-action-' + d.toLowerCase()}>{d} {autopilotData.rows.filter(r => (!autopilotActiveOnly || r.status.active) && r.decision === d).length}</span>)}
+              </div>
               <div className="mal-autopilot-rules-note">
-                <b>V1 保守規則:</b> 0 購買且花費達停損門檻 → PAUSE 候選；效率明顯惡化 → DOWN -10%；
-                購買量與 ROAS 穩定優於目標 → SCALE +10%；Frequency 偏高且 CTR/效率同步惡化 → FATIGUE。
-                所有結果目前都只是 Shadow 建議。
+                <b>SHADOW ONLY：</b>統計卡為期間全部廣告；分類數量依狀態篩選。Risk 先依分類，再依花費由高到低，低樣本進 LEARNING。<br />
+                帳號時區：{autopilotData.timezone} · 停損觀察值：{autopilotData.target.stopSpend != null ? fmtMoney(autopilotData.target.stopSpend, autopilotData.currency) : '未設 Target CPA，停用 PAUSE 建議'}。<br />
+                暫定門檻：曝光 ≥1,000、兩期購買各 ≥3；SCALE 購買 ≥5。CPM +20%、CTR −25%、Frequency +15%、CPA +20% 或 ROAS −20% 為觀察訊號。<br />
+                CTR / CPC 使用連結點擊；CVR 為歸因購買／連結點擊比率，非網站工作階段轉換率。Frequency 是各期間去重累計值，3D／7D 長度不同，只作輔助訊號；Reach 不跨日相加。歸因回補可能改變近期結果。<br />
+                {autopilotHistoryStatus}
+                {autopilotData.warnings.map(w => <div key={w}>⚠ {w}</div>)}
+                {autopilotData.rows.some(r => r.status.effectiveStatus === 'UNKNOWN') && <div>⚠ 部分狀態未知，切換「全部」可查看。</div>}
               </div>
 
               <div className="mal-autopilot-table-wrap">
@@ -4827,7 +4741,7 @@ function MetaAdsLedger() {
                       <th>3D 購買</th>
                       <th>3D ROAS</th>
                       <th>3D CPA</th>
-                      <th>3D CTR</th>
+                      <th>3D Link CTR</th>
                       <th>Freq.</th>
                       <th>7D ROAS</th>
                       <th>7D CPA</th>
@@ -4836,7 +4750,7 @@ function MetaAdsLedger() {
                     </tr>
                   </thead>
                   <tbody>
-                    {autopilotData.rows.map((row) => (
+                    {HJAutopilot.sortRows(autopilotData.rows, autopilotSort, autopilotActiveOnly).map((row) => (
                       <tr key={row.adId}>
                         <td>
                           <div className="mal-autopilot-adname">{row.name}</div>
@@ -4853,13 +4767,22 @@ function MetaAdsLedger() {
                         <td>{row.baseline.roas != null ? row.baseline.roas.toFixed(2) + "x" : "—"}</td>
                         <td>{row.baseline.cpa != null ? fmtMoney(row.baseline.cpa, autopilotData.currency) : "—"}</td>
                         <td>
-                          <span className={"mal-autopilot-action mal-autopilot-action-" + row.decision.toLowerCase()}>{row.decision}</span>
+                          <span className={"mal-autopilot-action mal-autopilot-action-" + row.decision.toLowerCase()}>{row.decision === "PAUSE" ? "PAUSE Candidate" : row.decision === "SCALE" ? "SCALE +10%" : row.decision}</span><div className="mal-autopilot-sub">{row.confidence}</div>
                         </td>
-                        <td className="mal-autopilot-reason">{row.reason}</td>
+                        <td className="mal-autopilot-reason"><b>{HJAutopilot.DIAGNOSES[row.diagnosis]} · {row.diagnosis}</b><div>{row.reason}</div>
+                          <details style={{marginTop: 8}}><summary>展開 3D / 7D 指標與變化</summary>
+                            <table className="mal-autopilot-detail"><thead><tr><th>指標</th><th>3D</th><th>7D</th><th>變化</th></tr></thead><tbody>
+                              {['spend','revenue','conversions','roas','cpa','impressions','reach','clicks','ctr','cpc','cpm','frequency','cvr'].map(k => <tr key={k}><td>{({conversions:'Purchase',clicks:'Link clicks',revenue:'Purchase value',ctr:'Link CTR (%)',cvr:'Purchase/Click (%)'})[k] || k.toUpperCase()}</td><td>{row.recent[k] == null ? '—' : row.recent[k].toLocaleString(undefined,{maximumFractionDigits:2})}</td><td>{row.baseline[k] == null ? '—' : row.baseline[k].toLocaleString(undefined,{maximumFractionDigits:2})}</td><td>{row.changes[k] == null ? '—' : (row.changes[k] > 0 ? '+' : '') + row.changes[k].toFixed(0) + '%'}</td></tr>)}
+                            </tbody></table>
+                            <div>Ad ID：{row.adId}</div><div>近 3 日曝光天數：{row.delivery.recentDays}；10 日內首見：{row.delivery.firstObserved || '無'}（非確切首投日）</div>
+                            <div>廣告建立：{row.status.createdTime || '未提供'}</div><div>Ad Set 排定開始：{row.status.adsetStartTime || '未提供'}（非廣告首次曝光）</div>
+                            <div>Ad Set 預算（Meta 原始單位）：日 {row.status.dailyBudgetRaw ?? '未提供'} / 終身 {row.status.lifetimeBudgetRaw ?? '未提供'}；帳號幣別 {autopilotData.currency}。可能使用 Campaign 預算。</div>
+                          </details>
+                        </td>
                       </tr>
                     ))}
-                    {!autopilotData.rows.length && (
-                      <tr><td colSpan="12" style={{ textAlign: "center", padding: 24 }}>最近 3 個完整日沒有抓到廣告成效資料。</td></tr>
+                    {!HJAutopilot.sortRows(autopilotData.rows, autopilotSort, autopilotActiveOnly).length && (
+                      <tr><td colSpan="12" style={{ textAlign: "center", padding: 24 }}>目前篩選沒有廣告；可切換「全部」查看期間資料。</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -6063,7 +5986,7 @@ function MetaAdsLedger() {
 // 會直接把錯誤訊息印在畫面上,而不是留下一片空白,才能真正知道問題出在哪一行。之後確認問題解決,
 // 這層可以拿掉,但保留著也無害,不影響任何正常功能。
 // 特意不吞掉錯誤、不用空白畫面取代——顯示完整診斷內容才是重點,不是讓畫面看起來「正常」。
-const MAL_DEPLOY_VERSION = "autopilot-v1-shadow"; // 每次部署更新這個標記,方便確認瀏覽器載入的是不是最新版本
+const MAL_DEPLOY_VERSION = "autopilot-v2-shadow-diagnostics"; // 每次部署更新這個標記,方便確認瀏覽器載入的是不是最新版本
 class MalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
