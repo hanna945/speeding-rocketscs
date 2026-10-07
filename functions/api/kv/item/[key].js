@@ -14,7 +14,7 @@
 // 其餘依品牌 ID 命名的 key(月報表/週報表/帳本),能不能碰在上一層 _middleware.js 已經擋過了,這裡不用重複判斷。
 
 const BRAND_LIST_KEY = "meta-api-brands"; // 陣列形狀
-const BRAND_KEYED_OBJECT_KEYS = new Set(["meta-api-cpa-thresholds", "meta-api-adratio-thresholds"]); // 物件形狀,key 是品牌 ID
+const BRAND_KEYED_OBJECT_KEYS = new Set(["meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets"]); // 物件形狀,key 是品牌 ID
 const SHARED_LIST_KEYS = new Set([BRAND_LIST_KEY, ...BRAND_KEYED_OBJECT_KEYS]);
 
 function filterSharedValue(key, rawValue, credential) {

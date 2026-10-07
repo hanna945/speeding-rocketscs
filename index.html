@@ -145,6 +145,57 @@
     border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--ink-secondary); cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
   }
   .mal-viewmode-btn-active { color: var(--blue-deep); background: transparent; box-shadow: none; border-bottom-color: var(--blue-deep); font-weight: 600; }
+
+  /* ---------- H&J Ads Autopilot V1 (Shadow only) ---------- */
+  .mal-autopilot-shell { margin-bottom: 32px; }
+  .mal-autopilot-hero {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding: 20px 22px; margin-bottom: 18px; background: #F7F0E6; border: 1px solid #E4D7C5; border-radius: 6px;
+  }
+  .mal-autopilot-eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .11em; color: var(--blue-deep); margin-bottom: 7px; }
+  .mal-autopilot-title { font-family: 'Noto Serif TC', serif; font-size: 22px; font-weight: 600; margin: 0 0 7px; color: var(--ink); }
+  .mal-autopilot-desc { font-size: 12.5px; color: var(--ink-secondary); line-height: 1.7; margin: 0; max-width: 620px; }
+  .mal-autopilot-badge {
+    display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: 999px;
+    border: 1px solid #C9B38F; background: #FFF9EE; color: #7A5A31; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  }
+  .mal-autopilot-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 18px; }
+  .mal-autopilot-meta { font-size: 12px; color: var(--ink-soft); line-height: 1.6; }
+  .mal-autopilot-summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); border: 1px solid var(--rule-soft); margin-bottom: 20px; }
+  .mal-autopilot-summary-card { background: var(--paper-raised); padding: 16px 18px; border-right: 1px solid var(--rule-soft); }
+  .mal-autopilot-summary-card:last-child { border-right: none; }
+  .mal-autopilot-summary-label { font-size: 10.5px; color: var(--ink-soft); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em; }
+  .mal-autopilot-summary-value { font-family: 'IBM Plex Mono', monospace; font-size: 18px; color: var(--num-ink); font-weight: 600; }
+  .mal-autopilot-rules-note {
+    font-size: 12px; color: var(--ink-secondary); line-height: 1.75; background: #FAF7F1; border: 1px solid var(--rule-soft);
+    padding: 12px 14px; margin-bottom: 16px; border-radius: 5px;
+  }
+  .mal-autopilot-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--rule-soft); background: var(--paper-raised); }
+  .mal-autopilot-table { border-collapse: collapse; width: 100%; min-width: 1180px; font-size: 12px; }
+  .mal-autopilot-table th {
+    background: #EEE5D9; color: var(--ink-secondary); font-size: 10.5px; letter-spacing: .04em;
+    padding: 10px 9px; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap;
+  }
+  .mal-autopilot-table td { padding: 11px 9px; border-bottom: 1px solid var(--rule-soft); text-align: right; font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
+  .mal-autopilot-table th:first-child, .mal-autopilot-table td:first-child { text-align: left; min-width: 250px; }
+  .mal-autopilot-table tr:last-child td { border-bottom: none; }
+  .mal-autopilot-adname { font-family: 'Noto Sans TC', sans-serif; font-weight: 600; color: var(--ink); white-space: normal; line-height: 1.45; }
+  .mal-autopilot-sub { font-family: 'Noto Sans TC', sans-serif; font-size: 10.5px; color: var(--ink-soft); white-space: normal; margin-top: 3px; }
+  .mal-autopilot-action { display: inline-flex; align-items: center; justify-content: center; min-width: 72px; padding: 5px 8px; border-radius: 4px; font-family: 'Noto Sans TC', sans-serif; font-weight: 700; font-size: 10.5px; }
+  .mal-autopilot-action-scale { background: #E7EEE4; color: #56704E; }
+  .mal-autopilot-action-learning { background: #e6eaf0; color: #53667d; }
+  .mal-autopilot-detail { min-width: 390px; width: 100%; margin: 8px 0; }
+  .mal-autopilot-table .mal-autopilot-detail th:first-child, .mal-autopilot-table .mal-autopilot-detail td:first-child { min-width: 90px; }
+  .mal-autopilot-action-hold { background: #EFECE6; color: #756C60; }
+  .mal-autopilot-action-down { background: #F2E8D7; color: #8B693A; }
+  .mal-autopilot-action-pause { background: #F1DFDC; color: #914F47; }
+  .mal-autopilot-action-fatigue { background: #E9E3EE; color: #6E587A; }
+  .mal-autopilot-reason { font-family: 'Noto Sans TC', sans-serif; white-space: normal; min-width: 230px; max-width: 310px; text-align: left !important; line-height: 1.55; color: var(--ink-secondary); }
+  @media (max-width: 760px) {
+    .mal-autopilot-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .mal-autopilot-summary-card { border-bottom: 1px solid var(--rule-soft); }
+    .mal-autopilot-hero { padding: 16px; }
+  }
   .mal-week-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 22px 8px; margin-bottom: 28px; box-shadow: 0 2px 10px rgba(74,63,53,0.05); }
   .mal-week-title { margin-top: 0; border-bottom: 1px solid var(--rule); }
   .mal-week-analysis { margin: 14px 0 16px; }
@@ -592,6 +643,7 @@
 <body>
 <div id="root"></div>
 
+<script src="/assets/autopilot.js"></script>
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo, useImperativeHandle } = React;
 
@@ -637,7 +689,7 @@ const SHOPLINE_MONTH_PREFIX = "shopline-month:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
 const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-product-names"]);
-const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_WEEK_PREFIX, SHOPLINE_MONTH_PREFIX];
+const SHARED_PREFIXES = ["autopilot-history:", STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_WEEK_PREFIX, SHOPLINE_MONTH_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
   return SHARED_PREFIXES.some((p) => key.startsWith(p));
@@ -2276,6 +2328,14 @@ function MetaAdsLedger() {
   const [weekInfo, setWeekInfo] = useState(getLastWeekRange());
   const [weekLoading, setWeekLoading] = useState(false);
   const [viewMode, setViewMode] = useState("month");
+  const [autopilotLoading, setAutopilotLoading] = useState(false);
+  const [autopilotError, setAutopilotError] = useState("");
+  const [autopilotData, setAutopilotData] = useState(null);
+  const [autopilotActiveOnly, setAutopilotActiveOnly] = useState(true);
+  const [autopilotSort, setAutopilotSort] = useState('risk');
+  const [autopilotHistoryStatus, setAutopilotHistoryStatus] = useState('');
+  const autopilotRequestRef = useRef(0);
+  const autopilotContextRef = useRef('');
   const [weeksData, setWeeksData] = useState({});
   const [focusWeek, setFocusWeek] = useState(null);
   const [batchGranularity, setBatchGranularity] = useState("month");
@@ -2434,6 +2494,18 @@ function MetaAdsLedger() {
     loadAllWeeks(activeBrandId, () => cancelled);
     return () => { cancelled = true; };
   }, [activeBrandId]);
+  // Update context at render time; even A→B→A invalidates in-flight requests.
+  const autopilotContextKey = JSON.stringify([activeBrandId, apiAccountId, apiToken, roasTargets[activeBrandId], cpaThresholds[activeBrandId]]);
+  if (autopilotContextRef.current !== autopilotContextKey) {
+    autopilotContextRef.current = autopilotContextKey;
+    autopilotRequestRef.current++;
+  }
+  useEffect(() => {
+    setAutopilotData(null);
+    setAutopilotError('');
+    setAutopilotLoading(false);
+    setAutopilotHistoryStatus('');
+  }, [autopilotContextKey]);
   useEffect(() => {
     let cancelled = false;
     loadLedger(activeBrandId, () => cancelled);
@@ -3002,6 +3074,117 @@ function MetaAdsLedger() {
       return typeof json.timezone_offset_hours_utc === "number" ? json.timezone_offset_hours_utc : null;
     } catch {
       return null;
+    }
+  }
+
+  // ---------- Ads radar: manual, SHADOW ONLY ----------
+  async function autopilotGet(url, context, isCurrent) {
+    if (!isCurrent()) throw new Error('分析已取消（品牌或設定已切換）');
+    const parsed = new URL(url);
+    if (parsed.origin !== 'https://graph.facebook.com' || parsed.searchParams.has('method')) throw new Error('不允許的 Meta 讀取網址');
+    return fetchGraphApi(url, context); // Shared throttling, GET only; no mutation adapter.
+  }
+  async function autopilotPages(url, context, isCurrent) {
+    const rows = [], seen = new Set();
+    while (url) {
+      if (seen.has(url) || seen.size >= 100) throw new Error(context + '分頁不完整，停止分析以免低估花費');
+      seen.add(url);
+      const json = await autopilotGet(url, context, isCurrent);
+      if (!Array.isArray(json.data)) throw new Error(context + '缺少有效資料陣列');
+      rows.push(...json.data);
+      url = json.paging && json.paging.next;
+    }
+    return rows;
+  }
+  async function runAutopilotAnalysis() {
+    const token = (apiToken || '').trim();
+    const brandId = activeBrandId;
+    const accountId = (brandId || apiAccountId || '').trim().replace(/^act_/, '');
+    if (!token || !accountId) { setAutopilotError('請先選擇品牌並連接 Meta API。'); return; }
+    const requestId = ++autopilotRequestRef.current;
+    const contextKey = autopilotContextRef.current;
+    const isCurrent = () => autopilotRequestRef.current === requestId && autopilotContextRef.current === contextKey;
+    setAutopilotLoading(true); setAutopilotError(''); setAutopilotData(null); setAutopilotHistoryStatus('');
+    const A = HJAutopilot;
+    const base = `https://graph.facebook.com/${A.API_VERSION}/`;
+    const account = base + 'act_' + accountId;
+    const query = params => new URLSearchParams({ ...params, access_token: token }).toString();
+    try {
+      const meta = await autopilotGet(account + '?' + query({ fields: 'currency,timezone_name' }), '讀取帳號時區與幣別', isCurrent);
+      if (!meta.timezone_name || !meta.currency) throw new Error('無法確認帳號時區或幣別，停止分析以免日期／金額誤判');
+      const time = A.ranges(Date.now(), meta.timezone_name);
+      const target = A.targets(roasTargets[brandId] ?? 3, cpaThresholds[brandId], meta.currency);
+      const warnings = [];
+      async function insights(since, until, daily = false) {
+        return autopilotPages(account + '/insights?' + query({ level: 'ad', use_account_attribution_setting: 'true',
+          fields: daily ? 'ad_id,impressions,date_start' : 'ad_id,ad_name,campaign_name,adset_name,spend,actions,action_values,impressions,reach,inline_link_clicks,frequency',
+          time_range: JSON.stringify({ since, until }), ...(daily ? { time_increment: '1' } : {}), limit: '500' }), 'Autopilot 讀取成效', isCurrent);
+      }
+      const recentRows = await insights(time.recentSince, time.recentUntil);
+      const baselineRows = await insights(time.baseSince, time.baseUntil);
+      const dailyRows = await insights(time.baseSince, time.recentUntil, true);
+      const recentById = Object.fromEntries(recentRows.map(r => [r.ad_id, r]));
+      const baselineById = Object.fromEntries(baselineRows.map(r => [r.ad_id, r]));
+      if (Object.keys(recentById).length !== recentRows.length || Object.keys(baselineById).length !== baselineRows.length) throw new Error('成效出現重複 Ad ID，停止分析以免覆蓋或重複加總');
+      const adMap = {};
+      const required = 'id,name,effective_status';
+      const extended = required + ',created_time,campaign{name},adset{id,name,start_time,daily_budget,lifetime_budget}';
+      async function ads(filtering) {
+        const params = { fields: extended, filtering: JSON.stringify(filtering), limit: '500' };
+        let found;
+        try { found = await autopilotPages(account + '/ads?' + query(params), 'Autopilot 讀取廣告', isCurrent); }
+        catch (e) {
+          if (![100, 10, 200].includes(e.code)) throw e;
+          warnings.push('部分廣告預算／時間欄位無法讀取，已改讀基本狀態；不推測缺失值。');
+          found = await autopilotPages(account + '/ads?' + query({ ...params, fields: required }), 'Autopilot 讀取基本狀態', isCurrent);
+        }
+        found.forEach(ad => { adMap[ad.id] = ad; });
+      }
+      // Include active ads with no recent delivery, plus historical ads from either window.
+      await ads([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]);
+      const ids = [...new Set([...Object.keys(recentById), ...Object.keys(baselineById)])].filter(id => !adMap[id]);
+      for (let i = 0; i < ids.length; i += 50) await ads([{ field: 'id', operator: 'IN', value: ids.slice(i, i + 50) }]);
+      const daysById = {};
+      dailyRows.forEach(r => {
+        if (Number(r.impressions) > 0 && r.date_start >= time.baseSince && r.date_start <= time.recentUntil) {
+          (daysById[r.ad_id] ||= new Set()).add(r.date_start);
+        }
+      });
+      const rows = [...new Set([...Object.keys(recentById), ...Object.keys(baselineById), ...Object.keys(adMap)])].map(adId => {
+        const raw = recentById[adId] || baselineById[adId] || {}, ad = adMap[adId] || {}, adset = ad.adset || {};
+        const status = { active: ad.effective_status === 'ACTIVE', effectiveStatus: ad.effective_status || 'UNKNOWN',
+          createdTime: ad.created_time || null, adsetStartTime: adset.start_time || null, adsetId: adset.id || null,
+          // Preserve exact API budget units; do not assume every currency uses /100.
+          dailyBudgetRaw: adset.daily_budget ?? null, lifetimeBudgetRaw: adset.lifetime_budget ?? null };
+        const dates = [...(daysById[adId] || [])].sort();
+        const delivery = { firstObserved: dates[0] || null, recentDays: dates.filter(d => d >= time.recentSince).length, observedWindowDays: dates.length };
+        const recent = A.metrics(recentById[adId], pickPurchaseValue), baseline = A.metrics(baselineById[adId], pickPurchaseValue);
+        const verdict = A.evaluate(recent, baseline, status, target, delivery);
+        if (!status.active && status.effectiveStatus !== 'UNKNOWN') verdict.reason = '目前非投放中；以下僅回顧期間表現。' + verdict.reason;
+        return { adId, name: ad.name || raw.ad_name || adId, campaign: ad.campaign?.name || raw.campaign_name || '', adsetName: adset.name || raw.adset_name || '', status, delivery, recent, baseline,
+          changes: Object.fromEntries(['spend', 'revenue', 'conversions', 'impressions', 'reach', 'clicks', 'roas', 'cpa', 'ctr', 'cpc', 'cpm', 'frequency', 'cvr'].map(k => [k, A.change(recent[k], baseline[k])])), ...verdict };
+      });
+      const totals = rows.reduce((t, r) => ({ spend: t.spend + r.recent.spend, revenue: t.revenue + r.recent.revenue, conversions: t.conversions + r.recent.conversions }), { spend: 0, revenue: 0, conversions: 0 });
+      totals.roas = totals.spend > 0 ? totals.revenue / totals.spend : null;
+      totals.cpa = totals.conversions > 0 ? totals.spend / totals.conversions : null;
+      const snapshot = { schemaVersion: 2, rulesVersion: A.VERSION, rules: A.RULES, mode: 'SHADOW_ONLY', brandId, accountId, currency: meta.currency, timezone: meta.timezone_name,
+        ...time, target, targetRoas: target.targetRoas, targetCpa: target.targetCpa, rows, totals, warnings: [...new Set(warnings)],
+        attribution: 'use_account_attribution_setting=true', syncedAt: new Date().toISOString() };
+      if (!isCurrent()) return;
+      setAutopilotData(snapshot);
+      setAutopilotHistoryStatus('正在儲存 Shadow History…');
+      // A unique snapshot per manual run avoids concurrent last-write-wins and preserves every Ad.
+      const key = `autopilot-history:${accountId}::${snapshot.syncedAt}:${crypto.randomUUID()}`;
+      try {
+        await storageSetStrict(key, JSON.stringify(snapshot));
+        if (isCurrent()) setAutopilotHistoryStatus('Shadow History 已儲存（本次全部廣告）');
+      } catch (e) {
+        if (isCurrent()) setAutopilotHistoryStatus('本次分析完成，但 Shadow History 儲存失敗：' + e.message);
+      }
+    } catch (e) {
+      if (isCurrent()) setAutopilotError('Autopilot 分析失敗：' + (e.message || e) + apiErrorHint(e));
+    } finally {
+      if (isCurrent()) setAutopilotLoading(false);
     }
   }
 
@@ -4462,7 +4645,152 @@ function MetaAdsLedger() {
         <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
           🎤 業配分析
         </button>
+        <button className={"mal-viewmode-btn " + (viewMode === "autopilot" ? "mal-viewmode-btn-active" : "")} onClick={() => setViewMode("autopilot")}>
+          ⚡ Ads Autopilot
+        </button>
       </div>
+
+      {viewMode === "autopilot" && (
+        <div className="mal-autopilot-shell">
+          <div className="mal-autopilot-hero">
+            <div>
+              <div className="mal-autopilot-eyebrow">H&J ADS AUTOPILOT / V1</div>
+              <h2 className="mal-autopilot-title">廣告雷達 / 廣告診斷中心</h2>
+              <p className="mal-autopilot-desc">
+                第一版只做 Shadow 判斷,不會修改 Meta。使用最近 3 個完整日,和它前面的 7 個完整日做基準比較,
+                先驗證 SCALE / HOLD / DOWN / PAUSE / FATIGUE / LEARNING，所有結果只供人工判讀。
+              </p>
+            </div>
+            <span className="mal-autopilot-badge">● SHADOW ONLY</span>
+          </div>
+
+          <div className="mal-autopilot-toolbar">
+            <button className="mal-btn mal-btn-primary" disabled={autopilotLoading} onClick={runAutopilotAnalysis}>
+              {autopilotLoading ? "分析中…" : (autopilotData ? "重新抓取並分析" : "開始 Shadow 分析")}
+            </button>
+            <button className="mal-btn" onClick={() => setShowApiPanel(true)}>🔌 Meta API 設定</button>
+            <span className="mal-autopilot-meta">
+              ROAS 目標: {roasTargets[activeBrandId] != null ? roasTargets[activeBrandId] : 3}x
+              {" · "}CPA 目標: {cpaThresholds[activeBrandId] != null ? fmtMoney(cpaThresholds[activeBrandId], autopilotData ? autopilotData.currency : "TWD") : "未設定"}
+            </span>
+          </div>
+
+          {autopilotError && <div className="mal-error">⚠ {autopilotError}</div>}
+
+          {!autopilotData && !autopilotLoading && !autopilotError && (
+            <div className="mal-empty">
+              <div style={{ fontSize: 30 }}>⚡</div>
+              <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>Shadow Mode 準備好了</h3>
+              <p>手動讀取最近完整日成效，查看可能原因與資料可信度。</p>
+            </div>
+          )}
+
+          {autopilotData && autopilotData.brandId === activeBrandId && (
+            <>
+              <div className="mal-autopilot-meta" style={{ marginBottom: 12 }}>
+                最近3日: {autopilotData.recentSince} ~ {autopilotData.recentUntil}
+                {" · "}前7日基準: {autopilotData.baseSince} ~ {autopilotData.baseUntil}
+                {" · "}分析時間: {fmtSyncedAt(autopilotData.syncedAt)}
+              </div>
+
+              <div className="mal-autopilot-summary">
+                <div className="mal-autopilot-summary-card">
+                  <div className="mal-autopilot-summary-label">3D Spend</div>
+                  <div className="mal-autopilot-summary-value">{fmtMoney(autopilotData.totals.spend, autopilotData.currency)}</div>
+                </div>
+                <div className="mal-autopilot-summary-card">
+                  <div className="mal-autopilot-summary-label">3D Purchase</div>
+                  <div className="mal-autopilot-summary-value">{fmtInt(autopilotData.totals.conversions)}</div>
+                </div>
+                <div className="mal-autopilot-summary-card">
+                  <div className="mal-autopilot-summary-label">3D ROAS</div>
+                  <div className="mal-autopilot-summary-value">{autopilotData.totals.roas != null ? autopilotData.totals.roas.toFixed(2) + "x" : "—"}</div>
+                </div>
+                <div className="mal-autopilot-summary-card">
+                  <div className="mal-autopilot-summary-label">3D CPA</div>
+                  <div className="mal-autopilot-summary-value">{autopilotData.totals.cpa != null ? fmtMoney(autopilotData.totals.cpa, autopilotData.currency) : "—"}</div>
+                </div>
+                <div className="mal-autopilot-summary-card">
+                  <div className="mal-autopilot-summary-label">3D Revenue</div>
+                  <div className="mal-autopilot-summary-value">{fmtMoney(autopilotData.totals.revenue, autopilotData.currency)}</div>
+                </div>
+              </div>
+
+              <div className="mal-autopilot-toolbar">
+                <label>狀態 <select value={autopilotActiveOnly ? 'active' : 'all'} onChange={e => setAutopilotActiveOnly(e.target.value === 'active')}><option value="active">只看投放中</option><option value="all">全部（含狀態未知）</option></select></label>
+                <label>排序 <select value={autopilotSort} onChange={e => setAutopilotSort(e.target.value)}>{[['risk','Risk'],['spend','Spend'],['roas','ROAS'],['cpa','CPA'],['ctr','CTR'],['frequency','Frequency']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+                {Object.keys(HJAutopilot.ORDER).map(d => <span key={d} className={'mal-autopilot-action mal-autopilot-action-' + d.toLowerCase()}>{d} {autopilotData.rows.filter(r => (!autopilotActiveOnly || r.status.active) && r.decision === d).length}</span>)}
+              </div>
+              <div className="mal-autopilot-rules-note">
+                <b>SHADOW ONLY：</b>統計卡為期間全部廣告；分類數量依狀態篩選。Risk 先依分類，再依花費由高到低，低樣本進 LEARNING。<br />
+                帳號時區：{autopilotData.timezone} · 停損觀察值：{autopilotData.target.stopSpend != null ? fmtMoney(autopilotData.target.stopSpend, autopilotData.currency) : '未設 Target CPA，停用 PAUSE 建議'}。<br />
+                暫定門檻：曝光 ≥1,000、兩期購買各 ≥3；SCALE 購買 ≥5。CPM +20%、CTR −25%、Frequency +15%、CPA +20% 或 ROAS −20% 為觀察訊號。<br />
+                CTR / CPC 使用連結點擊；CVR 為歸因購買／連結點擊比率，非網站工作階段轉換率。Frequency 是各期間去重累計值，3D／7D 長度不同，只作輔助訊號；Reach 不跨日相加。歸因回補可能改變近期結果。<br />
+                {autopilotHistoryStatus}
+                {autopilotData.warnings.map(w => <div key={w}>⚠ {w}</div>)}
+                {autopilotData.rows.some(r => r.status.effectiveStatus === 'UNKNOWN') && <div>⚠ 部分狀態未知，切換「全部」可查看。</div>}
+              </div>
+
+              <div className="mal-autopilot-table-wrap">
+                <table className="mal-autopilot-table">
+                  <thead>
+                    <tr>
+                      <th>廣告</th>
+                      <th>狀態</th>
+                      <th>3D 花費</th>
+                      <th>3D 購買</th>
+                      <th>3D ROAS</th>
+                      <th>3D CPA</th>
+                      <th>3D Link CTR</th>
+                      <th>Freq.</th>
+                      <th>7D ROAS</th>
+                      <th>7D CPA</th>
+                      <th>判斷</th>
+                      <th>原因</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {HJAutopilot.sortRows(autopilotData.rows, autopilotSort, autopilotActiveOnly).map((row) => (
+                      <tr key={row.adId}>
+                        <td>
+                          <div className="mal-autopilot-adname">{row.name}</div>
+                          <div className="mal-autopilot-sub">{row.campaign || "未分類活動"}</div>
+                          {row.adsetName && <div className="mal-autopilot-sub">Ad Set: {row.adsetName}</div>}
+                        </td>
+                        <td>{row.status.active ? "投放中" : row.status.effectiveStatus}</td>
+                        <td>{fmtMoney(row.recent.spend, autopilotData.currency)}</td>
+                        <td>{fmtInt(row.recent.conversions)}</td>
+                        <td>{row.recent.roas != null ? row.recent.roas.toFixed(2) + "x" : "—"}</td>
+                        <td>{row.recent.cpa != null ? fmtMoney(row.recent.cpa, autopilotData.currency) : "—"}</td>
+                        <td>{row.recent.ctr ? row.recent.ctr.toFixed(2) + "%" : "—"}</td>
+                        <td>{row.recent.frequency ? row.recent.frequency.toFixed(2) : "—"}</td>
+                        <td>{row.baseline.roas != null ? row.baseline.roas.toFixed(2) + "x" : "—"}</td>
+                        <td>{row.baseline.cpa != null ? fmtMoney(row.baseline.cpa, autopilotData.currency) : "—"}</td>
+                        <td>
+                          <span className={"mal-autopilot-action mal-autopilot-action-" + row.decision.toLowerCase()}>{row.decision === "PAUSE" ? "PAUSE Candidate" : row.decision === "SCALE" ? "SCALE +10%" : row.decision}</span><div className="mal-autopilot-sub">{row.confidence}</div>
+                        </td>
+                        <td className="mal-autopilot-reason"><b>{HJAutopilot.DIAGNOSES[row.diagnosis]} · {row.diagnosis}</b><div>{row.reason}</div>
+                          <details style={{marginTop: 8}}><summary>展開 3D / 7D 指標與變化</summary>
+                            <table className="mal-autopilot-detail"><thead><tr><th>指標</th><th>3D</th><th>7D</th><th>變化</th></tr></thead><tbody>
+                              {['spend','revenue','conversions','roas','cpa','impressions','reach','clicks','ctr','cpc','cpm','frequency','cvr'].map(k => <tr key={k}><td>{({conversions:'Purchase',clicks:'Link clicks',revenue:'Purchase value',ctr:'Link CTR (%)',cvr:'Purchase/Click (%)'})[k] || k.toUpperCase()}</td><td>{row.recent[k] == null ? '—' : row.recent[k].toLocaleString(undefined,{maximumFractionDigits:2})}</td><td>{row.baseline[k] == null ? '—' : row.baseline[k].toLocaleString(undefined,{maximumFractionDigits:2})}</td><td>{row.changes[k] == null ? '—' : (row.changes[k] > 0 ? '+' : '') + row.changes[k].toFixed(0) + '%'}</td></tr>)}
+                            </tbody></table>
+                            <div>Ad ID：{row.adId}</div><div>近 3 日曝光天數：{row.delivery.recentDays}；10 日內首見：{row.delivery.firstObserved || '無'}（非確切首投日）</div>
+                            <div>廣告建立：{row.status.createdTime || '未提供'}</div><div>Ad Set 排定開始：{row.status.adsetStartTime || '未提供'}（非廣告首次曝光）</div>
+                            <div>Ad Set 預算（Meta 原始單位）：日 {row.status.dailyBudgetRaw ?? '未提供'} / 終身 {row.status.lifetimeBudgetRaw ?? '未提供'}；帳號幣別 {autopilotData.currency}。可能使用 Campaign 預算。</div>
+                          </details>
+                        </td>
+                      </tr>
+                    ))}
+                    {!HJAutopilot.sortRows(autopilotData.rows, autopilotSort, autopilotActiveOnly).length && (
+                      <tr><td colSpan="12" style={{ textAlign: "center", padding: 24 }}>目前篩選沒有廣告；可切換「全部」查看期間資料。</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {viewMode === "month" && (loading ? <p style={{ color: "var(--ink-soft)" }}>載入帳本中…</p> : sortedKeys.length === 0 ? (
         <div className="mal-empty">
@@ -5658,7 +5986,7 @@ function MetaAdsLedger() {
 // 會直接把錯誤訊息印在畫面上,而不是留下一片空白,才能真正知道問題出在哪一行。之後確認問題解決,
 // 這層可以拿掉,但保留著也無害,不影響任何正常功能。
 // 特意不吞掉錯誤、不用空白畫面取代——顯示完整診斷內容才是重點,不是讓畫面看起來「正常」。
-const MAL_DEPLOY_VERSION = "62d676d-diag2"; // 每次部署更新這個標記,方便確認瀏覽器載入的是不是最新版本
+const MAL_DEPLOY_VERSION = "autopilot-v2-shadow-diagnostics"; // 每次部署更新這個標記,方便確認瀏覽器載入的是不是最新版本
 class MalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
