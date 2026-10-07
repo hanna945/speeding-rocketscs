@@ -110,3 +110,14 @@ test('preview-only team secret is restricted to its configured brand and coexist
  assert.equal(prodAllowed.status,204);
  assert.deepEqual(prodData.credential.brands,['456']);
 });
+
+
+test('preview-only secret fails closed when key is missing or wrong',async()=>{
+ const {onRequest}=await import('../functions/api/kv/_middleware.js');
+ const env={PREVIEW_TEAM_SECRET:'fixture-preview-secret',PREVIEW_TEAM_BRAND_ID:'123'};
+ for (const headers of [{},{'X-Team-Key':'wrong-key'}]) {
+  const request=new Request('https://preview.example/api/kv/list?prefix=',{headers});
+  const response=await onRequest({request,env,data:{},next:()=>{throw Error('must not pass');}});
+  assert.equal(response.status,401);
+ }
+});
