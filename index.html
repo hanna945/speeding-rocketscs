@@ -1858,6 +1858,8 @@ function adDecision(ad, prevAd, roasTarget, cpaTarget) {
   }
   const ctrDelta = metricPctDelta(ctr, prevCtr);
   const likelyFatigue = ctrDelta !== null && ctrDelta <= -25 && (frequency === null || frequency >= 2.2);
+  const campaignName = String(ad && ad.campaign || "").toUpperCase();
+  const autoAllocated = /(^|[^A-Z])(CBO|ASC)([^A-Z]|$)|ADVANTAGE\+|ADV\+/.test(campaignName);
 
   if (cpaTarget > 0 && conversions === 0 && spend >= cpaTarget * 2) {
     return { code: "REDUCE", icon: "🔴", label: "REDUCE", reason: `已花費 ${fmtMoney(spend)}、仍無轉單，已超過目標 CPA ×2。` };
@@ -1867,6 +1869,12 @@ function adDecision(ad, prevAd, roasTarget, cpaTarget) {
   }
   if (conversions < 10) {
     return { code: "MONITOR", icon: "🟡", label: "MONITOR", reason: `目前 ${conversions} 筆轉單，樣本未滿 10 筆，先不要過度解讀。` };
+  }
+  if (autoAllocated) {
+    if (roas >= target) {
+      return { code: "KEEP", icon: "🟢", label: "KEEP", reason: `此活動疑似 CBO / ASC / Advantage+；單支平均值不適合獨立擴量。ROAS ${roas.toFixed(2)}x 已達標，保留並從 Campaign 層級判斷預算。` };
+    }
+    return { code: "MONITOR", icon: "🟡", label: "MONITOR", reason: `此活動疑似 CBO / ASC / Advantage+；先看 Campaign 整體與邊際成本，不因單支平均 CPA/ROAS 直接停掉。` };
   }
   if (roas >= target * 1.3 && (!cpaTarget || cpa === null || cpa <= cpaTarget)) {
     return { code: "SCALE", icon: "🟢", label: "SCALE", reason: `ROAS ${roas.toFixed(2)}x，高於目標 ${target}x，建議單次 +10–15%。` };
