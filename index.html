@@ -4903,6 +4903,15 @@ function MetaAdsLedger() {
 
           {focusData && (
             <>
+              <DecisionIntelligencePanel
+                currentRecord={focusData}
+                previousRecord={prevData}
+                roasTarget={roasTargets[activeBrandId]}
+                cpaTarget={cpaThresholds[activeBrandId]}
+                monthlyBudget={monthlyBudgets[activeBrandId]}
+                periodType="month"
+                periodLabel={monthLabel(focusMonth)}
+              />
               <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
               <div className="mal-combined-ai-row">
                 <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(monthlyAdReportRef, monthlyPlanRef)}>
@@ -5133,6 +5142,14 @@ function MetaAdsLedger() {
                   </ul>
                 </div>
 
+                <DecisionIntelligencePanel
+                  currentRecord={focusWeekData}
+                  previousRecord={prevWeekData}
+                  roasTarget={roasTargets[activeBrandId]}
+                  cpaTarget={cpaThresholds[activeBrandId]}
+                  periodType="week"
+                  periodLabel={weekLabel(focusWeek)}
+                />
                 <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
 
                 <div className="mal-combined-ai-row">
