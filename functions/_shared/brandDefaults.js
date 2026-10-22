@@ -11,7 +11,8 @@ function normalizeCredentialName(name) {
 
 export function extendCredentialRoster(credentialName, roster) {
   const list = Array.isArray(roster) ? [...roster] : [];
-  if (normalizeCredentialName(credentialName) !== "品牌C") return list;
+  const normalizedName = normalizeCredentialName(credentialName);
+  if (normalizedName !== "品牌C" && normalizedName !== "品牌C部") return list;
 
   if (!list.some((b) => b && b.id === BRAND_C_ACCOUNT_ID)) {
     list.push({ id: BRAND_C_ACCOUNT_ID, name: BRAND_C_NAME });
