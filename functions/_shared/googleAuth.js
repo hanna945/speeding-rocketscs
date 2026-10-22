@@ -88,3 +88,16 @@ export async function fetchSheetMonthValues(accessToken, sheetId, tabName) {
   if (!res.ok) throw new Error(`讀取 Google Sheet「${tabName}」分頁失敗:${json.error && json.error.message}`);
   return json.values || [];
 }
+
+
+export async function fetchSpreadsheetSheetTitles(accessToken, sheetId) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties.title&includeGridData=false`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(`讀取 Google Sheet 分頁清單失敗:${json.error && json.error.message ? json.error.message : res.status}`);
+  }
+  return (json.sheets || [])
+    .map((s) => s && s.properties && s.properties.title)
+    .filter(Boolean);
+}
