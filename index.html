@@ -5028,6 +5028,7 @@ function MetaAdsLedger() {
               </div>
               <div data-pdf-section="campaign-analysis">
                 <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
+                <AdSetAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
               </div>
               <div data-pdf-section="performance-breakdown">
                 <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
@@ -5271,6 +5272,7 @@ function MetaAdsLedger() {
 
                 <div data-pdf-section="campaign-analysis">
                   <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
+                <AdSetAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
                 </div>
                 <div data-pdf-section="performance-breakdown">
                   <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
