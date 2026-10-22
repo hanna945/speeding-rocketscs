@@ -391,7 +391,18 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     if (dateCell instanceof Date) {
       const iso = excelDateToISO(dateCell);
       if (!iso) continue;
-      days.push({ date: iso, overall: buildOverall(row), byCode: buildByCode(row, true), adSources: buildAdSources(row) });
+      const overall = buildOverall(row);
+      const byCode = buildByCode(row, true);
+      const adSources = buildAdSources(row);
+      const hasOverall = Object.values(overall).some((v) => Number.isFinite(v) && v !== 0);
+      const hasByCode = Object.values(byCode).some((v) =>
+        [v.revenue, v.spend, v.profit, v.netProfit].some((n) => Number.isFinite(n) && n !== 0)
+      );
+      const hasAdSources = Object.values(adSources).some((v) => Number.isFinite(v.spend) && v.spend !== 0);
+      // Monthly sheets often pre-fill every calendar date before a brand launches or before the day happens.
+      // Skip only truly blank template rows. Real zero-revenue days with ad spend are preserved.
+      if (!hasOverall && !hasByCode && !hasAdSources) continue;
+      days.push({ date: iso, overall, byCode, adSources });
       continue;
     }
     if (typeof dateCell === "string" && cleanText(dateCell) === "總結") {
