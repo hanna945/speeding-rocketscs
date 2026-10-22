@@ -3681,7 +3681,7 @@ function MetaAdsLedger() {
     const ads = Object.values(grouped)
       .map((g) => {
         const nameList = [...g.names];
-        const adCount = nameList.length || 1;
+        const adCount = g.adIds.size || nameList.length || 1;
         const name =
           nameList.length === 0
             ? g.utm || "未命名廣告"
