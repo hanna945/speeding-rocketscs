@@ -56,12 +56,27 @@ export async function onRequestPost({ request, env, data }) {
     return jsonError("跟 Google 驗證失敗:" + e.message + "(請確認金鑰內容正確、且這份試算表已經分享給服務帳號的 email)", 502);
   }
 
+  let syncResult;
+  try {
+    syncResult = await syncAccountLedger(env, accessToken, accountId, sheetId, year);
+  } catch (e) {
+    const serviceAccountEmail = serviceAccount.client_email || "";
+    const message = e instanceof Error ? e.message : String(e);
+    const isPermission = /permission|forbidden|403/i.test(message);
+    return jsonError(
+      "Google 試算表讀取失敗:" + message +
+        (serviceAccountEmail ? "。目前 Cloudflare 實際使用的服務帳號是 " + serviceAccountEmail + "，請把這張試算表分享給這個 email（檢視者即可）。" : ""),
+      isPermission ? 403 : 502,
+      { serviceAccountEmail }
+    );
+  }
+
   const {
     importedMonths,
     errors: tabErrors,
     warnings,
     validationErrors,
-  } = await syncAccountLedger(env, accessToken, accountId, sheetId, year);
+  } = syncResult;
 
   // Remember the mapping even when validation fails, so the user does not need to paste sheetId again.
   await env.REPORT_KV.put(`sheet-map:${accountId}`, sheetId);
