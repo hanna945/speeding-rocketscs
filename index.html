@@ -3172,7 +3172,7 @@ function MetaAdsLedger() {
       const timeRange = encodeURIComponent(JSON.stringify({ since: rangeSince, until: rangeUntil }));
       let insightsUrl =
         `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
-        `&fields=ad_id,ad_name,spend,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
+        `&fields=ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
       let out = [];
       let page = 0;
       while (insightsUrl && page < 20) {
@@ -3199,10 +3199,14 @@ function MetaAdsLedger() {
       rawRows.forEach((r) => {
         const key = r.ad_id || `__no_id_${Math.random()}`;
         if (!mergedByAdId[key]) {
-          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, spend: 0, actions: [], action_values: [] };
+          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, spend: 0, impressions: 0, clicks: 0, inline_link_clicks: 0, reach: 0, actions: [], action_values: [] };
         }
         const m = mergedByAdId[key];
         m.spend = (parseFloat(m.spend) || 0) + (parseFloat(r.spend) || 0);
+        m.impressions += parseFloat(r.impressions) || 0;
+        m.clicks += parseFloat(r.clicks) || 0;
+        m.inline_link_clicks += parseFloat(r.inline_link_clicks) || 0;
+        m.reach += parseFloat(r.reach) || 0;
         ["actions", "action_values"].forEach((field) => {
           (r[field] || []).forEach((entry) => {
             const existing = m[field].find((e) => e.action_type === entry.action_type);
@@ -3291,11 +3295,15 @@ function MetaAdsLedger() {
     // 3) 先用「完整、未篩選」的資料算總計——這樣廣告費/轉單數/轉單金額才會跟 Meta 後台的帳號總覽數字完全一致。
     // 後台的總計是把該期間「所有」廣告都算進去,不會因為某支廣告花費很小就不計入;
     // 如果只加總「花費 ≥ 500」的廣告,總計就會比後台實際數字少,CPA/ROAS 也會跟著失真。
-    let totalSpend = 0, totalConv = 0, totalRev = 0;
+    let totalSpend = 0, totalConv = 0, totalRev = 0, totalImpressions = 0, totalClicks = 0, totalLinkClicks = 0, totalReach = 0;
     rows.forEach((row) => {
       totalSpend += parseFloat(row.spend) || 0;
       totalConv += pickPurchaseValue(row.actions);
       totalRev += pickPurchaseValue(row.action_values);
+      totalImpressions += parseFloat(row.impressions) || 0;
+      totalClicks += parseFloat(row.clicks) || 0;
+      totalLinkClicks += parseFloat(row.inline_link_clicks) || 0;
+      totalReach += parseFloat(row.reach) || 0;
     });
 
     // 花費門檻只用來決定「廣告明細列表」要不要顯示這支廣告(避免清單被大量花費很少的測試廣告洗版),
@@ -3314,6 +3322,10 @@ function MetaAdsLedger() {
       const spend = parseFloat(row.spend) || 0;
       const conversions = pickPurchaseValue(row.actions);
       const revenue = pickPurchaseValue(row.action_values);
+      const impressions = parseFloat(row.impressions) || 0;
+      const clicks = parseFloat(row.clicks) || 0;
+      const linkClicks = parseFloat(row.inline_link_clicks) || 0;
+      const reach = parseFloat(row.reach) || 0;
 
       const adName = row.ad_name || "(未命名廣告)";
       const utm = utmMap[row.ad_id] || "";
@@ -3323,11 +3335,11 @@ function MetaAdsLedger() {
       const campaignName = campaignMap[row.ad_id] || "(未分類活動)";
       const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::" + (isActive ? "on" : "off");
       if (!grouped[groupKey]) {
-        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
+        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
       }
       const g = grouped[groupKey];
       g.names.add(adName);
-      g.spend += spend; g.conversions += conversions; g.revenue += revenue;
+      g.spend += spend; g.conversions += conversions; g.revenue += revenue; g.impressions += impressions; g.clicks += clicks; g.linkClicks += linkClicks; g.reach += reach;
       if (!g.image && thumbMap[row.ad_id]) g.image = thumbMap[row.ad_id];
       if (!g.postId && storyIdMap[row.ad_id]) g.postId = storyIdMap[row.ad_id];
       if (campaignMap[row.ad_id]) g.campaigns.add(campaignMap[row.ad_id]);
@@ -3363,13 +3375,18 @@ function MetaAdsLedger() {
             : `${campaignList[0]} 等 ${campaignList.length} 個活動`;
         return {
           name, utm: g.utm, image: g.image, postId: g.postId, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
+          impressions: g.impressions, clicks: g.clicks, linkClicks: g.linkClicks, reach: g.reach,
           adCount, rawNames: nameList, active: g.active, campaign, adIds: [...g.adIds], startDate: g.startDate,
           postPublishDate: g.postPublishDate,
         };
       })
       .sort((a, b) => b.spend - a.spend);
 
-    return { spend: totalSpend, conversions: totalConv, revenue: totalRev, campaigns: 0, currency, accountId, ads, syncedAt: new Date().toISOString() };
+    return {
+      spend: totalSpend, conversions: totalConv, revenue: totalRev,
+      impressions: totalImpressions, clicks: totalClicks, linkClicks: totalLinkClicks, reach: totalReach,
+      campaigns: 0, currency, accountId, ads, syncedAt: new Date().toISOString()
+    };
   }
 
   async function fetchLastWeekData() {
