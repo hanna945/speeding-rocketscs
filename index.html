@@ -4655,9 +4655,11 @@ function MetaAdsLedger() {
                   currencyCode={focusData.currency}
                   periodLabel={monthLabel(focusMonth)}
                   roasTarget={roasTargets[activeBrandId]}
+                  monthlyBudget={monthlyBudgets[activeBrandId]}
                   brands={brands}
                   activeBrandId={activeBrandId}
                   onEditRoasTarget={editRoasTarget}
+                  onEditMonthlyBudget={editMonthlyBudget}
                   productNames={productNames[activeBrandId] || {}}
                   onEditProductName={editProductName}
                   adRatioThreshold={adRatioThresholds[activeBrandId]}
@@ -4889,11 +4891,9 @@ function MetaAdsLedger() {
                       return `${fmtMD(r.since)} - ${fmtMD(r.until)}`;
                     })()}
                     roasTarget={roasTargets[activeBrandId]}
-                    monthlyBudget={monthlyBudgets[activeBrandId]}
                     brands={brands}
                     activeBrandId={activeBrandId}
                     onEditRoasTarget={editRoasTarget}
-                    onEditMonthlyBudget={editMonthlyBudget}
                     productNames={productNames[activeBrandId] || {}}
                     onEditProductName={editProductName}
                     adRatioThreshold={adRatioThresholds[activeBrandId]}
