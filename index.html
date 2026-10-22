@@ -905,6 +905,17 @@ function pickPurchaseValue(list) {
   return 0;
 }
 
+// 給品牌獨立報表共用的通用 action 讀取器。
+// 與購買不同，landing_page_view 不需要做跨 action_type 的加總，只取第一個可用值即可。
+function pickActionValue(list, types) {
+  if (!list || !list.length) return 0;
+  for (const type of types) {
+    const match = list.find((a) => a.action_type === type);
+    if (match) return parseFloat(match.value) || 0;
+  }
+  return 0;
+}
+
 // 組出直接跳轉到 Meta 廣告管理員、並選取這支(或這幾支合併的)廣告的連結。
 // 沒有帳號 ID 或沒有對應的廣告 ID 就不顯示連結。
 function fbAdsManagerLink(accountId, adIds) {
@@ -3548,7 +3559,7 @@ function MetaAdsLedger() {
     }
 
     if (!rows.length) {
-      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], syncedAt: new Date().toISOString() };
+      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString() };
     }
 
     // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
@@ -3566,12 +3577,15 @@ function MetaAdsLedger() {
     let adSetIdMap = {};
     let startDateMap = {};
     let storyIdMap = {}; // ad.id -> effective_object_story_id(這支廣告素材背後對應的前台貼文 ID,不是每支廣告都有)
+    let creativeIdMap = {}; // ad.id -> creative.id，給品牌獨立報表做同素材跨 Campaign 比較
+    let objectiveMap = {}; // ad.id -> campaign.objective
+    let optimizationGoalMap = {}; // ad.id -> adset.optimization_goal
     const ID_CHUNK_SIZE = 50;
     for (let i = 0; i < periodAdIds.length; i += ID_CHUNK_SIZE) {
       const chunk = periodAdIds.slice(i, i + ID_CHUNK_SIZE);
       const filtering = encodeURIComponent(JSON.stringify([{ field: "id", operator: "IN", value: chunk }]));
       let adsUrl =
-        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{name},adset{id,name,start_time},creative{thumbnail_url,image_url,url_tags,effective_object_story_id}` +
+        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{name,objective},adset{id,name,start_time,optimization_goal},creative{id,thumbnail_url,image_url,url_tags,effective_object_story_id}` +
         `&filtering=${filtering}&limit=500&access_token=${encToken}`;
       let page2 = 0;
       while (adsUrl && page2 < 5) {
@@ -3585,8 +3599,11 @@ function MetaAdsLedger() {
           if (tags) utmMap[ad.id] = extractUtmValue(tags);
           statusMap[ad.id] = ad.effective_status || "UNKNOWN";
           if (ad.campaign && ad.campaign.name) campaignMap[ad.id] = ad.campaign.name;
+          if (ad.campaign && ad.campaign.objective) objectiveMap[ad.id] = ad.campaign.objective;
           if (ad.adset && ad.adset.name) adSetMap[ad.id] = ad.adset.name;
           if (ad.adset && ad.adset.id) adSetIdMap[ad.id] = ad.adset.id;
+          if (ad.adset && ad.adset.optimization_goal) optimizationGoalMap[ad.id] = ad.adset.optimization_goal;
+          if (ad.creative && ad.creative.id) creativeIdMap[ad.id] = ad.creative.id;
           // 投放起始時間:優先用廣告組合(adset)排定的開始時間,最貼近實際開始投放的日期;
           // 抓不到的話(例如舊資料、權限限制)退回用廣告本身的建立時間,當作大概的參考。
           const startRaw = (ad.adset && ad.adset.start_time) || ad.created_time || "";
@@ -3686,6 +3703,33 @@ function MetaAdsLedger() {
       if (rowPostPublish && (!g.postPublishDate || rowPostPublish < g.postPublishDate)) g.postPublishDate = rowPostPublish;
     });
 
+    // 額外保留「未做 UTM 合併」的逐廣告明細，供品牌獨立 Dashboard 共用。
+    // 主報表既有畫面仍然使用下面的 ads，不會因為這份 rawAds 改變任何既有彙總或顯示。
+    const rawAds = detailRows.map((row) => ({
+      name: row.ad_name || "(未命名廣告)",
+      adId: row.ad_id || "",
+      campaign: campaignMap[row.ad_id] || "(未分類活動)",
+      adSet: adSetMap[row.ad_id] || "(未分類廣告組合)",
+      adSetId: adSetIdMap[row.ad_id] || "",
+      objective: objectiveMap[row.ad_id] || "",
+      optimizationGoal: optimizationGoalMap[row.ad_id] || "",
+      creativeId: creativeIdMap[row.ad_id] || "",
+      postId: storyIdMap[row.ad_id] || "",
+      utm: utmMap[row.ad_id] || "",
+      image: thumbMap[row.ad_id] || "",
+      active: statusMap[row.ad_id] === "ACTIVE",
+      startDate: startDateMap[row.ad_id] || null,
+      postPublishDate: adPostPublishMap[row.ad_id] || null,
+      spend: parseFloat(row.spend) || 0,
+      conversions: pickPurchaseValue(row.actions),
+      revenue: pickPurchaseValue(row.action_values),
+      impressions: parseFloat(row.impressions) || 0,
+      clicks: parseFloat(row.clicks) || 0,
+      linkClicks: parseFloat(row.inline_link_clicks) || 0,
+      landingPageViews: pickActionValue(row.actions, ["landing_page_view", "omni_landing_page_view"]),
+      reach: parseFloat(row.reach) || 0,
+    }));
+
     const ads = Object.values(grouped)
       .map((g) => {
         const nameList = [...g.names];
@@ -3725,7 +3769,7 @@ function MetaAdsLedger() {
     return {
       spend: totalSpend, conversions: totalConv, revenue: totalRev,
       impressions: totalImpressions, clicks: totalClicks, linkClicks: totalLinkClicks, reach: totalReach,
-      campaigns: 0, currency, accountId, ads, syncedAt: new Date().toISOString()
+      campaigns: 0, currency, accountId, ads, rawAds, syncedAt: new Date().toISOString()
     };
   }
 
