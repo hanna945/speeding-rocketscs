@@ -636,7 +636,7 @@ const SHOPLINE_WEEK_PREFIX = "shopline-week:";
 const SHOPLINE_MONTH_PREFIX = "shopline-month:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
-const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-product-names"]);
+const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-monthly-budgets", "meta-api-product-names"]);
 const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_WEEK_PREFIX, SHOPLINE_MONTH_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
@@ -1923,7 +1923,7 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 選這個做法是因為兩邊(這裡、WeeklyPlanningSection)原本各自的AI邏輯、loading/error狀態管理
 // 都已經測過沒問題,用ref讓外部觸發內部既有函式,比整個拆掉重寫、把狀態都提到最外層風險小很多。
 const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
-  { ledgerAgg, currencyCode, periodLabel, roasTarget = 3, brands, activeBrandId, onEditRoasTarget, productNames = {}, onEditProductName, adRatioThreshold, onOpenImport, storageKey },
+  { ledgerAgg, currencyCode, periodLabel, roasTarget = 3, monthlyBudget = null, brands, activeBrandId, onEditRoasTarget, onEditMonthlyBudget, productNames = {}, onEditProductName, adRatioThreshold, onOpenImport, storageKey },
   ref
 ) {
   const displayName = (code) => (productNames[code] ? `${code}(${productNames[code]})` : code);
@@ -2064,6 +2064,11 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
           <button className="mal-icon-btn" onClick={() => onEditRoasTarget && onEditRoasTarget(activeBrandId)}>
             ✎ ROAS目標
           </button>
+          {onEditMonthlyBudget && (
+            <button className="mal-icon-btn" onClick={() => onEditMonthlyBudget(activeBrandId)}>
+              💰 月預算
+            </button>
+          )}
           <button className="mal-icon-btn" onClick={generateAiInsights} disabled={aiLoading}>
             {aiLoading ? "計算中…" : "⚙️ 自動判斷"}
           </button>
@@ -2082,12 +2087,15 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         </div>
       </div>
       {(() => {
-        // 狀態標籤:比對整體ROAS對目標的比例,自動判定「超標/優於目標/未達標」——跟參考範例同一組標籤概念。
-        // 「超出預算」這個標籤沒有對應的「預算上限」資料可以比對(現有資料只有實際花費,沒有預算目標本身),
-        // 所以自動判定不會選到它,需要的話你自己看情況口頭補充,不強行套一個猜的結論上去。
+        // 狀態標籤分成兩個維度:
+        // 1) ROAS 對目標判斷「超標/優於目標/未達標」
+        // 2) 月報若有設定月預算，總花費超過預算時另外同時亮起「超出預算」。
+        // 週報不套月預算，避免拿月額度直接跟 7 天花費比較。
         const ratio = overallRoas !== null && roasTarget > 0 ? overallRoas / roasTarget : null;
-        const status = ratio === null ? null : ratio >= 1.5 ? "超標" : ratio >= 1 ? "優於目標" : "未達標";
-        const statusColor = { 超標: "var(--blue)", 優於目標: "var(--green)", 未達標: "var(--red)" };
+        const performanceStatus = ratio === null ? null : ratio >= 1.5 ? "超標" : ratio >= 1 ? "優於目標" : "未達標";
+        const budgetExceeded = monthlyBudget != null && monthlyBudget > 0 && totalSpend > monthlyBudget;
+        const activeStatuses = new Set([performanceStatus, ...(budgetExceeded ? ["超出預算"] : [])].filter(Boolean));
+        const statusColor = { 超出預算: "var(--amber)", 超標: "var(--blue)", 優於目標: "var(--green)", 未達標: "var(--red)" };
         const allTags = ["超出預算", "超標", "未達標", "優於目標"];
         return (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "6px 0 4px" }}>
@@ -2098,9 +2106,9 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
                   fontSize: 12.5,
                   padding: "2px 10px",
                   borderRadius: 999,
-                  fontWeight: tag === status ? 700 : 400,
-                  background: tag === status ? statusColor[tag] : "transparent",
-                  color: tag === status ? "#fff" : "var(--ink-soft)",
+                  fontWeight: activeStatuses.has(tag) ? 700 : 400,
+                  background: activeStatuses.has(tag) ? statusColor[tag] : "transparent",
+                  color: activeStatuses.has(tag) ? "#fff" : "var(--ink-soft)",
                 }}
               >
                 {tag}
@@ -2121,6 +2129,11 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         <div className="mal-card">
           <div className="mal-card-label">總花費</div>
           <div className="mal-card-value">{fmtMoney(totalSpend, currencyCode)}</div>
+          {monthlyBudget != null && monthlyBudget > 0 && (
+            <div style={{ fontSize: 11.5, color: totalSpend > monthlyBudget ? "var(--red)" : "var(--ink-soft)", marginTop: 2 }}>
+              月預算 {fmtMoney(monthlyBudget, currencyCode)} · 已用 {((totalSpend / monthlyBudget) * 100).toFixed(1)}%
+            </div>
+          )}
         </div>
         <div className="mal-card">
           <div className="mal-card-label">帳面利潤</div>
@@ -2349,6 +2362,7 @@ function MetaAdsLedger() {
   const [cpaThresholds, setCpaThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「CPA 過高」標準
   const [adRatioThresholds, setAdRatioThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「廣告費佔比過高」標準(百分比數字,例如 30 代表 30%)
   const [roasTargets, setRoasTargets] = useState({}); // { [brandId]: number } 每個品牌各自的「投放成效報告」ROAS 目標倍數,預設 3
+  const [monthlyBudgets, setMonthlyBudgets] = useState({}); // { [brandId]: number } 每個品牌各自的月廣告預算上限
   const [productNames, setProductNames] = useState({}); // { [brandId]: { [code]: name } } 每個品牌、每個代號各自的中文名稱,顯示成「代號(名稱)」——
   // 沒辦法從行銷活動名稱自動抓出乾淨的產品名稱(命名不夠固定),所以讓使用者自己設定,類似 roasTargets 那樣。
   const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
@@ -2418,7 +2432,7 @@ function MetaAdsLedger() {
 
   useEffect(() => {
     async function loadInitialConfig() {
-      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes, adRatioRes, roasRes, productNamesRes] = await Promise.all([
+      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes, adRatioRes, roasRes, monthlyBudgetRes, productNamesRes] = await Promise.all([
         storage.get("meta-api-account-id").catch(() => null),
         storage.get("meta-api-brands").catch(() => null),
         storage.get("meta-api-remember-token").catch(() => null),
@@ -2426,6 +2440,7 @@ function MetaAdsLedger() {
         storage.get("meta-api-cpa-thresholds").catch(() => null),
         storage.get("meta-api-adratio-thresholds").catch(() => null),
         storage.get("meta-api-roas-targets").catch(() => null),
+        storage.get("meta-api-monthly-budgets").catch(() => null),
         storage.get("meta-api-product-names").catch(() => null),
       ]);
 
@@ -2439,6 +2454,9 @@ function MetaAdsLedger() {
       }
       if (roasRes && roasRes.value) {
         try { setRoasTargets(JSON.parse(roasRes.value)); } catch { /* ignore malformed data */ }
+      }
+      if (monthlyBudgetRes && monthlyBudgetRes.value) {
+        try { setMonthlyBudgets(JSON.parse(monthlyBudgetRes.value)); } catch { /* ignore malformed data */ }
       }
       if (productNamesRes && productNamesRes.value) {
         try { setProductNames(JSON.parse(productNamesRes.value)); } catch { /* ignore malformed data */ }
@@ -2944,6 +2962,30 @@ function MetaAdsLedger() {
     }
     setRoasTargets(updated);
     storage.set("meta-api-roas-targets", JSON.stringify(updated)).catch(() => {});
+  }
+
+  function editMonthlyBudget(brandId) {
+    const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
+    const current = monthlyBudgets[brandId];
+    const input = window.prompt(
+      `設定「${brandName}」的月廣告預算上限。\n月報的總花費超過這個金額時，「超出預算」會自動亮起。\n請直接輸入金額，例如 500000。留空白會清除月預算設定。`,
+      current != null ? String(current) : ""
+    );
+    if (input === null) return;
+    const trimmed = input.trim().replace(/,/g, "");
+    const updated = { ...monthlyBudgets };
+    if (!trimmed) {
+      delete updated[brandId];
+    } else {
+      const num = parseFloat(trimmed);
+      if (isNaN(num) || num <= 0) {
+        setApiError("月預算請輸入一個大於 0 的金額。");
+        return;
+      }
+      updated[brandId] = num;
+    }
+    setMonthlyBudgets(updated);
+    storage.set("meta-api-monthly-budgets", JSON.stringify(updated)).catch(() => {});
   }
 
   // 產品代號本身沒辦法自動對應到「水光直播/水晶萃」這種中文名稱(廣告活動命名不夠固定,
@@ -4614,9 +4656,11 @@ function MetaAdsLedger() {
                   currencyCode={focusData.currency}
                   periodLabel={monthLabel(focusMonth)}
                   roasTarget={roasTargets[activeBrandId]}
+                  monthlyBudget={monthlyBudgets[activeBrandId]}
                   brands={brands}
                   activeBrandId={activeBrandId}
                   onEditRoasTarget={editRoasTarget}
+                  onEditMonthlyBudget={editMonthlyBudget}
                   productNames={productNames[activeBrandId] || {}}
                   onEditProductName={editProductName}
                   adRatioThreshold={adRatioThresholds[activeBrandId]}
