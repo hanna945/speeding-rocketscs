@@ -265,8 +265,13 @@ function weekRangeFromKey(key){
 }
 
 const MASTER_TOKEN_STORAGE_KEY="ad-ledger::meta-api-token";
+const MASTER_TOKEN_SESSION_KEY="ad-ledger::meta-api-token-session";
 function masterMetaToken(){
-  try{return localStorage.getItem(MASTER_TOKEN_STORAGE_KEY)||""}catch{return ""}
+  try{
+    return sessionStorage.getItem(MASTER_TOKEN_SESSION_KEY)||localStorage.getItem(MASTER_TOKEN_STORAGE_KEY)||"";
+  }catch{
+    try{return localStorage.getItem(MASTER_TOKEN_STORAGE_KEY)||""}catch{return ""}
+  }
 }
 async function graphJson(url,context="Meta API"){
   const response=await fetch(url);
@@ -512,13 +517,14 @@ function buildStrategyGroups(record,type){
     group.rows=campaigns.map(row=>strategyRowDecision(group,row,type));
     group.reason=strategyConclusion(group,type);
     return group;
-  }).filter(g=>g.campaignCount>=2).sort((a,b)=>b.totalSpend-a.totalSpend);
+  }).filter(g=>g.campaignCount>=1).sort((a,b)=>b.totalSpend-a.totalSpend);
 }
 function strategyRowDecision(group,row,type){
   if(type==="other")return {compare:"未分類，不參與 Winner",action:"確認目標",tone:"amber",isBest:false};
   const sampleOk=strategySampleOk(row,type),best=group.best,isBest=!!best&&row.campaignId===best.campaignId;
   if(type==="cpa"&&row.conversions===0&&settings.cpa&&row.spend>=settings.cpa*2)return {compare:"已達 CPA 目標 ×2 仍無轉單",action:"🔴 降低 / 停止",tone:"red",isBest:false};
   if(!sampleOk)return {compare:"樣本不足",action:"觀察",tone:"amber",isBest:false};
+  if(group.campaignCount===1)return {compare:"單一 Campaign，無跨策略對照",action:"維持 / 觀察",tone:"blue",isBest:false};
   if(!best)return {compare:"可用樣本不足，暫不判 Winner",action:"觀察",tone:"amber",isBest:false};
   const bestMetric=strategyMetric(best,type),metric=strategyMetric(row,type);
   if(isBest)return {compare:"🏆 本素材目前最佳"+strategyMetricLabel(type)+"策略",action:"↑ 加 10–20%",tone:"green",isBest:true};
@@ -535,7 +541,8 @@ function strategyRowDecision(group,row,type){
 }
 function strategyConclusion(group,type){
   if(type==="other")return "這組 Campaign 無法明確辨識為 CPA / CPC / CPM，先確認 Campaign Objective 或命名後再比較。";
-  if(!group.best)return "目前同素材雖出現在多個 "+strategyMetricLabel(type)+" Campaign，但可用樣本不足，暫不判 Winner。";
+  if(group.campaignCount===1)return "目前這則素材只有 1 個 "+strategyMetricLabel(type)+" Campaign，仍顯示完整數據，但沒有同素材跨 Campaign 對照，因此不判 Winner。";
+  if(!group.best)return "目前同素材出現在多個 "+strategyMetricLabel(type)+" Campaign，但可用樣本不足，暫不判 Winner。";
   if(type==="cpa")return "同素材在「"+group.best.campaign+"」CPA 最低，目前為最佳 CPA 策略。建議優先保留 Winner，CPA 明顯偏高者依差距降低 10–20%，再觀察 2–3 天。";
   if(type==="cpc")return "同素材在「"+group.best.campaign+"」CPC 最低，目前導流成本最有效率；再搭配 CTR、LPV 與 Cost/LPV 判斷點擊品質。";
   return "同素材在「"+group.best.campaign+"」CPM 最低，目前曝光成本最有效率；再搭配 Reach、Frequency 與 CTR 判斷觸及品質。";
@@ -553,7 +560,7 @@ function strategyDiagnosis(group,row,type){
   return "";
 }
 function renderStrategyTables(groups,type,currency){
-  if(!groups.length)return '<div class="empty">目前沒有找到「同一素材同時出現在 2 個以上 '+esc(strategyTypeLabel(type))+' Campaign」的可比較資料。</div>';
+  if(!groups.length)return '<div class="empty">目前沒有找到正在投放的 '+esc(strategyTypeLabel(type))+' 廣告資料。</div>';
   return groups.map(group=>{
     const rows=group.campaigns.map((x,i)=>{
       const v=group.rows[i],diag=strategyDiagnosis(group,x,type),best=v.isBest;
@@ -637,7 +644,7 @@ function render(){
     const groups=buildStrategyGroups(current,strategyType);
     const metricNote=strategyType==="cpa"?"Primary KPI：CPA，越低越好。Winner 以最低 CPA 判斷；ROAS、轉單量作輔助。":strategyType==="cpc"?"Primary KPI：CPC，越低越好。Winner 以最低 CPC 判斷；CTR、LPV、Cost/LPV 作輔助。":strategyType==="cpm"?"Primary KPI：CPM，越低越好。Winner 以最低 CPM 判斷；Reach、Frequency、CTR 作輔助。":"未分類 Campaign 不參與 Winner，請先確認 Objective / Optimization Goal 或命名。";
     const tabs=["cpa","cpc","cpm","other"].map(t=>'<button class="strategy-tab '+(strategyType===t?"active":"")+'" onclick="setStrategyType(\''+t+'\')">'+(t==="cpa"?"CPA 廣告":t==="cpc"?"CPC 廣告":t==="cpm"?"CPM / 品牌曝光":"其他")+' <span class="small">('+counts[t]+')</span></button>').join("");
-    $("app").innerHTML='<div class="section"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin-bottom:4px">📣 廣告怎麼調</h2><div class="small">同一則廣告素材，只比較相同投放目標的 Campaign。CPA / CPC / CPM 不會混在一起。</div></div><div class="period-switch"><button class="btn '+(adjustmentPeriod==="month"?"primary":"")+'" onclick="setAdjustmentPeriod(\'month\')">📅 月資料</button><button class="btn '+(adjustmentPeriod==="week"?"primary":"")+'" onclick="setAdjustmentPeriod(\'week\')">🗓 週資料</button></div></div><div class="strategy-tabs">'+tabs+'</div><div class="panel" style="margin-bottom:16px"><strong>'+esc(strategyTypeLabel(strategyType))+'</strong><div class="small">'+esc(metricNote)+'</div><div class="small">期間：'+esc(current.range?.label||"")+' · '+esc(current.range?.since||"")+' ~ '+esc(current.range?.until||"")+'</div></div>'+renderStrategyTables(groups,strategyType,current.currency)+'</div>';
+    $("app").innerHTML='<div class="section"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin-bottom:4px">📣 廣告怎麼調</h2><div class="small">正在投放的廣告都會顯示；同素材有多個相同投放目標 Campaign 時才做 Winner 比較。CPA / CPC / CPM 不會混在一起。</div></div><div class="period-switch"><button class="btn '+(adjustmentPeriod==="month"?"primary":"")+'" onclick="setAdjustmentPeriod(\'month\')">📅 月資料</button><button class="btn '+(adjustmentPeriod==="week"?"primary":"")+'" onclick="setAdjustmentPeriod(\'week\')">🗓 週資料</button></div></div><div class="strategy-tabs">'+tabs+'</div><div class="panel" style="margin-bottom:16px"><strong>'+esc(strategyTypeLabel(strategyType))+'</strong><div class="small">'+esc(metricNote)+'</div><div class="small">期間：'+esc(current.range?.label||"")+' · '+esc(current.range?.since||"")+' ~ '+esc(current.range?.until||"")+'</div></div>'+renderStrategyTables(groups,strategyType,current.currency)+'</div>';
     return;
   }
 

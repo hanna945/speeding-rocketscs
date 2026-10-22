@@ -2939,8 +2939,13 @@ function MetaAdsLedger() {
       .catch(() => {});
   }, [showLedgerModal, activeBrandId]);
   useEffect(() => {
-    if (rememberToken && apiToken.trim()) {
-      storage.set("meta-api-token", apiToken.trim()).catch(() => {});
+    const liveToken = apiToken.trim();
+    try {
+      if (liveToken) sessionStorage.setItem("ad-ledger::meta-api-token-session", liveToken);
+      else sessionStorage.removeItem("ad-ledger::meta-api-token-session");
+    } catch {}
+    if (rememberToken && liveToken) {
+      storage.set("meta-api-token", liveToken).catch(() => {});
     }
   }, [apiToken, rememberToken]);
 
