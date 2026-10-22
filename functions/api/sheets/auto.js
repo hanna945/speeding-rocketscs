@@ -3,6 +3,7 @@
 
 import { getGoogleAccessToken } from "../../_shared/googleAuth.js";
 import { syncAccountLedger, todayInTaiwan } from "../../_shared/sheetSync.js";
+import { getDefaultSheetId } from "../../_shared/brandDefaults.js";
 
 export async function onRequestGet({ env, data }) {
   const credential = data.credential;
@@ -43,7 +44,8 @@ export async function onRequestGet({ env, data }) {
     const lastSync = await env.REPORT_KV.get(`last-sync-date:${accountId}`);
     if (lastSync === today) { skipped.push(accountId); continue; }
 
-    const sheetId = await env.REPORT_KV.get(`sheet-map:${accountId}`);
+    let sheetId = await env.REPORT_KV.get(`sheet-map:${accountId}`);
+    if (!sheetId) sheetId = getDefaultSheetId(accountId);
     if (!sheetId) { skipped.push(accountId); continue; }
 
     try {
