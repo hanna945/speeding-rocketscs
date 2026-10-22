@@ -1,7 +1,7 @@
 // Read Google Sheets monthly tabs, parse them with semantic/brand-aware rules,
 // and persist only validated results.
 
-import { fetchSheetMonthValues, sheetsValuesToMatrix } from "./googleAuth.js";
+import { fetchSheetMonthValues, fetchSpreadsheetSheetTitles, sheetsValuesToMatrix } from "./googleAuth.js";
 import { parseLedgerSheet } from "./ledgerParser.js";
 
 export const MONTH_TABS = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
@@ -13,12 +13,20 @@ export async function syncAccountLedger(env, accessToken, accountId, sheetId, ye
   const warnings = [];
   const validationErrors = [];
 
-  // For the current year, do not treat future calendar months as missing-sheet errors.
-  // Historical years still scan all 12 months; future years keep the old behavior.
+  // Different brands start in different months and may never have Jan-Dec tabs.
+  // First ask Google which tabs actually exist, then sync only real month tabs.
+  // This avoids turning "brand launched in July" into six fake Jan-Jun errors.
+  const existingTitles = await fetchSpreadsheetSheetTitles(accessToken, sheetId);
+  const existingMonthTabs = MONTH_TABS.filter((tab) => existingTitles.includes(tab));
+
   const twNow = new Date(Date.now() + 8 * 3600 * 1000);
   const twYear = twNow.getUTCFullYear();
   const twMonth = twNow.getUTCMonth() + 1;
-  const tabsToSync = year === twYear ? MONTH_TABS.slice(0, twMonth) : MONTH_TABS;
+  const tabsToSync = existingMonthTabs.filter((tab) => {
+    if (year !== twYear) return true;
+    const monthNum = MONTH_TABS.indexOf(tab) + 1;
+    return monthNum <= twMonth;
+  });
 
   for (const tab of tabsToSync) {
     let values;
