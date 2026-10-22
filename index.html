@@ -1703,6 +1703,103 @@ function generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget) {
   return insights;
 }
 
+
+function generateRuleJudgments(rows, roasTarget) {
+  const target = roasTarget > 0 ? roasTarget : 3;
+  const result = {};
+  (rows || []).forEach((r) => {
+    if (!(r.spend > 0)) {
+      result[r.code] = { icon: "⚪", label: "無投放資料" };
+      return;
+    }
+    const roas = r.revenue > 0 ? r.revenue / r.spend : 0;
+    const conversions = Number(r.conversions || 0);
+    const spendShare = Number(r.spendShare || 0);
+    const profit = Number(r.profit || 0);
+
+    if (profit < 0) {
+      result[r.code] = { icon: "🔴", label: "帳面虧損，優先調整" };
+    } else if (conversions < 10) {
+      result[r.code] = roas >= target
+        ? { icon: "🟡", label: "效率達標但樣本少，先觀察" }
+        : { icon: "🟡", label: "樣本不足，暫不放大" };
+    } else if (roas >= target * 1.3) {
+      result[r.code] = { icon: "🟢", label: "主力系列，可逐步擴量" };
+    } else if (roas >= target) {
+      result[r.code] = { icon: "🟢", label: "達標，維持投放" };
+    } else if (roas >= target * 0.75) {
+      result[r.code] = { icon: "🟠", label: "接近目標，先優化" };
+    } else if (spendShare >= 30) {
+      result[r.code] = { icon: "🔴", label: "吃預算但未達標，建議降量" };
+    } else {
+      result[r.code] = { icon: "🔴", label: "低效，建議降預算或換素材" };
+    }
+  });
+  return result;
+}
+
+function generateRulePlanning(rows, totalRevenue, totalSpend, roasTarget, currencyCode) {
+  const target = roasTarget > 0 ? roasTarget : 3;
+  const enriched = (rows || [])
+    .filter((r) => r.spend > 0)
+    .map((r) => ({
+      ...r,
+      roas: r.revenue > 0 ? r.revenue / r.spend : 0,
+      spendShare: totalSpend > 0 ? (r.spend / totalSpend) * 100 : 0,
+    }));
+  const overallRoas = totalSpend > 0 ? totalRevenue / totalSpend : null;
+  const strong = enriched.filter((r) => r.conversions >= 10 && r.roas >= target * 1.3).sort((a,b) => b.roas-a.roas);
+  const weak = enriched.filter((r) => r.conversions >= 10 && r.roas < target * 0.75).sort((a,b) => b.spend-a.spend);
+  const learning = enriched.filter((r) => r.conversions < 10).sort((a,b) => b.spend-a.spend);
+  const actionItems = [];
+  const materialIssues = [];
+
+  if (strong.length) {
+    const r = strong[0];
+    actionItems.push({
+      title: `${r.code} 優先逐步擴量`,
+      description: `ROAS ${r.roas.toFixed(2)}x，高於目標 ${target}x，轉單 ${Math.round(r.conversions)} 筆。建議單次預算先增加 10–15%，觀察 2–3 天後再決定下一次調整。`,
+    });
+  }
+  if (weak.length) {
+    const r = weak[0];
+    actionItems.push({
+      title: `先收斂 ${r.code} 的低效花費`,
+      description: `目前花費 ${fmtMoney(r.spend, currencyCode)}，佔總花費 ${r.spendShare.toFixed(1)}%，ROAS 僅 ${r.roas.toFixed(2)}x。建議先降量，把預算移往已達標系列。`,
+    });
+  }
+  if (overallRoas !== null) {
+    actionItems.push({
+      title: overallRoas >= target ? "整體達標，維持漸進調整" : "整體未達標，先改善效率再擴量",
+      description: overallRoas >= target
+        ? `整體 ROAS ${overallRoas.toFixed(2)}x 已達目標 ${target}x。避免一次大幅加預算，優先對穩定達標系列小幅放大。`
+        : `整體 ROAS ${overallRoas.toFixed(2)}x 低於目標 ${target}x。先處理高花費低 ROAS 系列，再評估擴量。`,
+    });
+  }
+
+  weak.slice(0, 3).forEach((r) => {
+    materialIssues.push({
+      title: `${r.code} ROAS 未達標`,
+      status: r.spendShare >= 30 ? "red" : "yellow",
+      category: "投放效率",
+      content: `花費 ${fmtMoney(r.spend, currencyCode)}，花費佔比 ${r.spendShare.toFixed(1)}%，ROAS ${r.roas.toFixed(2)}x，低於目標 ${target}x。建議先檢查素材疲勞、受眾與頁面轉換，再決定是否降預算。`,
+    });
+  });
+  learning.slice(0, 2).forEach((r) => {
+    materialIssues.push({
+      title: `${r.code} 樣本仍不足`,
+      status: "yellow",
+      category: "資料量",
+      content: `目前轉單 ${Math.round(r.conversions)} 筆、ROAS ${r.roas.toFixed(2)}x。樣本未滿 10 筆前先避免大幅調整，除非已出現明顯虧損或高花費零轉換。`,
+    });
+  });
+
+  if (!actionItems.length) {
+    actionItems.push({ title: "目前維持觀察", description: "現有資料沒有出現需要立即大幅調整的訊號，先維持投放並累積更多轉換樣本。" });
+  }
+  return { actionItems, materialIssues };
+}
+
 // 匯出「投放成效」報告成 Word 檔——用瀏覽器版的 docx 套件(CDN載入,不用後端),
 // 圖表(長條圖)在 Word 裡不好還原,所以匯出版本只保留卡片數字、明細表格、圖例文字、自動摘要,
 // 這些才是會議上真的要看/要編輯的內容,長條圖本身在畫面上看就好。
@@ -1838,7 +1935,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
   const [rowJudgments, setRowJudgments] = useState({}); // { 代號: {icon, label} } AI生成的逐代號短判斷,跟insights同一次呼叫產生
   const [editText, setEditText] = useState("");
   const [aiSaveStatus, setAiSaveStatus] = useState("");
-  // AI分析結果(insights+逐代號判斷)存到雲端,不然重新整理/換裝置就不見了,每次都要重新生成——
+  // 自動判斷結果(insights+逐代號判斷)存到雲端,不然重新整理/換裝置就不見了——
   // key跟「週報告」同一套設計,依品牌+週期分開存,彼此不會互相蓋掉。只讀不寫silent失敗:
   // 讀取失敗就當作「還沒有存檔」處理,不會用錯誤訊息打斷使用者第一次打開頁面的體驗。
   useEffect(() => {
@@ -1899,37 +1996,20 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
     return { label: r.code, value: roas, color: tier ? tier.color : "var(--ink-soft)" };
   });
   const insights = generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget);
-  const displayInsights = aiInsights || insights; // 生成過AI版本就顯示AI版,不然退回規則統計版,永遠有東西可以看。
+  const ruleJudgments = generateRuleJudgments(rows, roasTarget);
+  const displayInsights = aiInsights || insights;
+  const displayRowJudgments = { ...ruleJudgments, ...rowJudgments };
 
-  async function generateAiInsights() {
+  function generateAiInsights() {
     setAiLoading(true);
     setAiError("");
     try {
-      const res = await fetch("/api/ai/analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...teamKeyHeaders() },
-        body: JSON.stringify({
-          brandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "",
-          periodLabel,
-          roasTarget,
-          totals: { spend: totalSpend, revenue: totalRevenue, conversions: totalConversions, roas: overallRoas },
-          rows: chartRows.map((r) => ({
-            code: r.code,
-            spend: r.spend,
-            revenue: r.revenue,
-            roas: r.spend > 0 ? r.revenue / r.spend : null,
-            conversions: r.conversions,
-            spendShare: r.spendShare,
-          })),
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data || data.error) throw new Error((data && data.error) || `狀態碼 ${res.status}`);
-      if (!Array.isArray(data.insights) || !data.insights.length) throw new Error("AI 沒有回傳有效的分析內容。");
-      setAiInsights(data.insights);
-      setRowJudgments(data.rowJudgments || {});
+      const nextInsights = generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget);
+      const nextJudgments = generateRuleJudgments(rows, roasTarget);
+      setAiInsights(nextInsights);
+      setRowJudgments(nextJudgments);
       setIsEditingInsights(false);
-      persistAiState(data.insights, data.rowJudgments || {});
+      persistAiState(nextInsights, nextJudgments);
     } catch (e) {
       setAiError(e.message || String(e));
     } finally {
@@ -1952,9 +2032,9 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
     persistAiState(parsed, rowJudgments);
   }
   function editRowJudgment(code) {
-    const current = rowJudgments[code];
+    const current = rowJudgments[code] || ruleJudgments[code];
     const input = window.prompt(
-      `設定「${code}」的判斷標籤(格式建議:emoji + 短標籤,例如「🟢 主力成交」「🔴 成本偏高,需重做素材」)。\n留空白會清除這個代號的判斷。`,
+      `設定「${code}」的判斷標籤(格式建議:emoji + 短標籤,例如「🟢 主力成交」「🔴 成本偏高,需重做素材」)。\n留空白會恢復系統自動判斷。`,
       current ? `${current.icon} ${current.label}` : ""
     );
     if (input === null) return;
@@ -1985,7 +2065,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
             ✎ ROAS目標
           </button>
           <button className="mal-icon-btn" onClick={generateAiInsights} disabled={aiLoading}>
-            {aiLoading ? "🤖 生成中…" : "🤖 AI 分析"}
+            {aiLoading ? "計算中…" : "⚙️ 自動判斷"}
           </button>
           <button
             className="mal-icon-btn"
@@ -2030,7 +2110,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         );
       })()}      {aiError && (
         <p style={{ fontSize: 12, color: "var(--red)", margin: "8px 0 0" }}>
-          AI 分析失敗:{aiError}(下面繼續顯示規則統計版,不影響其他功能)
+          自動判斷失敗:{aiError}(下方仍顯示既有統計資料,不影響其他功能)
         </p>
       )}
       <div className="mal-cards" style={{ marginBottom: 20 }}>
@@ -2091,7 +2171,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
                   <td>{fmtMoney(r.profit, currencyCode)}</td>
                   <td>{r.aov !== null ? fmtMoney(r.aov, currencyCode) : "—"}</td>
                   <td style={{ cursor: "pointer" }} title="點一下可以設定/編輯這個代號的判斷" onClick={() => editRowJudgment(r.code)}>
-                    {rowJudgments[r.code] ? `${rowJudgments[r.code].icon} ${rowJudgments[r.code].label}` : <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>+ 加判斷</span>}
+                    {displayRowJudgments[r.code] ? `${displayRowJudgments[r.code].icon} ${displayRowJudgments[r.code].label}` : <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>+ 加判斷</span>}
                   </td>
                 </tr>
               );
@@ -2152,7 +2232,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
           <div className="mal-insight-box-title">
             📋 重點觀察
             <span style={{ fontWeight: 400, fontSize: 11, color: "var(--ink-soft)" }}>
-              ({aiInsights ? "AI 生成" : "規則統計產生,非 AI 生成文字"})
+              (本地規則判斷，不使用 API)
             </span>
             <button
               className="mal-icon-btn"
@@ -3577,58 +3657,42 @@ function MetaAdsLedger() {
     // 不會清掉使用者已經手動寫好/編輯過的項目,AI生成的項目使用者一樣可以編輯或刪除。
     // 「下週操作方向」「素材調整方向」兩個子區塊的AI按鈕都呼叫這同一個函式——同一份期間數據,
     // 沒必要因為使用者按了兩個不同按鈕就打兩次OpenAI,拿到回應後兩個子區塊會一起更新。
-    async function runAiMaterialAnalysis() {
+    function runAiMaterialAnalysis() {
       if (!data) return;
       setAiLoading(true);
       setAiError("");
       try {
         const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads || [], minSpend || 500);
-        if (!rows.length) throw new Error("目前沒有足夠的資料可以分析。");
-        const totalConversions = rows.reduce((s, r) => s + r.conversions, 0);
-        const res = await fetch("/api/ai/material-issues", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...teamKeyHeaders() },
-          body: JSON.stringify({
-            brandName: brandName || "",
-            periodLabel,
-            roasTarget: roasTarget || 3,
-            totals: { spend: totalSpend, revenue: totalRevenue, conversions: totalConversions, roas: totalSpend > 0 ? totalRevenue / totalSpend : null },
-            rows: rows.map((r) => ({
-              code: r.code,
-              spend: r.spend,
-              revenue: r.revenue,
-              roas: r.spend > 0 && r.revenue > 0 ? r.revenue / r.spend : null,
-              conversions: r.conversions,
-              spendShare: totalSpend > 0 ? (r.spend / totalSpend) * 100 : 0,
-            })),
-          }),
-        });
-        const resData = await res.json().catch(() => null);
-        if (!res.ok || !resData || resData.error) throw new Error((resData && resData.error) || `狀態碼 ${res.status}`);
-        const newActionItems = Array.isArray(resData.actionItems)
-          ? resData.actionItems.map((it) => ({ id: Date.now() + Math.random(), title: it.title || "", description: it.description || "" }))
-          : [];
-        const newMaterialIssues = Array.isArray(resData.materialIssues)
-          ? resData.materialIssues.map((it) => ({
-              id: Date.now() + Math.random(),
-              title: it.title || "",
-              status: it.status === "red" || it.status === "yellow" || it.status === "green" ? it.status : "red",
-              category: it.category || "",
-              content: it.content || "",
-            }))
-          : [];
-        if (!newActionItems.length && !newMaterialIssues.length) {
-          setAiError("AI 沒有回傳有效的分析內容,可能是資料量不足,可以稍後再試。");
-          return;
-        }
+        if (!rows.length) throw new Error("目前沒有足夠的資料可以判斷。");
+
+        const generated = generateRulePlanning(rows, totalRevenue, totalSpend, roasTarget || 3, currencyCode);
+        const now = Date.now();
+        const newActionItems = generated.actionItems.map((it, i) => ({
+          id: now + i,
+          title: it.title || "",
+          description: it.description || "",
+          generatedByRules: true,
+        }));
+        const newMaterialIssues = generated.materialIssues.map((it, i) => ({
+          id: now + 100 + i,
+          title: it.title || "",
+          status: it.status === "red" || it.status === "yellow" || it.status === "green" ? it.status : "yellow",
+          category: it.category || "",
+          content: it.content || "",
+          generatedByRules: true,
+        }));
+
         scheduleSave({
           ...data,
-          actionItems: [...data.actionItems, ...newActionItems],
-          materialIssues: [...data.materialIssues, ...newMaterialIssues],
+          actionItems: [
+            ...data.actionItems.filter((it) => !it.generatedByRules),
+            ...newActionItems,
+          ],
+          materialIssues: [
+            ...data.materialIssues.filter((it) => !it.generatedByRules),
+            ...newMaterialIssues,
+          ],
         });
-        if (!newMaterialIssues.length) {
-          setAiError("這段期間沒有挑出特別需要調整的系列(素材調整方向沒有新增項目),可能整體表現都還算健康——下週操作方向已經正常生成。");
-        }
       } catch (e) {
         setAiError(e.message || String(e));
       } finally {
@@ -3729,7 +3793,7 @@ function MetaAdsLedger() {
           <div className="mal-plan-block-header">
             <div className="mal-plan-block-title">素材調整方向</div>
             <button className="mal-icon-btn" onClick={runAiMaterialAnalysis} disabled={aiLoading || !ads}>
-              {aiLoading ? "🤖 分析中…" : "🤖 AI 分析"}
+              {aiLoading ? "計算中…" : "⚙️ 自動判斷"}
             </button>
           </div>
           {data.materialIssues.map((m) => (
@@ -3753,7 +3817,7 @@ function MetaAdsLedger() {
           <div className="mal-plan-block-header">
             <div className="mal-plan-block-title">下週操作方向</div>
             <button className="mal-icon-btn" onClick={runAiMaterialAnalysis} disabled={aiLoading || !ads}>
-              {aiLoading ? "🤖 分析中…" : "🤖 AI 分析"}
+              {aiLoading ? "計算中…" : "⚙️ 自動判斷"}
             </button>
           </div>
           {data.actionItems.map((item, i) => (
@@ -4539,7 +4603,7 @@ function MetaAdsLedger() {
               <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
               <div className="mal-combined-ai-row">
                 <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(monthlyAdReportRef, monthlyPlanRef)}>
-                  🤖 一次 AI 分析(投放成效＋週報告)
+                  ⚙️ 一次自動判斷(投放成效＋週報告)
                 </button>
               </div>
               <div data-pdf-section="ad-performance">
@@ -4768,7 +4832,7 @@ function MetaAdsLedger() {
 
                 <div className="mal-combined-ai-row">
                   <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(weeklyAdReportRef, weeklyPlanRef)}>
-                    🤖 一次 AI 分析(投放成效＋週報告)
+                    ⚙️ 一次自動判斷(投放成效＋週報告)
                   </button>
                 </div>
 
