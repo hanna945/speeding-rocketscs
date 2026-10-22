@@ -2087,9 +2087,10 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         </div>
       </div>
       {(() => {
-        // 狀態標籤:比對整體ROAS對目標的比例,自動判定「超標/優於目標/未達標」——跟參考範例同一組標籤概念。
-        // 「超出預算」這個標籤沒有對應的「預算上限」資料可以比對(現有資料只有實際花費,沒有預算目標本身),
-        // 所以自動判定不會選到它,需要的話你自己看情況口頭補充,不強行套一個猜的結論上去。
+        // 狀態標籤分成兩個維度:
+        // 1) ROAS 對目標判斷「超標/優於目標/未達標」
+        // 2) 月報若有設定月預算，總花費超過預算時另外同時亮起「超出預算」。
+        // 週報不套月預算，避免拿月額度直接跟 7 天花費比較。
         const ratio = overallRoas !== null && roasTarget > 0 ? overallRoas / roasTarget : null;
         const performanceStatus = ratio === null ? null : ratio >= 1.5 ? "超標" : ratio >= 1 ? "優於目標" : "未達標";
         const budgetExceeded = monthlyBudget != null && monthlyBudget > 0 && totalSpend > monthlyBudget;
