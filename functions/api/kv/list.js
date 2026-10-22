@@ -16,6 +16,7 @@ export async function onRequestGet({ request, env, data }) {
   const keys = list.keys
     .map((k) => k.name)
     .filter((name) => {
+      if (name.startsWith("autopilot-history:") && !env.TEAM_CREDENTIALS && !env.TEAM_SECRET) return false;
       const brandId = extractBrandFromKey(name);
       return !brandId || canAccessBrand(credential, brandId);
     });

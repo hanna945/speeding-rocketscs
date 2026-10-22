@@ -18,8 +18,38 @@ function targetKeyFromRequest(request) {
 }
 
 export async function onRequest({ request, env, next, data }) {
+  const targetKey = targetKeyFromRequest(request);
+  // New financial snapshots must not inherit the legacy unauthenticated fallback.
+  if (targetKey && targetKey.startsWith("autopilot-history:")) {
+    if (!env.TEAM_CREDENTIALS && !env.TEAM_SECRET && !env.PREVIEW_TEAM_SECRET) {
+      return new Response(JSON.stringify({ error: "Shadow History requires configured team authentication" }), {
+        status: 503, headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (!/^autopilot-history:[0-9]+::/.test(targetKey)) {
+      return new Response(JSON.stringify({ error: "invalid history scope" }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
   let credential;
-  if (env.TEAM_CREDENTIALS) {
+  const provided = request.headers.get("X-Team-Key") || "";
+  const previewSecret = env.PREVIEW_TEAM_SECRET || "";
+  const previewBrandId = String(env.PREVIEW_TEAM_BRAND_ID || "2157995930925784").trim();
+  if (previewSecret && provided === previewSecret) {
+    if (!previewBrandId) {
+      return new Response(JSON.stringify({ error: "Preview authentication is missing PREVIEW_TEAM_BRAND_ID" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const previewBrandName = String(env.PREVIEW_TEAM_BRAND_NAME || "H&J").trim() || "H&J";
+    credential = {
+      name: previewBrandName,
+      brands: [previewBrandId],
+      roster: [{ id: previewBrandId, name: previewBrandName }],
+    };
+  } else if (env.TEAM_CREDENTIALS) {
     credential = resolveCredential(request, env);
     if (!credential) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -27,11 +57,15 @@ export async function onRequest({ request, env, next, data }) {
         headers: { "Content-Type": "application/json" },
       });
     }
+  } else if (previewSecret) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   } else {
     // 還沒設定 TEAM_CREDENTIALS 就退回舊的單一密碼(TEAM_SECRET)機制,行為跟這個功能還沒上線前一樣。
     const secret = env.TEAM_SECRET;
     if (secret) {
-      const provided = request.headers.get("X-Team-Key") || "";
       if (provided !== secret) {
         return new Response(JSON.stringify({ error: "unauthorized" }), {
           status: 401,
@@ -42,7 +76,6 @@ export async function onRequest({ request, env, next, data }) {
     credential = { name: "", brands: "*" };
   }
 
-  const targetKey = targetKeyFromRequest(request);
   if (targetKey) {
     const brandId = extractBrandFromKey(targetKey);
     if (brandId && !canAccessBrand(credential, brandId)) {
