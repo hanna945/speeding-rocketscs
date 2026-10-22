@@ -1800,6 +1800,332 @@ function generateRulePlanning(rows, totalRevenue, totalSpend, roasTarget, curren
   return { actionItems, materialIssues };
 }
 
+
+function computeDeliveryMetrics(record) {
+  if (!record) return null;
+  const spend = Number(record.spend || 0);
+  const revenue = Number(record.revenue || 0);
+  const conversions = Number(record.conversions || 0);
+  const impressions = Number(record.impressions || 0);
+  const clicks = Number(record.clicks || 0);
+  const linkClicks = Number(record.linkClicks || 0);
+  const reach = Number(record.reach || 0);
+  const effectiveClicks = linkClicks > 0 ? linkClicks : clicks;
+  return {
+    spend,
+    revenue,
+    conversions,
+    impressions,
+    clicks,
+    linkClicks,
+    reach,
+    roas: spend > 0 ? revenue / spend : null,
+    cpa: conversions > 0 ? spend / conversions : null,
+    ctr: impressions > 0 ? (effectiveClicks / impressions) * 100 : null,
+    cpm: impressions > 0 ? (spend / impressions) * 1000 : null,
+    cvr: effectiveClicks > 0 ? (conversions / effectiveClicks) * 100 : null,
+    frequency: reach > 0 ? impressions / reach : null,
+  };
+}
+
+function metricPctDelta(curr, prev) {
+  if (curr === null || curr === undefined || prev === null || prev === undefined || prev === 0) return null;
+  return ((curr - prev) / prev) * 100;
+}
+
+function decisionAdKey(ad) {
+  return [ad && ad.utm, ad && ad.campaign, ad && ad.adSet, ad && ad.name].filter(Boolean).join("||");
+}
+
+function adDecision(ad, prevAd, roasTarget, cpaTarget) {
+  const target = roasTarget > 0 ? roasTarget : 3;
+  const spend = Number(ad && ad.spend || 0);
+  const conversions = Number(ad && ad.conversions || 0);
+  const revenue = Number(ad && ad.revenue || 0);
+  const roas = spend > 0 ? revenue / spend : 0;
+  const cpa = conversions > 0 ? spend / conversions : null;
+  const impressions = Number(ad && ad.impressions || 0);
+  const clicks = Number(ad && (ad.linkClicks || ad.clicks) || 0);
+  const reach = Number(ad && ad.reach || 0);
+  const ctr = impressions > 0 ? (clicks / impressions) * 100 : null;
+  const frequency = reach > 0 ? impressions / reach : null;
+
+  let prevCtr = null;
+  if (prevAd) {
+    const pImp = Number(prevAd.impressions || 0);
+    const pClicks = Number(prevAd.linkClicks || prevAd.clicks || 0);
+    prevCtr = pImp > 0 ? (pClicks / pImp) * 100 : null;
+  }
+  const ctrDelta = metricPctDelta(ctr, prevCtr);
+  const likelyFatigue = ctrDelta !== null && ctrDelta <= -25 && (frequency === null || frequency >= 2.2);
+  const campaignName = String(ad && ad.campaign || "").toUpperCase();
+  const autoAllocated = /(^|[^A-Z])(CBO|ASC)([^A-Z]|$)|ADVANTAGE\+|ADV\+/.test(campaignName);
+
+  if (cpaTarget > 0 && conversions === 0 && spend >= cpaTarget * 2) {
+    return { code: "REDUCE", icon: "🔴", label: "REDUCE", reason: `已花費 ${fmtMoney(spend)}、仍無轉單，已超過目標 CPA ×2。` };
+  }
+  if (likelyFatigue) {
+    return { code: "REFRESH", icon: "🟠", label: "REFRESH", reason: `CTR 較前期下降 ${Math.abs(ctrDelta).toFixed(0)}%，優先換素材而不是直接砍整組。` };
+  }
+  if (conversions < 10) {
+    return { code: "MONITOR", icon: "🟡", label: "MONITOR", reason: `目前 ${conversions} 筆轉單，樣本未滿 10 筆，先不要過度解讀。` };
+  }
+  if (autoAllocated) {
+    if (roas >= target) {
+      return { code: "KEEP", icon: "🟢", label: "KEEP", reason: `此活動疑似 CBO / ASC / Advantage+；單支平均值不適合獨立擴量。ROAS ${roas.toFixed(2)}x 已達標，保留並從 Campaign 層級判斷預算。` };
+    }
+    return { code: "MONITOR", icon: "🟡", label: "MONITOR", reason: `此活動疑似 CBO / ASC / Advantage+；先看 Campaign 整體與邊際成本，不因單支平均 CPA/ROAS 直接停掉。` };
+  }
+  if (roas >= target * 1.3 && (!cpaTarget || cpa === null || cpa <= cpaTarget)) {
+    return { code: "SCALE", icon: "🟢", label: "SCALE", reason: `ROAS ${roas.toFixed(2)}x，高於目標 ${target}x，建議單次 +10–15%。` };
+  }
+  if (roas >= target) {
+    return { code: "KEEP", icon: "🟢", label: "KEEP", reason: `ROAS ${roas.toFixed(2)}x 已達目標，維持投放。` };
+  }
+  if ((cpaTarget > 0 && cpa !== null && cpa > cpaTarget * 1.25) || roas < target * 0.75) {
+    return { code: "REDUCE", icon: "🔴", label: "REDUCE", reason: `已有足夠樣本且效率明顯低於目標，建議降量或停掉低效素材。` };
+  }
+  return { code: "MONITOR", icon: "🟡", label: "MONITOR", reason: `接近目標但尚未穩定，先觀察並做小幅優化。` };
+}
+
+function buildDecisionIntelligence(currentRecord, previousRecord, roasTarget, cpaTarget, monthlyBudget, periodType) {
+  const current = computeDeliveryMetrics(currentRecord);
+  const previous = computeDeliveryMetrics(previousRecord);
+  if (!current) return null;
+  const target = roasTarget > 0 ? roasTarget : 3;
+  const deltas = {};
+  ["spend", "revenue", "conversions", "roas", "cpa", "ctr", "cpm", "cvr", "frequency"].forEach((k) => {
+    deltas[k] = previous ? metricPctDelta(current[k], previous[k]) : null;
+  });
+
+  const anomalies = [];
+  const reliable = current.conversions >= 10 || current.spend >= Math.max(5000, (cpaTarget || 0) * 3);
+
+  if (periodType === "month" && monthlyBudget > 0) {
+    const usage = (current.spend / monthlyBudget) * 100;
+    if (usage > 100) anomalies.push({ level: "red", title: "月預算已超支", detail: `目前使用 ${usage.toFixed(1)}%，超出 ${fmtMoney(current.spend - monthlyBudget)}。` });
+    else if (usage >= 90) anomalies.push({ level: "yellow", title: "月預算接近上限", detail: `目前已使用 ${usage.toFixed(1)}%，剩餘 ${fmtMoney(monthlyBudget - current.spend)}。` });
+  }
+
+  if (current.roas !== null && current.roas < target) {
+    anomalies.push({ level: current.roas < target * 0.75 ? "red" : "yellow", title: "整體 ROAS 未達標", detail: `目前 ${current.roas.toFixed(2)}x，目標 ${target}x。` });
+  }
+  if (reliable && deltas.roas !== null && deltas.roas <= -20) {
+    anomalies.push({ level: "red", title: "ROAS 明顯下滑", detail: `較前期下降 ${Math.abs(deltas.roas).toFixed(1)}%，已超出一般小波動範圍。` });
+  }
+  if (reliable && deltas.cpa !== null && deltas.cpa >= 20) {
+    anomalies.push({ level: "red", title: "CPA 明顯上升", detail: `較前期增加 ${deltas.cpa.toFixed(1)}%，需要找出成本上升來源。` });
+  }
+  if (deltas.ctr !== null && deltas.ctr <= -20) {
+    anomalies.push({ level: current.frequency !== null && current.frequency >= 2.5 ? "red" : "yellow", title: "CTR 下滑", detail: `較前期下降 ${Math.abs(deltas.ctr).toFixed(1)}%${current.frequency !== null ? `，目前頻率 ${current.frequency.toFixed(2)}` : ""}，可能是素材疲勞或吸引力下降。` });
+  }
+  if (deltas.cpm !== null && deltas.cpm >= 20) {
+    anomalies.push({ level: "yellow", title: "CPM 上升", detail: `較前期增加 ${deltas.cpm.toFixed(1)}%，偏向流量成本／競價環境變貴。` });
+  }
+  if (deltas.cvr !== null && deltas.cvr <= -20) {
+    anomalies.push({ level: "red", title: "CVR 下滑", detail: `較前期下降 ${Math.abs(deltas.cvr).toFixed(1)}%，優先檢查商品頁、優惠與結帳轉換。` });
+  }
+
+  let score = 100;
+  if (current.roas !== null && current.roas < target) score -= current.roas < target * 0.75 ? 22 : 10;
+  if (deltas.roas !== null && deltas.roas <= -20) score -= 12;
+  if (deltas.cpa !== null && deltas.cpa >= 20) score -= 10;
+  if (deltas.ctr !== null && deltas.ctr <= -20) score -= 8;
+  if (deltas.cpm !== null && deltas.cpm >= 20) score -= 5;
+  if (deltas.cvr !== null && deltas.cvr <= -20) score -= 12;
+  if (periodType === "month" && monthlyBudget > 0 && current.spend > monthlyBudget) score -= 8;
+  score = Math.max(0, Math.min(100, score));
+
+  const prevMap = new Map((previousRecord && previousRecord.ads || []).map((ad) => [decisionAdKey(ad), ad]));
+  const decisions = (currentRecord.ads || [])
+    .filter((ad) => Number(ad.spend || 0) >= 500 || ad.active)
+    .map((ad) => ({ ad, decision: adDecision(ad, prevMap.get(decisionAdKey(ad)), target, cpaTarget) }))
+    .sort((a, b) => {
+      const order = { REDUCE: 0, REFRESH: 1, SCALE: 2, MONITOR: 3, KEEP: 4 };
+      const oa = order[a.decision.code] ?? 9;
+      const ob = order[b.decision.code] ?? 9;
+      return oa !== ob ? oa - ob : Number(b.ad.spend || 0) - Number(a.ad.spend || 0);
+    });
+
+  const actions = [];
+  const scale = decisions.find((x) => x.decision.code === "SCALE");
+  const reduce = decisions.find((x) => x.decision.code === "REDUCE");
+  const refresh = decisions.find((x) => x.decision.code === "REFRESH");
+  if (scale) actions.push({ icon: "🟢", title: `${scale.ad.name} 可逐步擴量`, detail: scale.decision.reason });
+  if (reduce) actions.push({ icon: "🔴", title: `${reduce.ad.name} 優先降量`, detail: reduce.decision.reason });
+  if (refresh) actions.push({ icon: "🟠", title: `${refresh.ad.name} 優先換素材`, detail: refresh.decision.reason });
+  if (!actions.length) actions.push({ icon: "🟡", title: "目前以維持與觀察為主", detail: "沒有出現需要立刻大幅調整的訊號，先累積更多樣本。" });
+
+  return { current, previous, deltas, anomalies, decisions, actions, score };
+}
+
+function DecisionIntelligencePanel({ currentRecord, previousRecord, roasTarget = 3, cpaTarget = null, monthlyBudget = null, periodType = "week", periodLabel = "" }) {
+  const result = buildDecisionIntelligence(currentRecord, previousRecord, roasTarget, cpaTarget, monthlyBudget, periodType);
+  if (!result) return null;
+  const { current, previous, deltas, anomalies, decisions, actions, score } = result;
+  const scoreTone = score >= 80 ? "var(--green)" : score >= 60 ? "var(--amber)" : "var(--red)";
+  const metricCards = [
+    { key: "roas", label: "ROAS", value: current.roas !== null ? `${current.roas.toFixed(2)}x` : "—", delta: deltas.roas, invert: false },
+    { key: "cpa", label: "CPA", value: current.cpa !== null ? fmtMoney(current.cpa, currentRecord.currency) : "—", delta: deltas.cpa, invert: true },
+    { key: "ctr", label: "CTR", value: current.ctr !== null ? `${current.ctr.toFixed(2)}%` : "—", delta: deltas.ctr, invert: false },
+    { key: "cpm", label: "CPM", value: current.cpm !== null ? fmtMoney(current.cpm, currentRecord.currency) : "—", delta: deltas.cpm, invert: true },
+    { key: "cvr", label: "CVR", value: current.cvr !== null ? `${current.cvr.toFixed(2)}%` : "—", delta: deltas.cvr, invert: false },
+    { key: "frequency", label: "頻率", value: current.frequency !== null ? current.frequency.toFixed(2) : "—", delta: deltas.frequency, invert: true },
+  ];
+
+  return (
+    <div style={{ margin: "22px 0 26px" }}>
+      <h2 className="mal-section-title">決策分析{periodLabel ? ` · ${periodLabel}` : ""}</h2>
+      <div className="mal-cards" style={{ marginBottom: 14 }}>
+        <div className="mal-card">
+          <div className="mal-card-label">投放健康度</div>
+          <div className="mal-card-value" style={{ color: scoreTone }}>{score}</div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 2 }}>100 分制 · 規則引擎</div>
+        </div>
+        {metricCards.map((m) => (
+          <div className="mal-card" key={m.key}>
+            <div className="mal-card-label">{m.label}</div>
+            <div className="mal-card-value" style={{ fontSize: 22 }}>{m.value}</div>
+            <div style={{ fontSize: 11.5, marginTop: 3 }}>
+              {previous ? <><span style={{ color: "var(--ink-soft)", marginRight: 6 }}>vs 前期</span><DeltaBadge value={m.delta} invert={m.invert} /></> : <span style={{ color: "var(--ink-soft)" }}>前期無可比資料</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mal-insight-box" style={{ marginBottom: 14 }}>
+        <div className="mal-insight-box-title">🚨 異常偵測 <span style={{ fontWeight: 400, fontSize: 11, color: "var(--ink-soft)" }}>(已過濾小樣本／小波動)</span></div>
+        {anomalies.length ? (
+          <ul>
+            {anomalies.map((a, i) => (
+              <li key={i}>
+                <strong style={{ color: a.level === "red" ? "var(--red)" : "var(--amber)" }}>{a.level === "red" ? "🔴" : "🟡"} {a.title}</strong>
+                <span> · {a.detail}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p style={{ margin: "8px 0 0", color: "var(--ink-soft)", fontSize: 13 }}>目前沒有偵測到超出門檻的異常變化。</p>}
+      </div>
+
+      <div className="mal-insight-box" style={{ marginBottom: 14 }}>
+        <div className="mal-insight-box-title">🎯 本期操作建議</div>
+        <ul>
+          {actions.map((a, i) => <li key={i}><strong>{a.icon} {a.title}</strong><span> · {a.detail}</span></li>)}
+        </ul>
+      </div>
+
+      <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+        <table className="mal-table">
+          <thead><tr><th>廣告 / 素材</th><th>花費</th><th>轉單</th><th>ROAS</th><th>CTR</th><th>CPM</th><th>CVR</th><th>判斷</th><th>原因</th></tr></thead>
+          <tbody>
+            {decisions.slice(0, 12).map(({ ad, decision }, i) => {
+              const imp = Number(ad.impressions || 0);
+              const clk = Number(ad.linkClicks || ad.clicks || 0);
+              const spend = Number(ad.spend || 0);
+              const conv = Number(ad.conversions || 0);
+              const rev = Number(ad.revenue || 0);
+              const roas = spend > 0 ? rev / spend : null;
+              const ctr = imp > 0 ? (clk / imp) * 100 : null;
+              const cpm = imp > 0 ? spend / imp * 1000 : null;
+              const cvr = clk > 0 ? conv / clk * 100 : null;
+              return (
+                <tr key={decisionAdKey(ad) + i}>
+                  <td style={{ minWidth: 180 }}>{ad.name}</td>
+                  <td>{fmtMoney(spend, currentRecord.currency)}</td>
+                  <td>{fmtInt(conv)}</td>
+                  <td>{roas !== null ? `${roas.toFixed(2)}x` : "—"}</td>
+                  <td>{ctr !== null ? `${ctr.toFixed(2)}%` : "—"}</td>
+                  <td>{cpm !== null ? fmtMoney(cpm, currentRecord.currency) : "—"}</td>
+                  <td>{cvr !== null ? `${cvr.toFixed(2)}%` : "—"}</td>
+                  <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{decision.icon} {decision.label}</td>
+                  <td style={{ minWidth: 260, fontSize: 12.5 }}>{decision.reason}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 8 }}>
+        判斷原則：資料不足先 MONITOR；擴量採 10–15% 漸進；CBO / Advantage+ 不因單一 breakdown 平均成本就直接判死刑。CTR/CPM/CVR 僅在新同步資料有完整 delivery 欄位時顯示。
+      </p>
+    </div>
+  );
+}
+
+
+function computeAdSetStats(ads) {
+  const map = {};
+  (ads || []).forEach((ad) => {
+    const campaign = ad.campaign || "(未分類活動)";
+    const adSet = ad.adSet || "(未分類廣告組合)";
+    const key = campaign + "||" + adSet;
+    if (!map[key]) {
+      map[key] = {
+        campaign, adSet, spend: 0, conversions: 0, revenue: 0,
+        impressions: 0, clicks: 0, reach: 0, adCount: 0, activeAds: 0,
+      };
+    }
+    const g = map[key];
+    g.spend += Number(ad.spend || 0);
+    g.conversions += Number(ad.conversions || 0);
+    g.revenue += Number(ad.revenue || 0);
+    g.impressions += Number(ad.impressions || 0);
+    g.clicks += Number(ad.linkClicks || ad.clicks || 0);
+    g.reach += Number(ad.reach || 0);
+    g.adCount += 1;
+    if (ad.active !== false) g.activeAds += 1;
+  });
+  return Object.values(map)
+    .map((g) => ({
+      ...g,
+      cpa: g.conversions > 0 ? g.spend / g.conversions : null,
+      roas: g.spend > 0 ? g.revenue / g.spend : null,
+      ctr: g.impressions > 0 ? (g.clicks / g.impressions) * 100 : null,
+      cpm: g.impressions > 0 ? (g.spend / g.impressions) * 1000 : null,
+      cvr: g.clicks > 0 ? (g.conversions / g.clicks) * 100 : null,
+      frequency: g.reach > 0 ? g.impressions / g.reach : null,
+    }))
+    .sort((a, b) => b.spend - a.spend);
+}
+
+function AdSetAnalysis({ ads, currencyCode }) {
+  const rows = computeAdSetStats(ads);
+  if (!rows.length) return null;
+  return (
+    <>
+      <h2 className="mal-section-title">
+        廣告組合診斷<span className="mal-section-count">({rows.length} 個 Ad Set)</span>
+      </h2>
+      <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+        <table className="mal-table">
+          <thead>
+            <tr>
+              <th>行銷活動</th><th>廣告組合</th><th>廣告數</th><th>花費</th><th>轉單</th><th>CPA</th><th>ROAS</th><th>CTR</th><th>CPM</th><th>CVR</th><th>頻率</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.campaign + "||" + r.adSet}>
+                <td>{r.campaign}</td>
+                <td className="mal-row-month">{r.adSet}</td>
+                <td>{r.activeAds}/{r.adCount}</td>
+                <td>{fmtMoney(r.spend, currencyCode)}</td>
+                <td>{fmtInt(r.conversions)}</td>
+                <td>{r.cpa !== null ? fmtMoney(r.cpa, currencyCode) : "—"}</td>
+                <td>{r.roas !== null ? `${r.roas.toFixed(2)}x` : "—"}</td>
+                <td>{r.ctr !== null ? `${r.ctr.toFixed(2)}%` : "—"}</td>
+                <td>{r.cpm !== null ? fmtMoney(r.cpm, currencyCode) : "—"}</td>
+                <td>{r.cvr !== null ? `${r.cvr.toFixed(2)}%` : "—"}</td>
+                <td>{r.frequency !== null ? r.frequency.toFixed(2) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 // 匯出「投放成效」報告成 Word 檔——用瀏覽器版的 docx 套件(CDN載入,不用後端),
 // 圖表(長條圖)在 Word 裡不好還原,所以匯出版本只保留卡片數字、明細表格、圖例文字、自動摘要,
 // 這些才是會議上真的要看/要編輯的內容,長條圖本身在畫面上看就好。
@@ -3172,7 +3498,7 @@ function MetaAdsLedger() {
       const timeRange = encodeURIComponent(JSON.stringify({ since: rangeSince, until: rangeUntil }));
       let insightsUrl =
         `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
-        `&fields=ad_id,ad_name,spend,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
+        `&fields=ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
       let out = [];
       let page = 0;
       while (insightsUrl && page < 20) {
@@ -3199,10 +3525,14 @@ function MetaAdsLedger() {
       rawRows.forEach((r) => {
         const key = r.ad_id || `__no_id_${Math.random()}`;
         if (!mergedByAdId[key]) {
-          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, spend: 0, actions: [], action_values: [] };
+          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, spend: 0, impressions: 0, clicks: 0, inline_link_clicks: 0, reach: 0, actions: [], action_values: [] };
         }
         const m = mergedByAdId[key];
         m.spend = (parseFloat(m.spend) || 0) + (parseFloat(r.spend) || 0);
+        m.impressions += parseFloat(r.impressions) || 0;
+        m.clicks += parseFloat(r.clicks) || 0;
+        m.inline_link_clicks += parseFloat(r.inline_link_clicks) || 0;
+        m.reach += parseFloat(r.reach) || 0;
         ["actions", "action_values"].forEach((field) => {
           (r[field] || []).forEach((entry) => {
             const existing = m[field].find((e) => e.action_type === entry.action_type);
@@ -3232,6 +3562,8 @@ function MetaAdsLedger() {
     let utmMap = {};
     let statusMap = {};
     let campaignMap = {};
+    let adSetMap = {};
+    let adSetIdMap = {};
     let startDateMap = {};
     let storyIdMap = {}; // ad.id -> effective_object_story_id(這支廣告素材背後對應的前台貼文 ID,不是每支廣告都有)
     const ID_CHUNK_SIZE = 50;
@@ -3239,7 +3571,7 @@ function MetaAdsLedger() {
       const chunk = periodAdIds.slice(i, i + ID_CHUNK_SIZE);
       const filtering = encodeURIComponent(JSON.stringify([{ field: "id", operator: "IN", value: chunk }]));
       let adsUrl =
-        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{name},adset{start_time},creative{thumbnail_url,image_url,url_tags,effective_object_story_id}` +
+        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{name},adset{id,name,start_time},creative{thumbnail_url,image_url,url_tags,effective_object_story_id}` +
         `&filtering=${filtering}&limit=500&access_token=${encToken}`;
       let page2 = 0;
       while (adsUrl && page2 < 5) {
@@ -3253,6 +3585,8 @@ function MetaAdsLedger() {
           if (tags) utmMap[ad.id] = extractUtmValue(tags);
           statusMap[ad.id] = ad.effective_status || "UNKNOWN";
           if (ad.campaign && ad.campaign.name) campaignMap[ad.id] = ad.campaign.name;
+          if (ad.adset && ad.adset.name) adSetMap[ad.id] = ad.adset.name;
+          if (ad.adset && ad.adset.id) adSetIdMap[ad.id] = ad.adset.id;
           // 投放起始時間:優先用廣告組合(adset)排定的開始時間,最貼近實際開始投放的日期;
           // 抓不到的話(例如舊資料、權限限制)退回用廣告本身的建立時間,當作大概的參考。
           const startRaw = (ad.adset && ad.adset.start_time) || ad.created_time || "";
@@ -3291,11 +3625,15 @@ function MetaAdsLedger() {
     // 3) 先用「完整、未篩選」的資料算總計——這樣廣告費/轉單數/轉單金額才會跟 Meta 後台的帳號總覽數字完全一致。
     // 後台的總計是把該期間「所有」廣告都算進去,不會因為某支廣告花費很小就不計入;
     // 如果只加總「花費 ≥ 500」的廣告,總計就會比後台實際數字少,CPA/ROAS 也會跟著失真。
-    let totalSpend = 0, totalConv = 0, totalRev = 0;
+    let totalSpend = 0, totalConv = 0, totalRev = 0, totalImpressions = 0, totalClicks = 0, totalLinkClicks = 0, totalReach = 0;
     rows.forEach((row) => {
       totalSpend += parseFloat(row.spend) || 0;
       totalConv += pickPurchaseValue(row.actions);
       totalRev += pickPurchaseValue(row.action_values);
+      totalImpressions += parseFloat(row.impressions) || 0;
+      totalClicks += parseFloat(row.clicks) || 0;
+      totalLinkClicks += parseFloat(row.inline_link_clicks) || 0;
+      totalReach += parseFloat(row.reach) || 0;
     });
 
     // 花費門檻只用來決定「廣告明細列表」要不要顯示這支廣告(避免清單被大量花費很少的測試廣告洗版),
@@ -3314,6 +3652,10 @@ function MetaAdsLedger() {
       const spend = parseFloat(row.spend) || 0;
       const conversions = pickPurchaseValue(row.actions);
       const revenue = pickPurchaseValue(row.action_values);
+      const impressions = parseFloat(row.impressions) || 0;
+      const clicks = parseFloat(row.clicks) || 0;
+      const linkClicks = parseFloat(row.inline_link_clicks) || 0;
+      const reach = parseFloat(row.reach) || 0;
 
       const adName = row.ad_name || "(未命名廣告)";
       const utm = utmMap[row.ad_id] || "";
@@ -3321,16 +3663,19 @@ function MetaAdsLedger() {
       // 跟shopline-proxy後端同一個bug、同一套修法:UTM相同但行銷活動不同的廣告,不該被合併成一筆,
       // 分組key加上行銷活動名稱,兩個都相同才合併。
       const campaignName = campaignMap[row.ad_id] || "(未分類活動)";
-      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::" + (isActive ? "on" : "off");
+      const adSetName = adSetMap[row.ad_id] || "(未分類廣告組合)";
+      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::adset:" + adSetName + "::" + (isActive ? "on" : "off");
       if (!grouped[groupKey]) {
-        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
+        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, active: isActive, campaigns: new Set(), adSets: new Set(), adSetIds: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
       }
       const g = grouped[groupKey];
       g.names.add(adName);
-      g.spend += spend; g.conversions += conversions; g.revenue += revenue;
+      g.spend += spend; g.conversions += conversions; g.revenue += revenue; g.impressions += impressions; g.clicks += clicks; g.linkClicks += linkClicks; g.reach += reach;
       if (!g.image && thumbMap[row.ad_id]) g.image = thumbMap[row.ad_id];
       if (!g.postId && storyIdMap[row.ad_id]) g.postId = storyIdMap[row.ad_id];
       if (campaignMap[row.ad_id]) g.campaigns.add(campaignMap[row.ad_id]);
+      if (adSetMap[row.ad_id]) g.adSets.add(adSetMap[row.ad_id]);
+      if (adSetIdMap[row.ad_id]) g.adSetIds.add(adSetIdMap[row.ad_id]);
       if (row.ad_id) g.adIds.add(row.ad_id);
       // 如果這個群組是合併了好幾支廣告(同一個 UTM 追蹤代碼),投放起始時間取「最早」的那個,
       // 代表這個素材/追蹤代碼最初是什麼時候開始投放的。
@@ -3344,7 +3689,7 @@ function MetaAdsLedger() {
     const ads = Object.values(grouped)
       .map((g) => {
         const nameList = [...g.names];
-        const adCount = nameList.length || 1;
+        const adCount = g.adIds.size || nameList.length || 1;
         const name =
           nameList.length === 0
             ? g.utm || "未命名廣告"
@@ -3361,15 +3706,27 @@ function MetaAdsLedger() {
             : campaignList.length === 1
             ? campaignList[0]
             : `${campaignList[0]} 等 ${campaignList.length} 個活動`;
+        const adSetList = [...g.adSets];
+        const adSet =
+          adSetList.length === 0
+            ? "(未分類廣告組合)"
+            : adSetList.length === 1
+            ? adSetList[0]
+            : `${adSetList[0]} 等 ${adSetList.length} 個廣告組合`;
         return {
           name, utm: g.utm, image: g.image, postId: g.postId, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
-          adCount, rawNames: nameList, active: g.active, campaign, adIds: [...g.adIds], startDate: g.startDate,
+          impressions: g.impressions, clicks: g.clicks, linkClicks: g.linkClicks, reach: g.reach,
+          adCount, rawNames: nameList, active: g.active, campaign, adSet, adSetIds: [...g.adSetIds], adIds: [...g.adIds], startDate: g.startDate,
           postPublishDate: g.postPublishDate,
         };
       })
       .sort((a, b) => b.spend - a.spend);
 
-    return { spend: totalSpend, conversions: totalConv, revenue: totalRev, campaigns: 0, currency, accountId, ads, syncedAt: new Date().toISOString() };
+    return {
+      spend: totalSpend, conversions: totalConv, revenue: totalRev,
+      impressions: totalImpressions, clicks: totalClicks, linkClicks: totalLinkClicks, reach: totalReach,
+      campaigns: 0, currency, accountId, ads, syncedAt: new Date().toISOString()
+    };
   }
 
   async function fetchLastWeekData() {
@@ -4642,6 +4999,15 @@ function MetaAdsLedger() {
 
           {focusData && (
             <>
+              <DecisionIntelligencePanel
+                currentRecord={focusData}
+                previousRecord={prevData}
+                roasTarget={roasTargets[activeBrandId]}
+                cpaTarget={cpaThresholds[activeBrandId]}
+                monthlyBudget={monthlyBudgets[activeBrandId]}
+                periodType="month"
+                periodLabel={monthLabel(focusMonth)}
+              />
               <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
               <div className="mal-combined-ai-row">
                 <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(monthlyAdReportRef, monthlyPlanRef)}>
@@ -4670,6 +5036,7 @@ function MetaAdsLedger() {
               </div>
               <div data-pdf-section="campaign-analysis">
                 <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
+                <AdSetAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
               </div>
               <div data-pdf-section="performance-breakdown">
                 <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />
@@ -4872,6 +5239,14 @@ function MetaAdsLedger() {
                   </ul>
                 </div>
 
+                <DecisionIntelligencePanel
+                  currentRecord={focusWeekData}
+                  previousRecord={prevWeekData}
+                  roasTarget={roasTargets[activeBrandId]}
+                  cpaTarget={cpaThresholds[activeBrandId]}
+                  periodType="week"
+                  periodLabel={weekLabel(focusWeek)}
+                />
                 <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
 
                 <div className="mal-combined-ai-row">
@@ -4905,6 +5280,7 @@ function MetaAdsLedger() {
 
                 <div data-pdf-section="campaign-analysis">
                   <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
+                <AdSetAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
                 </div>
                 <div data-pdf-section="performance-breakdown">
                   <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
