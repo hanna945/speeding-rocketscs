@@ -1,3 +1,5 @@
+import { extendCredentialRoster } from "./brandDefaults.js";
+
 // 解析 X-Team-Key 對應到哪一組登入身份(顯示名稱 + 能看哪些品牌的廣告帳號 ID)。
 //
 // TEAM_CREDENTIALS 存在 Cloudflare 的環境變數(型別選 Secret),JSON 格式,brands 支援兩種寫法:
@@ -32,9 +34,10 @@ export function resolveCredential(request, env) {
   }
   const rawList = Array.isArray(entry.brands) ? entry.brands : [];
   // 相容兩種寫法:陣列裡每一項可能是純字串(舊格式)或 {id, name} 物件(新格式)。
-  const roster = rawList
+  const configuredRoster = rawList
     .map((b) => (typeof b === "string" ? { id: b, name: b } : { id: (b && b.id) || "", name: (b && b.name) || (b && b.id) || "" }))
     .filter((b) => b.id);
+  const roster = extendCredentialRoster(entry.name || "", configuredRoster);
   const brands = roster.map((b) => b.id);
   return { name: entry.name || "", brands, roster };
 }

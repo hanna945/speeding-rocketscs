@@ -3,6 +3,7 @@
 
 import { getGoogleAccessToken } from "../../_shared/googleAuth.js";
 import { syncAccountLedger, todayInTaiwan } from "../../_shared/sheetSync.js";
+import { getDefaultSheetId } from "../../_shared/brandDefaults.js";
 
 function jsonError(message, status, extra = {}) {
   return new Response(JSON.stringify({ error: message, ...extra }), {
@@ -37,6 +38,7 @@ export async function onRequestPost({ request, env, data }) {
 
   if (!sheetId) {
     sheetId = await env.REPORT_KV.get(`sheet-map:${accountId}`);
+    if (!sheetId) sheetId = getDefaultSheetId(accountId);
     if (!sheetId) return jsonError(`這個廣告帳號(${accountId})還沒設定對應的 Google 試算表 ID,請先貼一次 sheetId。`, 400);
   }
 
@@ -96,6 +98,7 @@ export async function onRequestGet({ request, env, data }) {
   if (credential && credential.brands !== "*" && !credential.brands.includes(accountId)) {
     return jsonError("這組登入身份沒有這個廣告帳號的權限。", 403);
   }
-  const sheetId = await env.REPORT_KV.get(`sheet-map:${accountId}`);
+  const savedSheetId = await env.REPORT_KV.get(`sheet-map:${accountId}`);
+  const sheetId = savedSheetId || getDefaultSheetId(accountId);
   return new Response(JSON.stringify({ accountId, sheetId: sheetId || null }), { headers: { "Content-Type": "application/json" } });
 }
