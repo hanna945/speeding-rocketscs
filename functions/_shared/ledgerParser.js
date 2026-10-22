@@ -128,6 +128,19 @@ export const LEDGER_PROFILES = [
     overallNetProfit: [startsWithAny("實際利潤"), startsWithAny("真實利潤")],
   },
   {
+    id: "liaoliao",
+    label: "撩撩",
+    detect: ({ row1, row2 }) => {
+      const labels1 = row1.map(cleanText);
+      const labels2 = row2.map(cleanText);
+      return labels1.includes("LL") &&
+        labels1.includes("LINE 禮物") &&
+        labels1.includes("門市") &&
+        labels2.some((v) => v === "真實利潤");
+    },
+    overallNetProfit: [isExact("真實利潤"), startsWithAny("真實利潤")],
+  },
+  {
     id: "yk",
     label: "YK",
     detect: ({ row1 }) => {
