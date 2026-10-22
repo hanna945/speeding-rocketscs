@@ -1834,7 +1834,7 @@ function metricPctDelta(curr, prev) {
 }
 
 function decisionAdKey(ad) {
-  return [ad && ad.utm, ad && ad.campaign, ad && ad.name].filter(Boolean).join("||");
+  return [ad && ad.utm, ad && ad.campaign, ad && ad.adSet, ad && ad.name].filter(Boolean).join("||");
 }
 
 function adDecision(ad, prevAd, roasTarget, cpaTarget) {
@@ -2041,6 +2041,80 @@ function DecisionIntelligencePanel({ currentRecord, previousRecord, roasTarget =
         判斷原則：資料不足先 MONITOR；擴量採 10–15% 漸進；CBO / Advantage+ 不因單一 breakdown 平均成本就直接判死刑。CTR/CPM/CVR 僅在新同步資料有完整 delivery 欄位時顯示。
       </p>
     </div>
+  );
+}
+
+
+function computeAdSetStats(ads) {
+  const map = {};
+  (ads || []).forEach((ad) => {
+    const campaign = ad.campaign || "(未分類活動)";
+    const adSet = ad.adSet || "(未分類廣告組合)";
+    const key = campaign + "||" + adSet;
+    if (!map[key]) {
+      map[key] = {
+        campaign, adSet, spend: 0, conversions: 0, revenue: 0,
+        impressions: 0, clicks: 0, reach: 0, adCount: 0, activeAds: 0,
+      };
+    }
+    const g = map[key];
+    g.spend += Number(ad.spend || 0);
+    g.conversions += Number(ad.conversions || 0);
+    g.revenue += Number(ad.revenue || 0);
+    g.impressions += Number(ad.impressions || 0);
+    g.clicks += Number(ad.linkClicks || ad.clicks || 0);
+    g.reach += Number(ad.reach || 0);
+    g.adCount += 1;
+    if (ad.active !== false) g.activeAds += 1;
+  });
+  return Object.values(map)
+    .map((g) => ({
+      ...g,
+      cpa: g.conversions > 0 ? g.spend / g.conversions : null,
+      roas: g.spend > 0 ? g.revenue / g.spend : null,
+      ctr: g.impressions > 0 ? (g.clicks / g.impressions) * 100 : null,
+      cpm: g.impressions > 0 ? (g.spend / g.impressions) * 1000 : null,
+      cvr: g.clicks > 0 ? (g.conversions / g.clicks) * 100 : null,
+      frequency: g.reach > 0 ? g.impressions / g.reach : null,
+    }))
+    .sort((a, b) => b.spend - a.spend);
+}
+
+function AdSetAnalysis({ ads, currencyCode }) {
+  const rows = computeAdSetStats(ads);
+  if (!rows.length) return null;
+  return (
+    <>
+      <h2 className="mal-section-title">
+        廣告組合診斷<span className="mal-section-count">({rows.length} 個 Ad Set)</span>
+      </h2>
+      <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+        <table className="mal-table">
+          <thead>
+            <tr>
+              <th>行銷活動</th><th>廣告組合</th><th>廣告數</th><th>花費</th><th>轉單</th><th>CPA</th><th>ROAS</th><th>CTR</th><th>CPM</th><th>CVR</th><th>頻率</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.campaign + "||" + r.adSet}>
+                <td>{r.campaign}</td>
+                <td className="mal-row-month">{r.adSet}</td>
+                <td>{r.activeAds}/{r.adCount}</td>
+                <td>{fmtMoney(r.spend, currencyCode)}</td>
+                <td>{fmtInt(r.conversions)}</td>
+                <td>{r.cpa !== null ? fmtMoney(r.cpa, currencyCode) : "—"}</td>
+                <td>{r.roas !== null ? `${r.roas.toFixed(2)}x` : "—"}</td>
+                <td>{r.ctr !== null ? `${r.ctr.toFixed(2)}%` : "—"}</td>
+                <td>{r.cpm !== null ? fmtMoney(r.cpm, currencyCode) : "—"}</td>
+                <td>{r.cvr !== null ? `${r.cvr.toFixed(2)}%` : "—"}</td>
+                <td>{r.frequency !== null ? r.frequency.toFixed(2) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
