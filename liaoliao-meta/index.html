@@ -189,6 +189,9 @@ async function apiFetch(path, options={}){
 function normalizeCreativeName(name){
   return String(name||"").trim().replace(/\s+/g," ").toLowerCase();
 }
+function isAdActive(ad){
+  return !!ad && ad.active === true;
+}
 const TEAM_KEY_STORAGE_KEY="ad-ledger-team-key";
 const MONTH_PREFIX="metaads-month:"+ACCOUNT_ID+"::";
 const WEEK_PREFIX="metaads-week:"+ACCOUNT_ID+"::";
@@ -324,6 +327,7 @@ function strategyMetric(row,type){
 function buildStrategyGroups(record,type){
   const creativeGroups=new Map();
   for(const ad of record?.ads||[]){
+    if(!isAdActive(ad))continue;
     if(classifyStrategy(ad)!==type)continue;
     const ck=ad.creativeKey||("name:"+normalizeCreativeName(ad.name));
     if(!creativeGroups.has(ck))creativeGroups.set(ck,{creativeKey:ck,names:new Set(),storyId:ad.storyId||"",creativeId:ad.creativeId||"",campaignMap:new Map(),totalSpend:0,type});
@@ -454,7 +458,7 @@ function analysis(cur,prev,periodMode){
   if(d.cvr!=null&&d.cvr<=-20)anomalies.push(["red","CVR 下滑","較前期下降 "+Math.abs(d.cvr).toFixed(1)+"%，優先檢查商品頁、優惠與結帳"]);
   let score=100;if(cm.roas!=null&&cm.roas<settings.roas)score-=cm.roas<settings.roas*.75?22:10;if(d.roas!=null&&d.roas<=-20)score-=12;if(d.cpa!=null&&d.cpa>=20)score-=10;if(d.ctr!=null&&d.ctr<=-20)score-=8;if(d.cpm!=null&&d.cpm>=20)score-=5;if(d.cvr!=null&&d.cvr<=-20)score-=12;if(periodMode==="month"&&settings.budget&&cm.spend>settings.budget)score-=8;score=Math.max(0,score);
   const pmap=new Map((prev?.ads||[]).map(a=>[a.id,a]));const order={REDUCE:0,REFRESH:1,SCALE:2,MONITOR:3,KEEP:4};
-  const decisions=(cur.ads||[]).filter(a=>a.spend>=500||a.conversions>0).map(ad=>({ad,decision:decide(ad,pmap.get(ad.id))})).sort((a,b)=>(order[a.decision.code]??9)-(order[b.decision.code]??9)||b.ad.spend-a.ad.spend);
+  const decisions=(cur.ads||[]).filter(isAdActive).filter(a=>a.spend>=500||a.conversions>0).map(ad=>({ad,decision:decide(ad,pmap.get(ad.id))})).sort((a,b)=>(order[a.decision.code]??9)-(order[b.decision.code]??9)||b.ad.spend-a.ad.spend);
   return {cm,pm,d,anomalies,score,decisions}
 }
 function groupBy(list,keyFn){
@@ -498,8 +502,9 @@ function render(){
   const grid='<div class="section"><h2>整體投放概況</h2><div class="grid"><div class="card"><div class="label">投放健康度</div><div class="health '+(a.score>=80?"green":a.score>=60?"amber":"red")+'">'+a.score+'</div><div class="small">100 分制 · 規則引擎</div></div>'+metricCard("ROAS",m.roas!=null?m.roas.toFixed(2)+"x":"—",a.d.roas)+metricCard("CPA",m.cpa!=null?fmtMoney(m.cpa,current.currency):"—",a.d.cpa,true)+metricCard("CTR",fmtPct(m.ctr),a.d.ctr)+metricCard("CPM",m.cpm!=null?fmtMoney(m.cpm,current.currency):"—",a.d.cpm,true)+metricCard("CVR",fmtPct(m.cvr),a.d.cvr)+'</div></div>';
   const anomalies=a.anomalies.length?a.anomalies.map(x=>'<li><strong class="'+x[0]+'">'+(x[0]==="red"?"🔴":"🟡")+' '+esc(x[1])+'</strong> · '+esc(x[2])+'</li>').join(""):'<li>目前沒有偵測到超出門檻的異常。</li>';
   const counts=strategyCounts(current);
-  const insight='<div class="section insights"><div class="panel"><strong>🚨 異常偵測</strong><ul>'+anomalies+'</ul></div><div class="panel"><strong>📣 可比較素材</strong><ul><li>CPA：'+counts.cpa+' 組</li><li>CPC：'+counts.cpc+' 組</li><li>CPM / 品牌曝光：'+counts.cpm+' 組</li><li>其他：'+counts.other+' 組</li></ul><div class="small">點上方「廣告怎麼調」查看分策略 Winner 與預算建議。</div></div></div>';
-  const campaigns=groupBy(current.ads,a=>a.campaign),adsets=groupBy(current.ads,a=>a.campaign+"｜"+a.adSet);
+  const insight='<div class="section insights"><div class="panel"><strong>🚨 異常偵測</strong><ul>'+anomalies+'</ul></div><div class="panel"><strong>📣 可比較素材</strong><ul><li>CPA：'+counts.cpa+' 組</li><li>CPC：'+counts.cpc+' 組</li><li>CPM / 品牌曝光：'+counts.cpm+' 組</li><li>其他：'+counts.other+' 組</li></ul><div class="small">只分析目前仍在投放的廣告；已關閉廣告不參與 Winner、診斷與預算建議。</div></div></div>';
+  const analysisAds=(current.ads||[]).filter(isAdActive);
+  const campaigns=groupBy(analysisAds,a=>a.campaign),adsets=groupBy(analysisAds,a=>a.campaign+"｜"+a.adSet);
   const diag=(title,rows)=>'<div class="section"><h2>'+title+'</h2><div class="tablewrap"><table><thead><tr><th>名稱</th><th>廣告數</th><th>花費</th><th>轉單</th><th>CPA</th><th>ROAS</th><th>CTR</th><th>CPM</th><th>CVR</th><th>頻率</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+r.count+'</td><td>'+fmtMoney(r.spend,current.currency)+'</td><td>'+fmtNum(r.conversions)+'</td><td>'+(r.cpa!=null?fmtMoney(r.cpa,current.currency):"—")+'</td><td>'+(r.roas!=null?r.roas.toFixed(2)+"x":"—")+'</td><td>'+fmtPct(r.ctr)+'</td><td>'+(r.cpm!=null?fmtMoney(r.cpm,current.currency):"—")+'</td><td>'+fmtPct(r.cvr)+'</td><td>'+(r.frequency!=null?r.frequency.toFixed(2):"—")+'</td></tr>').join("")+'</tbody></table></div></div>';
   $("app").innerHTML=head+grid+insight+diag("Campaign 診斷",campaigns)+diag("Ad Set 診斷",adsets)+'<div class="small">最後同步：'+new Date(current.syncedAt).toLocaleString("zh-TW")+'</div>';
 }
