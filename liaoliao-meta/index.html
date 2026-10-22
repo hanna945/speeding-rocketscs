@@ -116,7 +116,7 @@ th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
     <div class="field"><label>CPC 目標</label><input type="number" step="0.1" id="cpcInput"></div>
     <div class="field"><label>ROAS 目標</label><input type="number" step="0.1" id="roasInput"></div>
     <div class="field"><label>月廣告預算</label><input type="number" step="1" id="budgetInput"></div>
-    <div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="saveSettingsBtn">儲存設定</button><span class="small" style="align-self:center">資料來源：speedingscs 主報表共用資料，不需要另外設定 Meta Token。</span></div>
+    <div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="saveSettingsBtn">儲存設定</button><span class="small" style="align-self:center">資料來源：共用 speedingscs 已記住的 Meta Token 與 REPORT_KV，不需要另外設定 Token。</span></div>
   </div>
 
   <div class="tabs">
@@ -125,7 +125,7 @@ th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
   </div>
 
   <div id="app"><div class="empty">正在讀取 speedingscs 共用廣告資料…</div></div>
-  <div class="footer">READ ONLY · 0 OpenAI API · 與 speedingscs 主報表共用同一份 Cloudflare KV 資料。撩撩站不保存、也不需要 Meta Token。策略比較會先辨識 Campaign 目標，再使用對應 KPI：CPA→CPA、CPC→CPC、CPM→CPM。</div>
+  <div class="footer">READ ONLY · 0 OpenAI API · 與 speedingscs 主報表共用 Meta Token 與 Cloudflare KV。撩撩站不另外保存 Token。策略比較會先辨識 Campaign 目標，再使用對應 KPI：CPA→CPA、CPC→CPC、CPM→CPM。</div>
 </div>
 <script>
 const ACCOUNT_ID="1638891154598307";
@@ -263,6 +263,153 @@ function weekRangeFromKey(key){
   const s=parseISO(key),e=parseISO(until);
   return {since:key,until,label:(s.getUTCMonth()+1)+"/"+s.getUTCDate()+"–"+(e.getUTCMonth()+1)+"/"+e.getUTCDate(),key};
 }
+
+const MASTER_TOKEN_STORAGE_KEY="ad-ledger::meta-api-token";
+function masterMetaToken(){
+  try{return localStorage.getItem(MASTER_TOKEN_STORAGE_KEY)||""}catch{return ""}
+}
+async function graphJson(url,context="Meta API"){
+  const response=await fetch(url);
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok||payload.error){
+    const err=payload&&payload.error?payload.error:{};
+    const code=err.code||response.status;
+    throw new Error(context+"失敗（"+code+"）："+(err.message||("HTTP "+response.status)));
+  }
+  return payload;
+}
+async function graphAll(url,context,maxPages=20){
+  const rows=[];
+  let next=url,pages=0;
+  while(next&&pages<maxPages){
+    const payload=await graphJson(next,context+" 第"+(pages+1)+"頁");
+    if(Array.isArray(payload.data))rows.push(...payload.data);
+    next=payload&&payload.paging&&payload.paging.next?payload.paging.next:null;
+    pages++;
+  }
+  return rows;
+}
+async function fetchLiveRange(range){
+  const token=masterMetaToken();
+  if(!token)throw new Error("主報表目前沒有記住 Meta Token。請先回 speedingscs 主報表連接 Meta，並勾選「記住 Token」。");
+  const enc=encodeURIComponent(token);
+  let currency="TWD";
+  try{
+    const account=await graphJson("https://graph.facebook.com/"+GRAPH_VERSION+"/act_"+ACCOUNT_ID+"?fields=currency&access_token="+enc,"讀取帳號");
+    currency=account.currency||currency;
+  }catch{}
+
+  const tr=encodeURIComponent(JSON.stringify({since:range.since,until:range.until}));
+  const fields="ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values";
+  const insightUrl="https://graph.facebook.com/"+GRAPH_VERSION+"/act_"+ACCOUNT_ID+"/insights?level=ad&use_account_attribution_setting=true&fields="+fields+"&time_range="+tr+"&limit=500&access_token="+enc;
+  const rows=await graphAll(insightUrl,"讀取撩撩成效",20);
+
+  const adIds=[...new Set(rows.map(r=>r.ad_id).filter(Boolean))];
+  const metaMap={};
+  for(let i=0;i<adIds.length;i+=50){
+    const chunk=adIds.slice(i,i+50);
+    const filtering=encodeURIComponent(JSON.stringify([{field:"id",operator:"IN",value:chunk}]));
+    const metaUrl="https://graph.facebook.com/"+GRAPH_VERSION+"/act_"+ACCOUNT_ID+"/ads?fields=id,name,effective_status,campaign{id,name,objective},adset{id,name,optimization_goal},creative{id,effective_object_story_id}&filtering="+filtering+"&limit=500&access_token="+enc;
+    const metaRows=await graphAll(metaUrl,"讀取撩撩廣告狀態",10);
+    metaRows.forEach(ad=>{metaMap[String(ad.id)]=ad});
+  }
+
+  let spend=0,conversions=0,revenue=0,impressions=0,clicks=0,linkClicks=0,reach=0,landingPageViews=0;
+  const ads=rows.map((row,index)=>{
+    const m=metaMap[String(row.ad_id)]||{};
+    const s=Number(row.spend||0);
+    const conv=pickAction(row.actions);
+    const rev=pickAction(row.action_values);
+    const imp=Number(row.impressions||0);
+    const clk=Number(row.clicks||0);
+    const lclk=Number(row.inline_link_clicks||0);
+    const rch=Number(row.reach||0);
+    const lpv=pickActionTypes(row.actions,["landing_page_view","omni_landing_page_view"]);
+    spend+=s;conversions+=conv;revenue+=rev;impressions+=imp;clicks+=clk;linkClicks+=lclk;reach+=rch;landingPageViews+=lpv;
+    const storyId=m.creative&&m.creative.effective_object_story_id?m.creative.effective_object_story_id:"";
+    const creativeId=m.creative&&m.creative.id?String(m.creative.id):"";
+    const name=row.ad_name||m.name||"(未命名廣告)";
+    const campaign=m.campaign&&m.campaign.name?m.campaign.name:(row.campaign_name||"(未分類活動)");
+    const adSet=m.adset&&m.adset.name?m.adset.name:(row.adset_name||"(未分類廣告組合)");
+    const active=m.effective_status==="ACTIVE";
+    return {
+      id:String(row.ad_id||("live-"+index)),
+      adId:String(row.ad_id||""),
+      name,
+      campaignId:String((m.campaign&&m.campaign.id)||row.campaign_id||""),
+      campaign,
+      adSetId:String((m.adset&&m.adset.id)||row.adset_id||""),
+      adSet,
+      creativeId,
+      storyId,
+      postId:storyId,
+      creativeKey:storyId?("story:"+storyId):creativeId?("creative:"+creativeId):("name:"+normalizeCreativeName(name)),
+      objective:(m.campaign&&m.campaign.objective)||"",
+      optimizationGoal:(m.adset&&m.adset.optimization_goal)||"",
+      spend:s,conversions:conv,revenue:rev,impressions:imp,clicks:clk,linkClicks:lclk,landingPageViews:lpv,reach:rch,
+      active,
+      effectiveStatus:m.effective_status||"UNKNOWN",
+      adIds:row.ad_id?[String(row.ad_id)]:[],
+      adSetIds:row.adset_id?[String(row.adset_id)]:[],
+      rawNames:[name],
+      adCount:1,
+      utm:""
+    };
+  });
+
+  return {
+    range,currency,accountId:ACCOUNT_ID,ads,
+    spend,conversions,revenue,impressions,clicks,linkClicks,landingPageViews,reach,
+    campaigns:new Set(ads.map(a=>a.campaignId||a.campaign).filter(Boolean)).size,
+    syncedAt:new Date().toISOString(),
+    source:"speedingscs-shared-token-live"
+  };
+}
+function sharedRecordFromLive(record){
+  return {
+    spend:record.spend,
+    conversions:record.conversions,
+    revenue:record.revenue,
+    impressions:record.impressions,
+    clicks:record.clicks,
+    linkClicks:record.linkClicks,
+    landingPageViews:record.landingPageViews,
+    reach:record.reach,
+    campaigns:record.campaigns||0,
+    currency:record.currency||"TWD",
+    accountId:ACCOUNT_ID,
+    syncedAt:record.syncedAt,
+    source:"liaoliao-live-refresh",
+    rawAds:record.ads||[],
+    ads:record.ads||[]
+  };
+}
+async function saveSharedRecord(period,record){
+  const prefix=period==="week"?WEEK_PREFIX:MONTH_PREFIX;
+  const key=prefix+record.range.key;
+  const response=await fetch("/api/kv/item/"+encodeURIComponent(key),{
+    method:"PUT",
+    headers:{...teamKeyHeaders(),"Content-Type":"text/plain"},
+    body:JSON.stringify(sharedRecordFromLive(record))
+  });
+  if(response.status===401)throw new Error("團隊金鑰未登入，無法寫回共用資料庫。");
+  if(response.status===403)throw new Error("目前團隊金鑰沒有撩撩寫入權限。");
+  if(!response.ok){
+    const payload=await response.json().catch(()=>null);
+    throw new Error((payload&&payload.error)||("KV 寫入 "+response.status));
+  }
+}
+async function fetchLivePack(period,count=2){
+  const records=[];
+  for(let i=0;i<count;i++){
+    const range=period==="week"?lastWeekRange(i):monthRange(-i);
+    const rec=await fetchLiveRange(range);
+    records.push(rec);
+    if(i<count-1)await new Promise(r=>setTimeout(r,700));
+  }
+  return records;
+}
+
 async function kvJson(path){
   const response=await fetch(path,{headers:teamKeyHeaders()});
   if(response.status===401)throw new Error("請先回主報表輸入團隊金鑰，再開啟撩撩報表。");
@@ -510,32 +657,63 @@ function render(){
 }
 async function updateAll(silent=false){
   try{
-    $("updateBtn").disabled=true;$("updateBtn").textContent="同步中…";
-    if(!silent)notify("正在從 speedingscs 共用資料庫同步月報與週報…");
+    $("updateBtn").disabled=true;$("updateBtn").textContent="更新中…";
+    const token=masterMetaToken();
+    if(token){
+      if(!silent)notify("正在使用 speedingscs 已記住的 Meta Token 抓取撩撩最新資料…");
+      const months=await fetchLivePack("month",2);
+      const weeks=await fetchLivePack("week",2);
+      localStorage.setItem(K.month,JSON.stringify({current:months[0]||null,previous:months[1]||null}));
+      localStorage.setItem(K.week,JSON.stringify({current:weeks[0]||null,previous:weeks[1]||null}));
+      let writeError=null;
+      try{
+        for(const rec of months)await saveSharedRecord("month",rec);
+        for(const rec of weeks)await saveSharedRecord("week",rec);
+      }catch(e){writeError=e}
+      if(!silent){
+        notify(writeError
+          ?"Meta 最新資料已抓取成功，但共用 KV 寫入失敗："+writeError.message
+          :"更新完成：Meta 最新月報＋週報已同步並寫回 speedingscs 共用資料。",writeError?"error":"notice");
+      }
+      render();
+      return;
+    }
+
+    if(!silent)notify("主報表未記住 Meta Token，改為重新讀取 speedingscs 共用資料…");
     const [months,weeks]=await Promise.all([fetchSharedLatest("month",2),fetchSharedLatest("week",2)]);
-    if(!months.length&&!weeks.length)throw new Error("共用資料庫目前沒有撩撩資料，請先在 speedingscs 更新撩撩成效分析。");
+    if(!months.length&&!weeks.length)throw new Error("沒有可用的共用資料，而且主報表目前也沒有記住 Meta Token。");
     if(months.length)localStorage.setItem(K.month,JSON.stringify({current:months[0]||null,previous:months[1]||null}));
     if(weeks.length)localStorage.setItem(K.week,JSON.stringify({current:weeks[0]||null,previous:weeks[1]||null}));
-    if(!silent)notify("同步完成：已讀取 speedingscs 最新月報＋週報。");
+    if(!silent)notify("已讀取共用資料。若要即時更新 Meta，請先在 speedingscs 主報表勾選「記住 Token」。");
     render();
   }catch(e){
-    notify("共用資料讀取失敗："+e.message,"error");
+    notify("更新失敗："+e.message,"error");
   }finally{
     $("updateBtn").disabled=false;$("updateBtn").textContent="🔄 一鍵更新全部";
   }
 }
 async function backfill(){
   try{
-    $("backfillBtn").disabled=true;$("backfillBtn").textContent="讀取中…";
-    const weeks=await fetchSharedLatest("week",8);
-    if(!weeks.length)throw new Error("共用資料庫目前沒有週報資料。");
-    weeks.forEach(rec=>{if(rec?.range?.key)localStorage.setItem("liaoliao_week_"+rec.range.key,JSON.stringify(rec))});
+    $("backfillBtn").disabled=true;$("backfillBtn").textContent="更新中…";
+    let weeks=[];
+    if(masterMetaToken()){
+      weeks=await fetchLivePack("week",8);
+      for(const rec of weeks){
+        localStorage.setItem("liaoliao_week_"+rec.range.key,JSON.stringify(rec));
+        try{await saveSharedRecord("week",rec)}catch{}
+      }
+      notify("已從 Meta 更新並回填最近 "+weeks.length+" 週。");
+    }else{
+      weeks=await fetchSharedLatest("week",8);
+      if(!weeks.length)throw new Error("沒有共用週報資料，而且主報表沒有記住 Meta Token。");
+      weeks.forEach(rec=>{if(rec?.range?.key)localStorage.setItem("liaoliao_week_"+rec.range.key,JSON.stringify(rec))});
+      notify("已從 speedingscs 共用資料讀取最近 "+weeks.length+" 週。");
+    }
     localStorage.setItem(K.week,JSON.stringify({current:weeks[0]||null,previous:weeks[1]||null}));
     mode="week";
-    notify("已從 speedingscs 共用資料讀取最近 "+weeks.length+" 週。");
     render();
   }catch(e){
-    notify("回溯資料讀取失敗："+e.message,"error");
+    notify("回溯更新失敗："+e.message,"error");
   }finally{
     $("backfillBtn").disabled=false;$("backfillBtn").textContent="🗓 回溯 8 週";
   }
