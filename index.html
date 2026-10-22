@@ -3480,6 +3480,8 @@ function MetaAdsLedger() {
     let utmMap = {};
     let statusMap = {};
     let campaignMap = {};
+    let adSetMap = {};
+    let adSetIdMap = {};
     let startDateMap = {};
     let storyIdMap = {}; // ad.id -> effective_object_story_id(這支廣告素材背後對應的前台貼文 ID,不是每支廣告都有)
     const ID_CHUNK_SIZE = 50;
@@ -3487,7 +3489,7 @@ function MetaAdsLedger() {
       const chunk = periodAdIds.slice(i, i + ID_CHUNK_SIZE);
       const filtering = encodeURIComponent(JSON.stringify([{ field: "id", operator: "IN", value: chunk }]));
       let adsUrl =
-        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{name},adset{start_time},creative{thumbnail_url,image_url,url_tags,effective_object_story_id}` +
+        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{name},adset{id,name,start_time},creative{thumbnail_url,image_url,url_tags,effective_object_story_id}` +
         `&filtering=${filtering}&limit=500&access_token=${encToken}`;
       let page2 = 0;
       while (adsUrl && page2 < 5) {
@@ -3501,6 +3503,8 @@ function MetaAdsLedger() {
           if (tags) utmMap[ad.id] = extractUtmValue(tags);
           statusMap[ad.id] = ad.effective_status || "UNKNOWN";
           if (ad.campaign && ad.campaign.name) campaignMap[ad.id] = ad.campaign.name;
+          if (ad.adset && ad.adset.name) adSetMap[ad.id] = ad.adset.name;
+          if (ad.adset && ad.adset.id) adSetIdMap[ad.id] = ad.adset.id;
           // 投放起始時間:優先用廣告組合(adset)排定的開始時間,最貼近實際開始投放的日期;
           // 抓不到的話(例如舊資料、權限限制)退回用廣告本身的建立時間,當作大概的參考。
           const startRaw = (ad.adset && ad.adset.start_time) || ad.created_time || "";
@@ -3577,9 +3581,10 @@ function MetaAdsLedger() {
       // 跟shopline-proxy後端同一個bug、同一套修法:UTM相同但行銷活動不同的廣告,不該被合併成一筆,
       // 分組key加上行銷活動名稱,兩個都相同才合併。
       const campaignName = campaignMap[row.ad_id] || "(未分類活動)";
-      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::" + (isActive ? "on" : "off");
+      const adSetName = adSetMap[row.ad_id] || "(未分類廣告組合)";
+      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::adset:" + adSetName + "::" + (isActive ? "on" : "off");
       if (!grouped[groupKey]) {
-        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, active: isActive, campaigns: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
+        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, active: isActive, campaigns: new Set(), adSets: new Set(), adSetIds: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
       }
       const g = grouped[groupKey];
       g.names.add(adName);
@@ -3587,6 +3592,8 @@ function MetaAdsLedger() {
       if (!g.image && thumbMap[row.ad_id]) g.image = thumbMap[row.ad_id];
       if (!g.postId && storyIdMap[row.ad_id]) g.postId = storyIdMap[row.ad_id];
       if (campaignMap[row.ad_id]) g.campaigns.add(campaignMap[row.ad_id]);
+      if (adSetMap[row.ad_id]) g.adSets.add(adSetMap[row.ad_id]);
+      if (adSetIdMap[row.ad_id]) g.adSetIds.add(adSetIdMap[row.ad_id]);
       if (row.ad_id) g.adIds.add(row.ad_id);
       // 如果這個群組是合併了好幾支廣告(同一個 UTM 追蹤代碼),投放起始時間取「最早」的那個,
       // 代表這個素材/追蹤代碼最初是什麼時候開始投放的。
@@ -3617,10 +3624,17 @@ function MetaAdsLedger() {
             : campaignList.length === 1
             ? campaignList[0]
             : `${campaignList[0]} 等 ${campaignList.length} 個活動`;
+        const adSetList = [...g.adSets];
+        const adSet =
+          adSetList.length === 0
+            ? "(未分類廣告組合)"
+            : adSetList.length === 1
+            ? adSetList[0]
+            : `${adSetList[0]} 等 ${adSetList.length} 個廣告組合`;
         return {
           name, utm: g.utm, image: g.image, postId: g.postId, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
           impressions: g.impressions, clicks: g.clicks, linkClicks: g.linkClicks, reach: g.reach,
-          adCount, rawNames: nameList, active: g.active, campaign, adIds: [...g.adIds], startDate: g.startDate,
+          adCount, rawNames: nameList, active: g.active, campaign, adSet, adSetIds: [...g.adSetIds], adIds: [...g.adIds], startDate: g.startDate,
           postPublishDate: g.postPublishDate,
         };
       })
