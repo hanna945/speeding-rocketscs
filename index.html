@@ -3488,12 +3488,26 @@ function MetaAdsLedger() {
     const [y, m, d] = dateStr.split("-").map(Number);
     return { y, m, d };
   }
-  // 2026-07-30 二次修正:確認這個Meta App目前是Dev Tier,額度上限是「每個廣告帳號每小時300次請求」,
-  // 按總呼叫次數算,不是按單次查詢複雜度算。切成越多段,總呼叫次數反而越多,方向是錯的。改回單一次
-  // 查詢,讓Meta自己的分頁機制(paging.next)處理大資料量。函式保留但固定回傳單一段,之後如果
-  // Dev Tier額度有調整,方便重新啟用切段邏輯。
+  // 高量帳號(例如 H&J)整月直接做 level=ad Insights 容易讓 Meta 查詢過重。
+  // 改成最多 4 天一段，再把「可加總」指標依 ad_id 合併。週報最多 2 段、31 天月份最多 8 段，
+  // 仍遠低於每小時呼叫上限，也比整月單次查詢穩定。Reach 不能跨區間相加，下面會另外用
+  // 一次輕量的 full-range reach 查詢覆蓋，避免 Frequency 被日期切段扭曲。
   function splitDateRangeIfLarge(since, until) {
-    return [{ since, until }];
+    const start = new Date(`${since}T00:00:00Z`);
+    const end = new Date(`${until}T00:00:00Z`);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) {
+      return [{ since, until }];
+    }
+    const MAX_DAYS_PER_INSIGHTS_QUERY = 4;
+    const out = [];
+    let cursor = start;
+    while (cursor <= end) {
+      const partEndMs = Math.min(end.getTime(), cursor.getTime() + (MAX_DAYS_PER_INSIGHTS_QUERY - 1) * 86400000);
+      const partEnd = new Date(partEndMs);
+      out.push({ since: cursor.toISOString().slice(0, 10), until: partEnd.toISOString().slice(0, 10) });
+      cursor = new Date(partEndMs + 86400000);
+    }
+    return out;
   }
 
   // relaxThreshold=true(目前只有「上週報表」會用到):篩選階段不會排除掉「目前還在投放中」的廣告,
@@ -3561,6 +3575,31 @@ function MetaAdsLedger() {
         });
       });
       rows = Object.values(mergedByAdId);
+
+      // Reach 是「去重人數」，日期區間切段後不能直接相加。
+      // 另外做一次欄位很輕的 full-range reach 查詢來覆蓋；如果連這支輕量查詢都失敗，
+      // 就把 reach 留空(0)，寧可讓 Frequency 顯示無資料，也不要給一個錯的數字。
+      const fullTimeRange = encodeURIComponent(JSON.stringify({ since, until }));
+      let reachUrl =
+        `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&fields=ad_id,reach&time_range=${fullTimeRange}&limit=500&access_token=${encToken}`;
+      const reachByAdId = {};
+      let reachPage = 0;
+      try {
+        while (reachUrl && reachPage < 20) {
+          const json = await fetchGraphApi(reachUrl, `讀取完整區間 Reach(第${reachPage + 1}頁)`);
+          (json.data || []).forEach((r) => {
+            if (r.ad_id) reachByAdId[r.ad_id] = parseFloat(r.reach) || 0;
+          });
+          reachUrl = json.paging && json.paging.next ? json.paging.next : null;
+          reachPage++;
+        }
+        if (reachUrl) throw new Error("Reach 分頁超過安全上限");
+      } catch {
+        Object.keys(reachByAdId).forEach((k) => delete reachByAdId[k]);
+      }
+      rows.forEach((r) => {
+        r.reach = Object.prototype.hasOwnProperty.call(reachByAdId, r.ad_id) ? reachByAdId[r.ad_id] : 0;
+      });
     }
 
     if (!rows.length) {
