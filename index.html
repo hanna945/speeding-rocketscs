@@ -3115,17 +3115,6 @@ function MetaAdsLedger() {
       const time = A.ranges(Date.now(), meta.timezone_name);
       const target = A.targets(roasTargets[brandId] ?? 3, cpaThresholds[brandId], meta.currency);
       const warnings = [];
-      async function insights(since, until, daily = false) {
-        return autopilotPages(account + '/insights?' + query({ level: 'ad', use_account_attribution_setting: 'true',
-          fields: daily ? 'ad_id,impressions,date_start' : 'ad_id,ad_name,campaign_name,adset_name,spend,actions,action_values,impressions,reach,inline_link_clicks,frequency',
-          time_range: JSON.stringify({ since, until }), ...(daily ? { time_increment: '1' } : {}), limit: '500' }), 'Autopilot 讀取成效', isCurrent);
-      }
-      const recentRows = await insights(time.recentSince, time.recentUntil);
-      const baselineRows = await insights(time.baseSince, time.baseUntil);
-      const dailyRows = await insights(time.baseSince, time.recentUntil, true);
-      const recentById = Object.fromEntries(recentRows.map(r => [r.ad_id, r]));
-      const baselineById = Object.fromEntries(baselineRows.map(r => [r.ad_id, r]));
-      if (Object.keys(recentById).length !== recentRows.length || Object.keys(baselineById).length !== baselineRows.length) throw new Error('成效出現重複 Ad ID，停止分析以免覆蓋或重複加總');
       const adMap = {};
       const required = 'id,name,effective_status';
       const extended = required + ',created_time,campaign{name},adset{id,name,start_time,daily_budget,lifetime_budget}';
@@ -3140,10 +3129,60 @@ function MetaAdsLedger() {
         }
         found.forEach(ad => { adMap[ad.id] = ad; });
       }
-      // Include active ads with no recent delivery, plus historical ads from either window.
+
+      // Large accounts (notably H&J) can make account-wide ad-level Insights too heavy.
+      // Resolve ACTIVE ads first, then constrain every Insights request to those IDs.
+      // This keeps zero-conversion / zero-delivery active ads visible without scanning historical inactive ads.
       await ads([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]);
-      const ids = [...new Set([...Object.keys(recentById), ...Object.keys(baselineById)])].filter(id => !adMap[id]);
-      for (let i = 0; i < ids.length; i += 50) await ads([{ field: 'id', operator: 'IN', value: ids.slice(i, i + 50) }]);
+      const activeIds = Object.keys(adMap);
+      const INSIGHTS_CHUNK_STEPS = [50, 25, 10];
+      const canShrinkInsights = e => {
+        const msg = (e && e.message) || '';
+        return !!(e && (e.code === 1 || e.code === 2)) ||
+          /timeout|timed out|too much data|reduce the amount|unknown error|temporar/i.test(msg);
+      };
+      const smallerChunkSize = (current, count) => INSIGHTS_CHUNK_STEPS.find(size => size < current && size < count) || null;
+
+      async function insightsChunk(ids, since, until, daily, chunkSize) {
+        const params = {
+          level: 'ad',
+          use_account_attribution_setting: 'true',
+          fields: daily ? 'ad_id,impressions,date_start' : 'ad_id,ad_name,campaign_name,adset_name,spend,actions,action_values,impressions,reach,inline_link_clicks,frequency',
+          filtering: JSON.stringify([{ field: 'ad.id', operator: 'IN', value: ids }]),
+          time_range: JSON.stringify({ since, until }),
+          ...(daily ? { time_increment: '1' } : {}),
+          limit: '500'
+        };
+        try {
+          return await autopilotPages(account + '/insights?' + query(params), 'Autopilot 讀取成效', isCurrent);
+        } catch (e) {
+          const nextSize = smallerChunkSize(chunkSize, ids.length);
+          if (!nextSize || !canShrinkInsights(e)) throw e;
+          warnings.push('Meta 單批成效查詢過重，已自動縮小批次（50→25→10）繼續讀取。');
+          const rows = [];
+          for (let i = 0; i < ids.length; i += nextSize) {
+            rows.push(...await insightsChunk(ids.slice(i, i + nextSize), since, until, daily, nextSize));
+          }
+          return rows;
+        }
+      }
+
+      async function insightsForActive(since, until, daily = false) {
+        const rows = [];
+        const firstSize = INSIGHTS_CHUNK_STEPS[0];
+        for (let i = 0; i < activeIds.length; i += firstSize) {
+          rows.push(...await insightsChunk(activeIds.slice(i, i + firstSize), since, until, daily, firstSize));
+        }
+        return rows;
+      }
+
+      const recentRows = await insightsForActive(time.recentSince, time.recentUntil);
+      const baselineRows = await insightsForActive(time.baseSince, time.baseUntil);
+      // Delivery gating only needs the three recent complete days. Avoid exploding a 10-day daily result set.
+      const dailyRows = await insightsForActive(time.recentSince, time.recentUntil, true);
+      const recentById = Object.fromEntries(recentRows.map(r => [r.ad_id, r]));
+      const baselineById = Object.fromEntries(baselineRows.map(r => [r.ad_id, r]));
+      if (Object.keys(recentById).length !== recentRows.length || Object.keys(baselineById).length !== baselineRows.length) throw new Error('成效出現重複 Ad ID，停止分析以免覆蓋或重複加總');
       const daysById = {};
       dailyRows.forEach(r => {
         if (Number(r.impressions) > 0 && r.date_start >= time.baseSince && r.date_start <= time.recentUntil) {
@@ -4774,7 +4813,7 @@ function MetaAdsLedger() {
                             <table className="mal-autopilot-detail"><thead><tr><th>指標</th><th>3D</th><th>7D</th><th>變化</th></tr></thead><tbody>
                               {['spend','revenue','conversions','roas','cpa','impressions','reach','clicks','ctr','cpc','cpm','frequency','cvr'].map(k => <tr key={k}><td>{({conversions:'Purchase',clicks:'Link clicks',revenue:'Purchase value',ctr:'Link CTR (%)',cvr:'Purchase/Click (%)'})[k] || k.toUpperCase()}</td><td>{row.recent[k] == null ? '—' : row.recent[k].toLocaleString(undefined,{maximumFractionDigits:2})}</td><td>{row.baseline[k] == null ? '—' : row.baseline[k].toLocaleString(undefined,{maximumFractionDigits:2})}</td><td>{row.changes[k] == null ? '—' : (row.changes[k] > 0 ? '+' : '') + row.changes[k].toFixed(0) + '%'}</td></tr>)}
                             </tbody></table>
-                            <div>Ad ID：{row.adId}</div><div>近 3 日曝光天數：{row.delivery.recentDays}；10 日內首見：{row.delivery.firstObserved || '無'}（非確切首投日）</div>
+                            <div>Ad ID：{row.adId}</div><div>近 3 日曝光天數：{row.delivery.recentDays}；近 3 日內首見：{row.delivery.firstObserved || '無'}（非確切首投日）</div>
                             <div>廣告建立：{row.status.createdTime || '未提供'}</div><div>Ad Set 排定開始：{row.status.adsetStartTime || '未提供'}（非廣告首次曝光）</div>
                             <div>Ad Set 預算（Meta 原始單位）：日 {row.status.dailyBudgetRaw ?? '未提供'} / 終身 {row.status.lifetimeBudgetRaw ?? '未提供'}；帳號幣別 {autopilotData.currency}。可能使用 Campaign 預算。</div>
                           </details>
