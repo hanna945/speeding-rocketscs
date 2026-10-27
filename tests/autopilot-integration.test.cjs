@@ -31,13 +31,25 @@ function harness({failHistory=false, delay=null, duplicate=false, budgetDenied=f
  vm.createContext(ctx);vm.runInContext(purchase+'\n'+code,ctx);
  return {ctx,outputs,writes,calls};
 }
-test('manual run reads full windows, includes zero-delivery active ads, writes a deduplicated complete shadow snapshot',async()=>{
+test('manual run scopes Insights to active ads, keeps zero-delivery active ads, and uses only recent 3D for daily delivery',async()=>{
  const h=harness();await h.ctx.runAutopilotAnalysis();
  assert.equal(h.outputs.Error,'');assert.equal(h.outputs.Loading,false);
  const s=h.outputs.Data;assert.equal(s.totals.conversions,12);assert.equal(s.rows.length,2);assert.equal(s.rows.find(r=>r.adId==='2').decision,'LEARNING');
  assert.equal(h.writes.length,1);assert.equal(h.writes[0][1].mode,'SHADOW_ONLY');assert.match(h.writes[0][0],/^autopilot-history:123::/);
  assert.ok(!JSON.stringify(h.writes).includes('fixture-token-not-real'));
  assert.ok(h.calls.every(u=>u.origin==='https://graph.facebook.com'&&!u.searchParams.has('method')));
+ const insightCalls=h.calls.filter(u=>u.pathname.endsWith('/insights'));
+ assert.ok(insightCalls.length>=3);
+ for(const u of insightCalls){
+  const filtering=JSON.parse(u.searchParams.get('filtering'));
+  assert.equal(filtering[0].field,'ad.id');
+  assert.equal(filtering[0].operator,'IN');
+  assert.deepEqual([...filtering[0].value].sort(),['1','2']);
+ }
+ const daily=insightCalls.find(u=>u.searchParams.has('time_increment'));
+ assert.ok(daily);
+ const dailyRange=JSON.parse(daily.searchParams.get('time_range'));
+ assert.equal(dailyRange.since,s.recentSince);assert.equal(dailyRange.until,s.recentUntil);
 });
 test('brand switch while Meta request is pending cannot publish data or save history for the new brand',async()=>{
  let release,called;const entered=new Promise(r=>called=r);const gate=new Promise(r=>release=r);
