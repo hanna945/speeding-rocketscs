@@ -76,6 +76,7 @@ export async function onRequestGet({ env }) {
       weeks,
       ledger,
       cpaAll,
+      cpcAll,
       adRatioAll,
       roasAll,
       budgetAll,
@@ -85,6 +86,7 @@ export async function onRequestGet({ env }) {
       readPrefixMap(env, WEEK_PREFIX),
       readPrefixMap(env, LEDGER_PREFIX),
       readJson(env, "meta-api-cpa-thresholds", {}),
+      readJson(env, "meta-api-cpc-thresholds", {}),
       readJson(env, "meta-api-adratio-thresholds", {}),
       readJson(env, "meta-api-roas-targets", {}),
       readJson(env, "meta-api-monthly-budgets", {}),
@@ -102,6 +104,7 @@ export async function onRequestGet({ env }) {
       ledger: sanitizeLedgerMap(ledger),
       settings: {
         cpaTarget: scopedSetting(cpaAll),
+        cpcTarget: scopedSetting(cpcAll),
         adRatioThreshold: scopedSetting(adRatioAll),
         roasTarget: scopedSetting(roasAll),
         monthlyBudget: scopedSetting(budgetAll),
