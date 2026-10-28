@@ -3478,6 +3478,9 @@ function MetaAdsLedger() {
         "或自動同步跟手動抓取撞在一起),系統已經自動重試過,如果還是失敗,等 1~2 分鐘再試一次通常就會恢復。"
       );
     }
+    if (/since cannot be in the future|time_range.*future/i.test(msg)) {
+      return "。這是日期區間超過 Meta 帳號當地今天，不是廣告帳號 ID 或權杖錯誤。系統會自動把本月結束日封頂到帳號當地今天。";
+    }
     if (/too many calls/i.test(msg) || /80004/.test(msg) || /error_subcode 2446079/i.test(msg)) {
       return "。這是 Meta 廣告帳號的呼叫頻率限制,不是設定錯誤——通常等 5~15 分鐘再試一次就會恢復,批次抓多個品牌時建議一次不要抓太多個。";
     }
@@ -3516,12 +3519,36 @@ function MetaAdsLedger() {
   async function fetchInsightsForRange(token, accountId, since, until, relaxThreshold = false) {
     const encToken = encodeURIComponent(token);
 
-    // 0) account currency
+    // 0) account metadata + future-date guard
     let currency = "TWD";
+    let accountToday = null;
     try {
-      const curJson = await fetchGraphApi(`https://graph.facebook.com/v19.0/act_${accountId}?fields=currency&access_token=${encToken}`, "讀取帳號幣別");
-      if (curJson.currency) currency = curJson.currency;
-    } catch { /* fall back to TWD, this call isn't critical */ }
+      const metaJson = await fetchGraphApi(
+        `https://graph.facebook.com/v19.0/act_${accountId}?fields=currency,timezone_offset_hours_utc&access_token=${encToken}`,
+        "讀取帳號幣別與時區"
+      );
+      if (metaJson.currency) currency = metaJson.currency;
+      if (typeof metaJson.timezone_offset_hours_utc === "number") {
+        accountToday = new Date(Date.now() + metaJson.timezone_offset_hours_utc * 3600000).toISOString().slice(0, 10);
+      }
+    } catch { /* metadata isn't critical; fall back to browser-local date */ }
+
+    if (!accountToday) {
+      const now = new Date();
+      accountToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    }
+
+    // Meta rejects time_range when a split starts in the future. Current-month reports used to request
+    // the calendar month end (e.g. 10/31 on 10/28), so clamp every caller at this shared layer.
+    const requestedUntil = until;
+    if (until > accountToday) until = accountToday;
+    if (since > until) {
+      return {
+        spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0,
+        campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString(),
+        requestedUntil, effectiveUntil: until
+      };
+    }
 
     // 1) per-ad performance——範圍太大(月報表等級)時自動切成約4天一段各自查詢再合併。
     async function fetchOneRangeRows(rangeSince, rangeUntil) {
@@ -3603,7 +3630,7 @@ function MetaAdsLedger() {
     }
 
     if (!rows.length) {
-      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString() };
+      return { spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString(), requestedUntil, effectiveUntil: until };
     }
 
     // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
@@ -3813,7 +3840,8 @@ function MetaAdsLedger() {
     return {
       spend: totalSpend, conversions: totalConv, revenue: totalRev,
       impressions: totalImpressions, clicks: totalClicks, linkClicks: totalLinkClicks, reach: totalReach,
-      campaigns: 0, currency, accountId, ads, rawAds, syncedAt: new Date().toISOString()
+      campaigns: 0, currency, accountId, ads, rawAds, syncedAt: new Date().toISOString(),
+      requestedUntil, effectiveUntil: until
     };
   }
 
