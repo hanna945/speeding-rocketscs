@@ -2051,6 +2051,7 @@ function CrossCampaignCreativePanel({ currentRecord, cpaTarget = null, cpcTarget
 
   const available = ["cpa", "cpc", "cpm", "other"].filter((type) => counts[type] > 0);
   const [strategyType, setStrategyType] = useState("cpa");
+  const [sectionCollapsed, setSectionCollapsed] = useState(true);
   useEffect(() => {
     if (!available.includes(strategyType)) setStrategyType(available[0] || "cpa");
   }, [currentRecord, cpaTarget, cpcTarget, counts.cpa, counts.cpc, counts.cpm, counts.other]);
@@ -2069,7 +2070,17 @@ function CrossCampaignCreativePanel({ currentRecord, cpaTarget = null, cpcTarget
 
   return (
     <div style={{ margin: "18px 0 22px" }}>
-      <CollapsibleSectionTitle className="mal-section-title">同素材 × 不同策略對照表</CollapsibleSectionTitle>
+      <h2
+        className="mal-section-title mal-major-section-title"
+        onClick={() => setSectionCollapsed((v) => !v)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={!sectionCollapsed}
+      >
+        同素材 × 不同策略對照表
+        <span className="mal-major-section-toggle" aria-hidden="true">{sectionCollapsed ? "＋" : "−"}</span>
+      </h2>
+      {!sectionCollapsed && <div className="mal-owned-collapse-body">
       <p style={{ fontSize: 12, color: "var(--ink-soft)", margin: "-3px 0 12px" }}>
         CPA / CPC / CPM 分開比較，不會再把不同目標的 Campaign 混在同一張表。
       </p>
@@ -2169,11 +2180,13 @@ function CrossCampaignCreativePanel({ currentRecord, cpaTarget = null, cpcTarget
           </div>
         </div>
       ))}
+      </div>}
     </div>
   );
 }
 
 function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cpaTarget=null,cpcTarget=null,monthlyBudget=null,periodType="week",periodLabel=""}){
+  const [sectionCollapsed, setSectionCollapsed] = useState(true);
   const result=buildDecisionIntelligence(currentRecord,previousRecord,roasTarget,cpaTarget,monthlyBudget,periodType);
   if(!result) return null;
   const {current,previous,deltas,anomalies,decisions,score}=result;
@@ -2186,19 +2199,32 @@ function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cp
     ["頻率",current.frequency!=null?current.frequency.toFixed(2):"—",deltas.frequency,true],
   ];
   return <div style={{margin:"22px 0 26px"}}>
-    <CollapsibleSectionTitle className="mal-section-title">決策分析{periodLabel?` · ${periodLabel}`:""}</CollapsibleSectionTitle>
-    <div className="mal-cards" style={{marginBottom:14}}>
-      <div className="mal-card"><div className="mal-card-label">投放健康度</div><div className="mal-card-value">{score}</div><div style={{fontSize:11.5,color:"var(--ink-soft)"}}>100 分制 · 0 API</div></div>
-      {metrics.map(([label,value,delta,invert])=><div className="mal-card" key={label}><div className="mal-card-label">{label}</div><div className="mal-card-value" style={{fontSize:22}}>{value}</div><div style={{fontSize:11.5}}>{previous?<><span style={{color:"var(--ink-soft)",marginRight:6}}>vs 前期</span><DeltaBadge value={delta} invert={invert}/></>:<span style={{color:"var(--ink-soft)"}}>前期無可比資料</span>}</div></div>)}
-    </div>
-    <div className="mal-insight-box" style={{marginBottom:14}}><div className="mal-insight-box-title">🚨 異常偵測</div>{anomalies.length?<ul>{anomalies.map((a,i)=><li key={i}><strong>{a.level==="red"?"🔴":"🟡"} {a.title}</strong> · {a.detail}</li>)}</ul>:<p style={{fontSize:13,color:"var(--ink-soft)"}}>目前沒有偵測到超出門檻的異常變化。</p>}</div>
-    <CrossCampaignCreativePanel
-      currentRecord={currentRecord}
-      roasTarget={roasTarget}
-      cpaTarget={cpaTarget}
-      cpcTarget={cpcTarget}
-      compact={true}
-    />
+    <h2
+      className="mal-section-title mal-major-section-title"
+      onClick={() => setSectionCollapsed((v) => !v)}
+      role="button"
+      tabIndex={0}
+      aria-expanded={!sectionCollapsed}
+    >
+      決策分析{periodLabel?` · ${periodLabel}`:""}
+      <span className="mal-major-section-toggle" aria-hidden="true">{sectionCollapsed ? "＋" : "−"}</span>
+    </h2>
+    {!sectionCollapsed && (
+      <div className="mal-owned-collapse-body">
+        <div className="mal-cards" style={{marginBottom:14}}>
+          <div className="mal-card"><div className="mal-card-label">投放健康度</div><div className="mal-card-value">{score}</div><div style={{fontSize:11.5,color:"var(--ink-soft)"}}>100 分制 · 0 API</div></div>
+          {metrics.map(([label,value,delta,invert])=><div className="mal-card" key={label}><div className="mal-card-label">{label}</div><div className="mal-card-value" style={{fontSize:22}}>{value}</div><div style={{fontSize:11.5}}>{previous?<><span style={{color:"var(--ink-soft)",marginRight:6}}>vs 前期</span><DeltaBadge value={delta} invert={invert}/></>:<span style={{color:"var(--ink-soft)"}}>前期無可比資料</span>}</div></div>)}
+        </div>
+        <div className="mal-insight-box" style={{marginBottom:14}}><div className="mal-insight-box-title">🚨 異常偵測</div>{anomalies.length?<ul>{anomalies.map((a,i)=><li key={i}><strong>{a.level==="red"?"🔴":"🟡"} {a.title}</strong> · {a.detail}</li>)}</ul>:<p style={{fontSize:13,color:"var(--ink-soft)"}}>目前沒有偵測到超出門檻的異常變化。</p>}</div>
+        <CrossCampaignCreativePanel
+          currentRecord={currentRecord}
+          roasTarget={roasTarget}
+          cpaTarget={cpaTarget}
+          cpcTarget={cpcTarget}
+          compact={true}
+        />
+      </div>
+    )}
   </div>;
 }
 function computeAdSetStats(ads){
@@ -2360,6 +2386,7 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
     ...rows.filter((r) => r.isChannel),
     ...channelRevenueOnlyRows,
   ].sort((a, b) => b.revenue - a.revenue);
+  const [channelsCollapsed, setChannelsCollapsed] = useState(true);
 
   return (
     <div className="mal-ops-summary">
@@ -2411,26 +2438,36 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
 
       {allChannelRows.length > 0 && (
         <>
-          <CollapsibleSectionTitle className="mal-section-title" style={{ fontSize: 15, marginBottom: 10 }}>
+          <h2
+            className="mal-section-title mal-major-section-title"
+            style={{ fontSize: 15, marginBottom: 10 }}
+            onClick={() => setChannelsCollapsed((v) => !v)}
+            role="button"
+            tabIndex={0}
+            aria-expanded={!channelsCollapsed}
+          >
             平台／通路補充明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
-          </CollapsibleSectionTitle>
-          <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
-            <table className="mal-table">
-              <thead>
-                <tr><th>平台/通路</th><th>營收</th><th>廣告費</th><th>帳面利潤</th></tr>
-              </thead>
-              <tbody>
-                {allChannelRows.map((r) => (
-                  <tr key={r.code}>
-                    <td>{r.code}</td>
-                    <td>{fmtMoney(r.revenue, currencyCode)}</td>
-                    <td>{r.spend > 0 ? fmtMoney(r.spend, currencyCode) : "—"}</td>
-                    <td>{r.profit !== null && r.profit !== undefined ? fmtMoney(r.profit, currencyCode) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            <span className="mal-major-section-toggle" aria-hidden="true">{channelsCollapsed ? "＋" : "−"}</span>
+          </h2>
+          {!channelsCollapsed && (
+            <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+              <table className="mal-table">
+                <thead>
+                  <tr><th>平台/通路</th><th>營收</th><th>廣告費</th><th>帳面利潤</th></tr>
+                </thead>
+                <tbody>
+                  {allChannelRows.map((r) => (
+                    <tr key={r.code}>
+                      <td>{r.code}</td>
+                      <td>{fmtMoney(r.revenue, currencyCode)}</td>
+                      <td>{r.spend > 0 ? fmtMoney(r.spend, currencyCode) : "—"}</td>
+                      <td>{r.profit !== null && r.profit !== undefined ? fmtMoney(r.profit, currencyCode) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
     </div>
