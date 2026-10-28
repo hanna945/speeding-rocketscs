@@ -227,7 +227,9 @@ function normalizeSharedAd(ad,index){
     landingPageViews:n(ad.landingPageViews),
     reach:n(ad.reach),
     sourceUtm:ad.utm||"",
-    active:Boolean(ad.active)
+    active:Boolean(ad.active),
+    campaignEffectiveStatus:ad.campaignEffectiveStatus||"",
+    campaignActive:typeof ad.campaignActive==="boolean"?ad.campaignActive:(ad.campaignEffectiveStatus?ad.campaignEffectiveStatus==="ACTIVE":null)
   };
 }
 function normalizeSharedRecord(record,period,key){
@@ -314,7 +316,7 @@ async function fetchLiveRange(range){
   for(let i=0;i<adIds.length;i+=50){
     const chunk=adIds.slice(i,i+50);
     const filtering=encodeURIComponent(JSON.stringify([{field:"id",operator:"IN",value:chunk}]));
-    const metaUrl="https://graph.facebook.com/"+GRAPH_VERSION+"/act_"+ACCOUNT_ID+"/ads?fields=id,name,effective_status,campaign{id,name,objective},adset{id,name,optimization_goal},creative{id,effective_object_story_id}&filtering="+filtering+"&limit=500&access_token="+enc;
+    const metaUrl="https://graph.facebook.com/"+GRAPH_VERSION+"/act_"+ACCOUNT_ID+"/ads?fields=id,name,effective_status,campaign{id,name,objective,effective_status},adset{id,name,optimization_goal},creative{id,effective_object_story_id}&filtering="+filtering+"&limit=500&access_token="+enc;
     const metaRows=await graphAll(metaUrl,"讀取撩撩廣告狀態",10);
     metaRows.forEach(ad=>{metaMap[String(ad.id)]=ad});
   }
@@ -337,6 +339,8 @@ async function fetchLiveRange(range){
     const campaign=m.campaign&&m.campaign.name?m.campaign.name:(row.campaign_name||"(未分類活動)");
     const adSet=m.adset&&m.adset.name?m.adset.name:(row.adset_name||"(未分類廣告組合)");
     const active=m.effective_status==="ACTIVE";
+    const campaignEffectiveStatus=(m.campaign&&m.campaign.effective_status)||"UNKNOWN";
+    const campaignActive=campaignEffectiveStatus==="ACTIVE";
     return {
       id:String(row.ad_id||("live-"+index)),
       adId:String(row.ad_id||""),
@@ -354,6 +358,8 @@ async function fetchLiveRange(range){
       spend:s,conversions:conv,revenue:rev,impressions:imp,clicks:clk,linkClicks:lclk,landingPageViews:lpv,reach:rch,
       active,
       effectiveStatus:m.effective_status||"UNKNOWN",
+      campaignEffectiveStatus,
+      campaignActive,
       adIds:row.ad_id?[String(row.ad_id)]:[],
       adSetIds:row.adset_id?[String(row.adset_id)]:[],
       rawNames:[name],
@@ -480,6 +486,7 @@ function buildStrategyGroups(record,type){
   const creativeGroups=new Map();
   for(const ad of record?.ads||[]){
     if(!isAdActive(ad))continue;
+    if(ad.campaignActive===false)continue;
     if(classifyStrategy(ad)!==type)continue;
     const ck=ad.creativeKey||("name:"+normalizeCreativeName(ad.name));
     if(!creativeGroups.has(ck))creativeGroups.set(ck,{creativeKey:ck,names:new Set(),storyId:ad.storyId||"",creativeId:ad.creativeId||"",campaignMap:new Map(),totalSpend:0,type});
@@ -656,7 +663,7 @@ function render(){
   const grid='<div class="section"><h2>整體投放概況</h2><div class="grid"><div class="card"><div class="label">投放健康度</div><div class="health '+(a.score>=80?"green":a.score>=60?"amber":"red")+'">'+a.score+'</div><div class="small">100 分制 · 規則引擎</div></div>'+metricCard("ROAS",m.roas!=null?m.roas.toFixed(2)+"x":"—",a.d.roas)+metricCard("CPA",m.cpa!=null?fmtMoney(m.cpa,current.currency):"—",a.d.cpa,true)+metricCard("CTR",fmtPct(m.ctr),a.d.ctr)+metricCard("CPM",m.cpm!=null?fmtMoney(m.cpm,current.currency):"—",a.d.cpm,true)+metricCard("CVR",fmtPct(m.cvr),a.d.cvr)+'</div></div>';
   const anomalies=a.anomalies.length?a.anomalies.map(x=>'<li><strong class="'+x[0]+'">'+(x[0]==="red"?"🔴":"🟡")+' '+esc(x[1])+'</strong> · '+esc(x[2])+'</li>').join(""):'<li>目前沒有偵測到超出門檻的異常。</li>';
   const counts=strategyCounts(current);
-  const insight='<div class="section insights"><div class="panel"><strong>🚨 異常偵測</strong><ul>'+anomalies+'</ul></div><div class="panel"><strong>📣 可比較素材</strong><ul><li>CPA：'+counts.cpa+' 組</li><li>CPC：'+counts.cpc+' 組</li><li>CPM / 品牌曝光：'+counts.cpm+' 組</li><li>其他：'+counts.other+' 組</li></ul><div class="small">只分析目前仍在投放的廣告；已關閉廣告不參與 Winner、診斷與預算建議。</div></div></div>';
+  const insight='<div class="section insights"><div class="panel"><strong>🚨 異常偵測</strong><ul>'+anomalies+'</ul></div><div class="panel"><strong>📣 可比較素材</strong><ul><li>CPA：'+counts.cpa+' 組</li><li>CPC：'+counts.cpc+' 組</li><li>CPM / 品牌曝光：'+counts.cpm+' 組</li><li>其他：'+counts.other+' 組</li></ul><div class="small">同素材策略比較只分析目前仍在投放、且 Campaign 仍為 ACTIVE 的廣告；已關閉 Campaign 不參與 Winner 與策略對照。</div></div></div>';
   const analysisAds=(current.ads||[]).filter(isAdActive);
   const campaigns=groupBy(analysisAds,a=>a.campaign),adsets=groupBy(analysisAds,a=>a.campaign+"｜"+a.adSet);
   const diag=(title,rows)=>'<div class="section"><h2>'+title+'</h2><div class="tablewrap"><table><thead><tr><th>名稱</th><th>廣告數</th><th>花費</th><th>轉單</th><th>CPA</th><th>ROAS</th><th>CTR</th><th>CPM</th><th>CVR</th><th>頻率</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+r.count+'</td><td>'+fmtMoney(r.spend,current.currency)+'</td><td>'+fmtNum(r.conversions)+'</td><td>'+(r.cpa!=null?fmtMoney(r.cpa,current.currency):"—")+'</td><td>'+(r.roas!=null?r.roas.toFixed(2)+"x":"—")+'</td><td>'+fmtPct(r.ctr)+'</td><td>'+(r.cpm!=null?fmtMoney(r.cpm,current.currency):"—")+'</td><td>'+fmtPct(r.cvr)+'</td><td>'+(r.frequency!=null?r.frequency.toFixed(2):"—")+'</td></tr>').join("")+'</tbody></table></div></div>';
