@@ -1,0 +1,84 @@
+name: Meta Ads Read Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Read-only operation
+        required: true
+        default: accounts
+        type: choice
+        options:
+          - accounts
+          - portfolio
+      account_ids:
+        description: "Portfolio only: comma-separated Meta ad account IDs, act_ prefix optional"
+        required: false
+        type: string
+      date_preset:
+        description: Portfolio reporting window
+        required: true
+        default: last_30d
+        type: choice
+        options:
+          - today
+          - yesterday
+          - this_month
+          - last_month
+          - last_3d
+          - last_7d
+          - last_14d
+          - last_28d
+          - last_30d
+          - last_90d
+
+permissions:
+  contents: read
+
+jobs:
+  read-meta-ads:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      MODE: ${{ inputs.mode }}
+      ACCOUNT_IDS: ${{ inputs.account_ids }}
+      DATE_PRESET: ${{ inputs.date_preset }}
+
+    steps:
+      - name: Checkout H&J repo
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned Meta Ads MCP
+        uses: actions/checkout@v4
+        with:
+          repository: byadsco/meta-ads-mcp
+          ref: 883e3fa90471b7c6b10e194883227810f3f4928a
+          path: integrations/meta-ads-mcp/upstream
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+
+      - name: Install bridge dependencies
+        working-directory: integrations/meta-ads-mcp
+        run: npm install --no-package-lock
+
+      - name: Build pinned upstream
+        working-directory: integrations/meta-ads-mcp/upstream
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run guarded read-only query
+        run: node integrations/meta-ads-mcp/scripts/read-only.mjs
+
+      - name: Upload JSON result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-ads-readonly-${{ github.run_id }}
+          path: meta-ads-output.json
+          if-no-files-found: ignore
+          retention-days: 7
