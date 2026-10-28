@@ -2411,9 +2411,9 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
 
       {allChannelRows.length > 0 && (
         <>
-          <h3 className="mal-section-title" style={{ fontSize: 15, marginBottom: 10 }}>
+          <CollapsibleSectionTitle className="mal-section-title" style={{ fontSize: 15, marginBottom: 10 }}>
             平台／通路補充明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
-          </h3>
+          </CollapsibleSectionTitle>
           <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
             <table className="mal-table">
               <thead>
@@ -2698,9 +2698,9 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, m
 
       {channelRevenueOnlyRows.length > 0 && (
         <>
-          <h3 className="mal-section-title" style={{ fontSize: 15, marginTop: 22, marginBottom: 10 }}>
+          <CollapsibleSectionTitle className="mal-section-title" style={{ fontSize: 15, marginTop: 22, marginBottom: 10 }}>
             🏪 其他通路<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本沒有廣告費欄位,只列業績,不進上面的ROAS排行)</span>
-          </h3>
+          </CollapsibleSectionTitle>
           <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
             <table className="mal-table">
               <thead>
