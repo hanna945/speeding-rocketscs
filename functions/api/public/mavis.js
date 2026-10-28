@@ -54,9 +54,23 @@ function sanitizeLedgerMap(ledger) {
 }
 async function resolveBrand(env) {
   const brands = await readJson(env, "meta-api-brands", []);
-  const brand = (Array.isArray(brands) ? brands : []).find((b) => b && BRAND_NAME_MATCH.test(String(b.name || "")));
-  if (!brand || !brand.id) throw new Error("Mavis brand not found in shared brand list");
-  return { id: String(brand.id), name: brand.name || "Halo-Mavis" };
+  let brand = (Array.isArray(brands) ? brands : []).find((b) => b && BRAND_NAME_MATCH.test(String(b.name || "")));
+  if (brand && brand.id) return { id: String(brand.id), name: brand.name || "Halo-Mavis" };
+
+  // Some internal brands live only in TEAM_CREDENTIALS and are intentionally not in the shared favorite-brand list.
+  // Parse only brand roster metadata here; never return credential keys or unrelated brands.
+  if (env.TEAM_CREDENTIALS) {
+    try {
+      const credentials = JSON.parse(env.TEAM_CREDENTIALS);
+      for (const entry of Object.values(credentials || {})) {
+        const roster = entry && Array.isArray(entry.brands) ? entry.brands : [];
+        brand = roster.find((b) => b && typeof b === "object" && b.id && BRAND_NAME_MATCH.test(String(b.name || "")));
+        if (brand) return { id: String(brand.id), name: brand.name || "Halo-Mavis" };
+      }
+    } catch {}
+  }
+
+  throw new Error("Mavis brand not found in shared brand configuration");
 }
 
 export async function onRequestOptions() {
