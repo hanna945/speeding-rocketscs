@@ -4942,6 +4942,11 @@ function MetaAdsLedger() {
     return { spend, conversions, revenue, cpa: conversions > 0 ? spend / conversions : null, roas: spend > 0 && revenue > 0 ? revenue / spend : null };
   }, [sponsorMonthlyStats]);
   const sponsorMonthsWithData = sponsorMonthlyStats.filter((m) => m.ads.length > 0);
+  const sponsorFocusStats = useMemo(() => {
+    if (!sponsorMonthsWithData.length) return null;
+    return sponsorMonthsWithData.find((m) => m.monthKey === focusMonth)
+      || sponsorMonthsWithData[sponsorMonthsWithData.length - 1];
+  }, [sponsorMonthsWithData, focusMonth]);
 
   const sortedWeekKeys = useMemo(() => Object.keys(weeksData).sort(), [weeksData]);
   const focusWeekData = focusWeek ? weeksData[focusWeek] : null;
@@ -5609,25 +5614,44 @@ function MetaAdsLedger() {
           </div>
         ) : (
           <>
-            <h2 className="mal-section-title">業配廣告總覽<span className="mal-section-count">(名稱或行銷活動含「業配」的廣告,累計所有月份)</span></h2>
-            <div className="mal-cards">
-              <div className="mal-card">
-                <div className="mal-card-label">業配總花費</div>
-                <div className="mal-card-value">{fmtMoney(sponsorTotal.spend, currency)}</div>
-              </div>
-              <div className="mal-card">
-                <div className="mal-card-label">業配總轉單</div>
-                <div className="mal-card-value">{fmtInt(sponsorTotal.conversions)}</div>
-              </div>
-              <div className="mal-card">
-                <div className="mal-card-label">業配平均 CPA</div>
-                <div className="mal-card-value">{sponsorTotal.cpa !== null ? fmtMoney(sponsorTotal.cpa, currency) : "—"}</div>
-              </div>
-              <div className="mal-card">
-                <div className="mal-card-label">業配平均 ROAS</div>
-                <div className="mal-card-value">{sponsorTotal.roas !== null ? `${sponsorTotal.roas.toFixed(2)}x` : "—"}</div>
-              </div>
+            <div className="mal-tabs">
+              {sponsorMonthsWithData.map((m) => (
+                <div
+                  key={m.monthKey}
+                  className={`mal-tab ${sponsorFocusStats && m.monthKey === sponsorFocusStats.monthKey ? "mal-tab-active" : ""}`}
+                  onClick={() => setFocusMonth(m.monthKey)}
+                >
+                  {m.month}
+                </div>
+              ))}
             </div>
+
+            <h2 className="mal-section-title">
+              業配廣告總覽
+              <span className="mal-section-count">
+                ({sponsorFocusStats ? `${sponsorFocusStats.month}，名稱或行銷活動含「業配」的廣告` : "目前月份"})
+              </span>
+            </h2>
+            {sponsorFocusStats && (
+              <div className="mal-cards">
+                <div className="mal-card">
+                  <div className="mal-card-label">當月業配花費</div>
+                  <div className="mal-card-value">{fmtMoney(sponsorFocusStats.spend, currency)}</div>
+                </div>
+                <div className="mal-card">
+                  <div className="mal-card-label">當月業配轉單</div>
+                  <div className="mal-card-value">{fmtInt(sponsorFocusStats.conversions)}</div>
+                </div>
+                <div className="mal-card">
+                  <div className="mal-card-label">當月業配 CPA</div>
+                  <div className="mal-card-value">{sponsorFocusStats.cpa !== null ? fmtMoney(sponsorFocusStats.cpa, currency) : "—"}</div>
+                </div>
+                <div className="mal-card">
+                  <div className="mal-card-label">當月業配 ROAS</div>
+                  <div className="mal-card-value">{sponsorFocusStats.roas !== null ? `${sponsorFocusStats.roas.toFixed(2)}x` : "—"}</div>
+                </div>
+              </div>
+            )}
 
             <h2 className="mal-section-title">業配廣告費 / 轉單 趨勢</h2>
             <div className="mal-chart-box">
