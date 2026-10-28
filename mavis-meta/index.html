@@ -2906,6 +2906,7 @@ function CollapsibleSectionTitle({ children, className = "", style, ...props }) 
 }
 
 const MAVIS_CUSTOM_LOGO_KEY = "mavis-custom-logo-v1";
+const MAVIS_LOGO_API = "/api/public/logo?brand=mavis";
 function getSavedMavisLogo() {
   try { return localStorage.getItem(MAVIS_CUSTOM_LOGO_KEY) || ""; } catch { return ""; }
 }
@@ -3078,14 +3079,59 @@ function MetaAdsLedger() {
   async function handleMavisLogoFile(file) {
     try {
       const dataUrl = await compressMavisLogo(file);
+      const res = await fetch(MAVIS_LOGO_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand: "mavis", dataUrl }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.ok) throw new Error(result.error || "雲端 Logo 儲存失敗");
+
       localStorage.setItem(MAVIS_CUSTOM_LOGO_KEY, dataUrl);
       setCustomMavisLogo(dataUrl);
       setMavisFavicon(dataUrl);
-      setLogoUploadNotice("Logo 已更新");
+      setLogoUploadNotice("Logo 已更新並同步到所有裝置");
     } catch (err) {
       setLogoUploadNotice(err && err.message ? err.message : "Logo 上傳失敗");
     }
   }
+
+  async function restoreMavisLogo() {
+    try {
+      const res = await fetch(MAVIS_LOGO_API, { method: "DELETE" });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.ok) throw new Error(result.error || "恢復預設失敗");
+      localStorage.removeItem(MAVIS_CUSTOM_LOGO_KEY);
+      setCustomMavisLogo("");
+      setMavisFavicon("/mavis-meta/mavis-logo.jpg?v=2");
+      setLogoUploadNotice("已恢復預設 Logo，所有裝置會同步");
+    } catch (err) {
+      setLogoUploadNotice(err && err.message ? err.message : "恢復預設 Logo 失敗");
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(MAVIS_LOGO_API, { cache: "no-store" });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok || !result.ok || cancelled) return;
+        if (result.logo) {
+          localStorage.setItem(MAVIS_CUSTOM_LOGO_KEY, result.logo);
+          setCustomMavisLogo(result.logo);
+          setMavisFavicon(result.logo);
+        } else {
+          localStorage.removeItem(MAVIS_CUSTOM_LOGO_KEY);
+          setCustomMavisLogo("");
+          setMavisFavicon("/mavis-meta/mavis-logo.jpg?v=2");
+        }
+      } catch {
+        // 雲端暫時讀不到時保留 localStorage 快取，不影響目前顯示。
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (customMavisLogo) setMavisFavicon(customMavisLogo);
@@ -5548,12 +5594,7 @@ function MetaAdsLedger() {
             {customMavisLogo && (
               <button
                 className="mal-btn"
-                onClick={() => {
-                  localStorage.removeItem(MAVIS_CUSTOM_LOGO_KEY);
-                  setCustomMavisLogo("");
-                  setLogoUploadNotice("已恢復預設 Logo");
-                  document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach((link) => { link.href = "/mavis-meta/mavis-logo.jpg?v=2"; });
-                }}
+                onClick={restoreMavisLogo}
               >
                 ↺ 恢復預設
               </button>
