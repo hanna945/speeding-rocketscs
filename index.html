@@ -687,17 +687,26 @@ async function probeCloud(force) {
 }
 function getCredentialName() { return credentialNameCache; }
 function getCredentialBrands() { return credentialBrandsCache; }
+
+// 這些項目仍可留在共用 KV / 舊設定中，但不應出現在這份品牌成效表單的品牌切換列。
+// H&J 官網業績屬於網站通路資料，不是另一個 Meta 品牌帳本；避免跟 H&J 主品牌重複呈現。
+const HIDDEN_REPORT_BRAND_NAMES = new Set(["H&J官網業績"]);
+function visibleReportBrands(list) {
+  return (list || []).filter((b) => b && !HIDDEN_REPORT_BRAND_NAMES.has((b.name || "").trim()));
+}
+
 // 把「共用品牌清單」(meta-api-brands)跟「目前登入身份自帶的品牌清單」(如果 TEAM_CREDENTIALS 有設定 {id,name} 格式)合併成
 // 最終可切換的品牌清單。身份自帶的清單優先排在前面,共用清單裡其他不在身份清單內的品牌(例如最高權限使用者額外存的常用品牌)接在後面。
 // 純函式,不管在「網頁剛打開」還是「登入成功那一刻」呼叫,結果都一樣,兩處共用同一套邏輯,不會各自維護一份容易漏改其中一邊。
 function mergeCredentialBrands(cleanedSharedBrands) {
-  const credBrands = getCredentialBrands();
-  if (!credBrands || !credBrands.length) return cleanedSharedBrands;
+  const shared = visibleReportBrands(cleanedSharedBrands);
+  const credBrands = visibleReportBrands(getCredentialBrands());
+  if (!credBrands || !credBrands.length) return shared;
   const byId = {};
-  cleanedSharedBrands.forEach((b) => { byId[b.id] = b; });
+  shared.forEach((b) => { byId[b.id] = b; });
   credBrands.forEach((b) => { if (!byId[b.id]) byId[b.id] = { id: b.id, name: b.name }; });
   const credIds = new Set(credBrands.map((b) => b.id));
-  return [...credBrands.map((b) => byId[b.id]), ...cleanedSharedBrands.filter((b) => !credIds.has(b.id))];
+  return [...credBrands.map((b) => byId[b.id]), ...shared.filter((b) => !credIds.has(b.id))];
 }
 const cloudStorage = {
   async get(key) {
