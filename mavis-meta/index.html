@@ -888,6 +888,7 @@ function aggregateLedgerRange(ledgerByMonth, sinceISO, untilISO) {
 
 // ---------- Shopline 對照:儲存鍵值與輔助函式 ----------
 // Shopline 資料不分品牌(一個商店對應所有廣告帳號),所以這裡的 key 不像 Meta 那樣帶品牌 id。
+const SHOPLINE_ENABLED = false; // Mavis 沒有 SHOPLINE，獨立報表完全停用 Shopline 功能
 const SHOPLINE_WORKER_URL_KEY = "shopline-worker-url";
 const SHOPLINE_WEEK_PREFIX = "shopline-week:";
 const SHOPLINE_MONTH_PREFIX = "shopline-month:";
@@ -2901,12 +2902,12 @@ function MetaAdsLedger() {
 
   // ---------- Shopline 對照:state ----------
   // Worker 網址跟驗證密碼已經固定,直接寫死在程式碼裡。
-  const DEFAULT_SHOPLINE_WORKER_URL = "https://shopline-proxy.hanna-104.workers.dev";
-  const SHOPLINE_PROXY_SECRET = "0d7f31d2c6435ef57cafa4358dc7f0a5ad3bed45c31eb13d";
+  const DEFAULT_SHOPLINE_WORKER_URL = "";
+  const SHOPLINE_PROXY_SECRET = "";
   const [shoplineWorkerUrl, setShoplineWorkerUrl] = useState(DEFAULT_SHOPLINE_WORKER_URL);
   const [shoplineWorkerUrlInput, setShoplineWorkerUrlInput] = useState(DEFAULT_SHOPLINE_WORKER_URL);
-  const [shoplineWeeksData, setShoplineWeeksData] = useState({}); // { [weekStart]: record }
-  const [shoplineMonthsData, setShoplineMonthsData] = useState({}); // { [monthKey]: record }
+  const [shoplineWeeksData, setShoplineWeeksData] = useState({}); // Mavis: SHOPLINE disabled
+  const [shoplineMonthsData, setShoplineMonthsData] = useState({}); // Mavis: SHOPLINE disabled
   const [shoplineLoading, setShoplineLoading] = useState(false);
   const [shoplineError, setShoplineError] = useState(null);
   const [shoplineNotice, setShoplineNotice] = useState(null);
@@ -4967,26 +4968,7 @@ function MetaAdsLedger() {
       await runAutoSyncWith(HARDCODED_BRANDS, force);
     } catch { metaOk = false; }
 
-    setRefreshAllStatus("整理中… Shopline 訂單");
-    let shoplineOk = true;
-    try {
-      const RECENT_MONTHS = 3;
-      const RECENT_WEEKS = 4;
-      const now = new Date();
-      for (let m = 0; m < RECENT_MONTHS; m++) {
-        const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
-        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        if (m > 0 && shoplineMonthsData[monthKey]) continue; // 已結束的月份,之前抓過就不重抓
-        try { await fetchShoplineForMonth(monthKey); } catch {}
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-      for (let w = 1; w <= RECENT_WEEKS; w++) {
-        const { weekStart } = getLastWeekRange(8, w); // Shopline 不分品牌,固定用台灣時區(UTC+8)算週界
-        if (w > 1 && shoplineWeeksData[weekStart]) continue; // 已結束的週,之前抓過就不重抓
-        try { await fetchShoplineForWeek(weekStart); } catch {}
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-    } catch { shoplineOk = false; }
+    const shoplineOk = true; // Mavis 沒有 SHOPLINE，略過 Shopline 刷新
 
     setRefreshAllStatus("整理中… 每日收益表(Google 試算表)");
     let ledgerOk = true;
@@ -4995,11 +4977,11 @@ function MetaAdsLedger() {
     } catch { ledgerOk = false; }
 
     setRefreshAllStatus(null);
-    const failedParts = [!metaOk && "廣告成效", !shoplineOk && "Shopline 訂單", !ledgerOk && "每日收益表"].filter(Boolean);
+    const failedParts = [!metaOk && "廣告成效", !ledgerOk && "每日收益表"].filter(Boolean);
     setApiNotice(
       failedParts.length
         ? `刷新完成,但有部分失敗(${failedParts.join("、")}),可以再按一次或個別手動重試。`
-        : "已完成刷新全部資料:品牌廣告成效、Shopline 訂單、每日收益表都是最新的。"
+        : "已完成刷新全部資料:品牌廣告成效、每日收益表都是最新的。"
     );
   }
 
@@ -5817,7 +5799,7 @@ function MetaAdsLedger() {
                       {focusWeekData.spend > 0 && focusWeekData.revenue > 0 ? `${(focusWeekData.revenue / focusWeekData.spend).toFixed(2)}x` : "—"}
                     </div>
                   </div>
-                  {activeBrandId === ONEPAGE_BRAND_ID && shoplineWeeksData[focusWeek] && (
+                  {SHOPLINE_ENABLED && activeBrandId === ONEPAGE_BRAND_ID && shoplineWeeksData[focusWeek] && (
                     <div className="mal-card">
                       <div className="mal-card-label">✅ 真實Shopline訂單(整週)</div>
                       <div className="mal-card-value">{fmtMoney(sumShoplineOrders(shoplineWeeksData[focusWeek].orders).netRevenue)}</div>
@@ -5929,7 +5911,7 @@ function MetaAdsLedger() {
                   </>
                 )}
 
-                {activeBrandId === OFFICIAL_SITE_BRAND_ID ? (
+                {SHOPLINE_ENABLED && activeBrandId === OFFICIAL_SITE_BRAND_ID ? (
                   <>
                     <h2 className="mal-section-title">
                       {weekLabel(focusWeek)} Shopline 對照(官網實際 vs Meta 回報)
