@@ -3564,7 +3564,7 @@ function MetaAdsLedger() {
       const timeRange = encodeURIComponent(JSON.stringify({ since: rangeSince, until: rangeUntil }));
       let insightsUrl =
         `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
-        `&fields=ad_id,ad_name,campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
+        `&fields=ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
       let out = [];
       let page = 0;
       while (insightsUrl && page < 20) {
@@ -3591,7 +3591,7 @@ function MetaAdsLedger() {
       rawRows.forEach((r) => {
         const key = r.ad_id || `__no_id_${Math.random()}`;
         if (!mergedByAdId[key]) {
-          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, campaign_id: r.campaign_id, campaign_name: r.campaign_name, spend: 0, impressions: 0, clicks: 0, inline_link_clicks: 0, reach: 0, actions: [], action_values: [] };
+          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, spend: 0, impressions: 0, clicks: 0, inline_link_clicks: 0, reach: 0, actions: [], action_values: [] };
         }
         const m = mergedByAdId[key];
         m.spend = (parseFloat(m.spend) || 0) + (parseFloat(r.spend) || 0);
@@ -3642,29 +3642,6 @@ function MetaAdsLedger() {
       return { spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString(), requestedUntil, effectiveUntil: until };
     }
 
-    // 已關閉/暫停的行銷活動完全不列入目前報表。
-    // 用 campaign_id 在帳號層級一次查 ACTIVE campaigns，比替每支 ad 抓 campaign status 更省 API。
-    // 這個篩選放在總計之前，所以廣告費、轉單、ROAS 與明細都只反映目前仍在投放的 Campaign。
-    const activeCampaignIds = new Set();
-    let campaignsUrl =
-      `https://graph.facebook.com/v19.0/act_${accountId}/campaigns?fields=id,effective_status&filtering=${encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE"] }]))}&limit=500&access_token=${encToken}`;
-    let campaignPage = 0;
-    while (campaignsUrl && campaignPage < 20) {
-      const json = await fetchGraphApi(campaignsUrl, `讀取進行中的行銷活動(第${campaignPage + 1}頁)`);
-      (json.data || []).forEach((campaign) => {
-        if (campaign.id && campaign.effective_status === "ACTIVE") activeCampaignIds.add(campaign.id);
-      });
-      campaignsUrl = json.paging && json.paging.next ? json.paging.next : null;
-      campaignPage++;
-    }
-    if (campaignsUrl) throw new Error("進行中行銷活動分頁超過安全上限");
-
-    rows = rows.filter((row) => row.campaign_id && activeCampaignIds.has(row.campaign_id));
-
-    if (!rows.length) {
-      return { spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString(), requestedUntil, effectiveUntil: until };
-    }
-
     // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
     // 這一步要放在篩選門檻「之前」,因為 relaxThreshold 模式需要用投放狀態來決定要不要放行低花費的廣告。
     // 只查「這段期間真的有花費紀錄」的廣告 ID,不要掃整個帳號的歷史廣告,避免觸發 Meta 帳號層級的頻率限制。
@@ -3682,13 +3659,14 @@ function MetaAdsLedger() {
     let storyIdMap = {}; // ad.id -> effective_object_story_id(這支廣告素材背後對應的前台貼文 ID,不是每支廣告都有)
     let creativeIdMap = {}; // ad.id -> creative.id，給品牌獨立報表做同素材跨 Campaign 比較
     let objectiveMap = {}; // ad.id -> campaign.objective
+    let campaignStatusMap = {}; // ad.id -> campaign.effective_status
     let optimizationGoalMap = {}; // ad.id -> adset.optimization_goal
     const ID_CHUNK_SIZE = 50;
     for (let i = 0; i < periodAdIds.length; i += ID_CHUNK_SIZE) {
       const chunk = periodAdIds.slice(i, i + ID_CHUNK_SIZE);
       const filtering = encodeURIComponent(JSON.stringify([{ field: "id", operator: "IN", value: chunk }]));
       let adsUrl =
-        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{name,objective},adset{id,name,start_time,optimization_goal},creative{id,thumbnail_url,image_url,url_tags,effective_object_story_id}` +
+        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{name,objective,effective_status},adset{id,name,start_time,optimization_goal},creative{id,thumbnail_url,image_url,url_tags,effective_object_story_id}` +
         `&filtering=${filtering}&limit=500&access_token=${encToken}`;
       let page2 = 0;
       while (adsUrl && page2 < 5) {
@@ -3703,6 +3681,7 @@ function MetaAdsLedger() {
           statusMap[ad.id] = ad.effective_status || "UNKNOWN";
           if (ad.campaign && ad.campaign.name) campaignMap[ad.id] = ad.campaign.name;
           if (ad.campaign && ad.campaign.objective) objectiveMap[ad.id] = ad.campaign.objective;
+          if (ad.campaign && ad.campaign.effective_status) campaignStatusMap[ad.id] = ad.campaign.effective_status;
           if (ad.adset && ad.adset.name) adSetMap[ad.id] = ad.adset.name;
           if (ad.adset && ad.adset.id) adSetIdMap[ad.id] = ad.adset.id;
           if (ad.adset && ad.adset.optimization_goal) optimizationGoalMap[ad.id] = ad.adset.optimization_goal;
@@ -3815,6 +3794,8 @@ function MetaAdsLedger() {
       adSet: adSetMap[row.ad_id] || "(未分類廣告組合)",
       adSetId: adSetIdMap[row.ad_id] || "",
       objective: objectiveMap[row.ad_id] || "",
+      campaignEffectiveStatus: campaignStatusMap[row.ad_id] || "UNKNOWN",
+      campaignActive: campaignStatusMap[row.ad_id] === "ACTIVE",
       optimizationGoal: optimizationGoalMap[row.ad_id] || "",
       creativeId: creativeIdMap[row.ad_id] || "",
       postId: storyIdMap[row.ad_id] || "",
