@@ -5,12 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Liaoliao 撩撩業績總表</title>
 <link rel="icon" type="image/svg+xml" href="/liaoliao-meta/liaoliao-logo.svg?v=2">
-<link rel="apple-touch-icon" href="/api/pwa-icon?brand=liaoliao&size=192">
-<link rel="manifest" href="/liaoliao-meta/manifest.json?v=2">
+<link rel="apple-touch-icon" href="/liaoliao-meta/liaoliao-logo.svg?v=2">
+<link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#6E8577">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;600;700&family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" crossorigin="anonymous">
@@ -7010,13 +7007,6 @@ class MalErrorBoundary extends React.Component {
 ReactDOM.createRoot(document.getElementById("root")).render(
   <MalErrorBoundary><MetaAdsLedger /></MalErrorBoundary>
 );
-</script>
-<script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/liaoliao-meta/sw", { scope: "/liaoliao-meta/" }).catch(() => {});
-  });
-}
 </script>
 </body>
 </html>
