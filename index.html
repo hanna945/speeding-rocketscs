@@ -3573,7 +3573,7 @@ function MetaAdsLedger() {
     if (since > until) {
       return {
         spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0,
-        campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString(),
+        campaigns: 0, currency, accountId, ads: [], rawAds: [], sponsorAds: [], syncedAt: new Date().toISOString(),
         requestedUntil, effectiveUntil: until
       };
     }
@@ -3583,7 +3583,7 @@ function MetaAdsLedger() {
       const timeRange = encodeURIComponent(JSON.stringify({ since: rangeSince, until: rangeUntil }));
       let insightsUrl =
         `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
-        `&fields=ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
+        `&fields=ad_id,ad_name,campaign_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
       let out = [];
       let page = 0;
       while (insightsUrl && page < 20) {
@@ -3610,9 +3610,10 @@ function MetaAdsLedger() {
       rawRows.forEach((r) => {
         const key = r.ad_id || `__no_id_${Math.random()}`;
         if (!mergedByAdId[key]) {
-          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, spend: 0, impressions: 0, clicks: 0, inline_link_clicks: 0, reach: 0, actions: [], action_values: [] };
+          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, campaign_name: r.campaign_name || "", spend: 0, impressions: 0, clicks: 0, inline_link_clicks: 0, reach: 0, actions: [], action_values: [] };
         }
         const m = mergedByAdId[key];
+        if (!m.campaign_name && r.campaign_name) m.campaign_name = r.campaign_name;
         m.spend = (parseFloat(m.spend) || 0) + (parseFloat(r.spend) || 0);
         m.impressions += parseFloat(r.impressions) || 0;
         m.clicks += parseFloat(r.clicks) || 0;
@@ -3658,7 +3659,7 @@ function MetaAdsLedger() {
     }
 
     if (!rows.length) {
-      return { spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString(), requestedUntil, effectiveUntil: until };
+      return { spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, campaigns: 0, currency, accountId, ads: [], rawAds: [], sponsorAds: [], syncedAt: new Date().toISOString(), requestedUntil, effectiveUntil: until };
     }
 
     // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
@@ -3754,8 +3755,26 @@ function MetaAdsLedger() {
       totalReach += parseFloat(row.reach) || 0;
     });
 
+    // 「業配分析」要跟 Meta 後台用行銷活動名稱篩選的結果一致，所以必須從完整 rows 統計，
+    // 不能沿用下方會套用 500 元明細門檻的 detailRows。campaign_name 直接由 Insights 一起取回，
+    // 即使某支廣告花費不到 500、沒有另外抓 /ads 詳細資料，也不會漏掉它的業配花費。
+    const sponsorAds = rows
+      .filter((row) => {
+        const adName = row.ad_name || "";
+        const campaignName = row.campaign_name || campaignMap[row.ad_id] || "";
+        return adName.includes("業配") || campaignName.includes("業配");
+      })
+      .map((row) => ({
+        name: row.ad_name || "(未命名廣告)",
+        adId: row.ad_id || "",
+        campaign: row.campaign_name || campaignMap[row.ad_id] || "(未分類活動)",
+        spend: parseFloat(row.spend) || 0,
+        conversions: pickPurchaseValue(row.actions),
+        revenue: pickPurchaseValue(row.action_values),
+      }));
+
     // 花費門檻只用來決定「廣告明細列表」要不要顯示這支廣告(避免清單被大量花費很少的測試廣告洗版),
-    // 不會再影響上面的總計數字。
+    // 不會再影響上面的總計數字或上面的業配統計。
     const detailRows = rows.filter((row) => {
       const spend = parseFloat(row.spend) || 0;
       if (spend >= MIN_FETCH_SPEND) return true;
@@ -3872,7 +3891,7 @@ function MetaAdsLedger() {
     return {
       spend: totalSpend, conversions: totalConv, revenue: totalRev,
       impressions: totalImpressions, clicks: totalClicks, linkClicks: totalLinkClicks, reach: totalReach,
-      campaigns: 0, currency, accountId, ads, rawAds, syncedAt: new Date().toISOString(),
+      campaigns: 0, currency, accountId, ads, rawAds, sponsorAds, syncedAt: new Date().toISOString(),
       requestedUntil, effectiveUntil: until
     };
   }
@@ -4918,9 +4937,11 @@ function MetaAdsLedger() {
   const SPONSOR_KEYWORD = "業配";
   const sponsorMonthlyStats = useMemo(() => sortedKeys.map((mk) => {
     const rec = months[mk];
-    const sponsorAds = (rec.ads || []).filter(
-      (ad) => (ad.name && ad.name.includes(SPONSOR_KEYWORD)) || (ad.campaign && ad.campaign.includes(SPONSOR_KEYWORD))
-    );
+    const sponsorAds = Array.isArray(rec.sponsorAds)
+      ? rec.sponsorAds
+      : (rec.ads || []).filter(
+          (ad) => (ad.name && ad.name.includes(SPONSOR_KEYWORD)) || (ad.campaign && ad.campaign.includes(SPONSOR_KEYWORD))
+        );
     const spend = sponsorAds.reduce((s, a) => s + a.spend, 0);
     const conversions = sponsorAds.reduce((s, a) => s + a.conversions, 0);
     const revenue = sponsorAds.reduce((s, a) => s + a.revenue, 0);
