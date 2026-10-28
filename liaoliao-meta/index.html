@@ -2903,6 +2903,7 @@ function CollapsibleSectionTitle({ children, className = "", style, ...props }) 
 }
 
 const LIAOLIAO_CUSTOM_LOGO_KEY = "liaoliao-custom-logo-v1";
+const LIAOLIAO_LOGO_API = "/api/public/logo?brand=liaoliao";
 function getSavedLiaoliaoLogo() {
   try { return localStorage.getItem(LIAOLIAO_CUSTOM_LOGO_KEY) || ""; } catch { return ""; }
 }
@@ -3073,14 +3074,59 @@ function MetaAdsLedger() {
   async function handleLiaoliaoLogoFile(file) {
     try {
       const dataUrl = await compressLiaoliaoLogo(file);
+      const res = await fetch(LIAOLIAO_LOGO_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand: "liaoliao", dataUrl }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.ok) throw new Error(result.error || "雲端 Logo 儲存失敗");
+
       localStorage.setItem(LIAOLIAO_CUSTOM_LOGO_KEY, dataUrl);
       setCustomLiaoliaoLogo(dataUrl);
       setLiaoliaoFavicon(dataUrl);
-      setLogoUploadNotice("Logo 已更新");
+      setLogoUploadNotice("Logo 已更新並同步到所有裝置");
     } catch (err) {
       setLogoUploadNotice(err && err.message ? err.message : "Logo 上傳失敗");
     }
   }
+
+  async function restoreLiaoliaoLogo() {
+    try {
+      const res = await fetch(LIAOLIAO_LOGO_API, { method: "DELETE" });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.ok) throw new Error(result.error || "恢復預設失敗");
+      localStorage.removeItem(LIAOLIAO_CUSTOM_LOGO_KEY);
+      setCustomLiaoliaoLogo("");
+      setLiaoliaoFavicon("/liaoliao-meta/liaoliao-logo.svg?v=2");
+      setLogoUploadNotice("已恢復預設 Logo，所有裝置會同步");
+    } catch (err) {
+      setLogoUploadNotice(err && err.message ? err.message : "恢復預設 Logo 失敗");
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(LIAOLIAO_LOGO_API, { cache: "no-store" });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok || !result.ok || cancelled) return;
+        if (result.logo) {
+          localStorage.setItem(LIAOLIAO_CUSTOM_LOGO_KEY, result.logo);
+          setCustomLiaoliaoLogo(result.logo);
+          setLiaoliaoFavicon(result.logo);
+        } else {
+          localStorage.removeItem(LIAOLIAO_CUSTOM_LOGO_KEY);
+          setCustomLiaoliaoLogo("");
+          setLiaoliaoFavicon("/liaoliao-meta/liaoliao-logo.svg?v=2");
+        }
+      } catch {
+        // 雲端暫時讀不到時保留 localStorage 快取，不影響目前顯示。
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (customLiaoliaoLogo) setLiaoliaoFavicon(customLiaoliaoLogo);
@@ -5475,12 +5521,7 @@ function MetaAdsLedger() {
             {customLiaoliaoLogo && (
               <button
                 className="mal-btn"
-                onClick={() => {
-                  localStorage.removeItem(LIAOLIAO_CUSTOM_LOGO_KEY);
-                  setCustomLiaoliaoLogo("");
-                  setLogoUploadNotice("已恢復預設 Logo");
-                  document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach((link) => { link.href = "/liaoliao-meta/liaoliao-logo.svg?v=2"; });
-                }}
+                onClick={restoreLiaoliaoLogo}
               >
                 ↺ 恢復預設
               </button>
