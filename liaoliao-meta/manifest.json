@@ -1,0 +1,29 @@
+{
+  "id": "/liaoliao-meta/",
+  "name": "Liaoliao 撩撩業績總表",
+  "short_name": "撩撩業績",
+  "description": "Liaoliao 撩撩廣告與業績報表",
+  "start_url": "/liaoliao-meta/",
+  "scope": "/liaoliao-meta/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "background_color": "#F3EEE5",
+  "theme_color": "#6E8577",
+  "icons": [
+    {
+      "src": "/api/pwa-icon?brand=liaoliao&size=192",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/api/pwa-icon?brand=liaoliao&size=512",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
