@@ -3564,7 +3564,7 @@ function MetaAdsLedger() {
       const timeRange = encodeURIComponent(JSON.stringify({ since: rangeSince, until: rangeUntil }));
       let insightsUrl =
         `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
-        `&fields=ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
+        `&fields=ad_id,ad_name,campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values&time_range=${timeRange}&limit=500&access_token=${encToken}`;
       let out = [];
       let page = 0;
       while (insightsUrl && page < 20) {
@@ -3591,7 +3591,7 @@ function MetaAdsLedger() {
       rawRows.forEach((r) => {
         const key = r.ad_id || `__no_id_${Math.random()}`;
         if (!mergedByAdId[key]) {
-          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, spend: 0, impressions: 0, clicks: 0, inline_link_clicks: 0, reach: 0, actions: [], action_values: [] };
+          mergedByAdId[key] = { ad_id: r.ad_id, ad_name: r.ad_name, campaign_id: r.campaign_id, campaign_name: r.campaign_name, spend: 0, impressions: 0, clicks: 0, inline_link_clicks: 0, reach: 0, actions: [], action_values: [] };
         }
         const m = mergedByAdId[key];
         m.spend = (parseFloat(m.spend) || 0) + (parseFloat(r.spend) || 0);
@@ -3637,6 +3637,29 @@ function MetaAdsLedger() {
         r.reach = Object.prototype.hasOwnProperty.call(reachByAdId, r.ad_id) ? reachByAdId[r.ad_id] : 0;
       });
     }
+
+    if (!rows.length) {
+      return { spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString(), requestedUntil, effectiveUntil: until };
+    }
+
+    // 已關閉/暫停的行銷活動完全不列入目前報表。
+    // 用 campaign_id 在帳號層級一次查 ACTIVE campaigns，比替每支 ad 抓 campaign status 更省 API。
+    // 這個篩選放在總計之前，所以廣告費、轉單、ROAS 與明細都只反映目前仍在投放的 Campaign。
+    const activeCampaignIds = new Set();
+    let campaignsUrl =
+      `https://graph.facebook.com/v19.0/act_${accountId}/campaigns?fields=id,effective_status&filtering=${encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE"] }]))}&limit=500&access_token=${encToken}`;
+    let campaignPage = 0;
+    while (campaignsUrl && campaignPage < 20) {
+      const json = await fetchGraphApi(campaignsUrl, `讀取進行中的行銷活動(第${campaignPage + 1}頁)`);
+      (json.data || []).forEach((campaign) => {
+        if (campaign.id && campaign.effective_status === "ACTIVE") activeCampaignIds.add(campaign.id);
+      });
+      campaignsUrl = json.paging && json.paging.next ? json.paging.next : null;
+      campaignPage++;
+    }
+    if (campaignsUrl) throw new Error("進行中行銷活動分頁超過安全上限");
+
+    rows = rows.filter((row) => row.campaign_id && activeCampaignIds.has(row.campaign_id));
 
     if (!rows.length) {
       return { spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, campaigns: 0, currency, accountId, ads: [], rawAds: [], syncedAt: new Date().toISOString(), requestedUntil, effectiveUntil: until };
