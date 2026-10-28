@@ -3113,19 +3113,46 @@ function MetaAdsLedger() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const cached = getSavedMavisLogo();
       try {
         const res = await fetch(MAVIS_LOGO_API, { cache: "no-store" });
         const result = await res.json().catch(() => ({}));
         if (!res.ok || !result.ok || cancelled) return;
+
         if (result.logo) {
           localStorage.setItem(MAVIS_CUSTOM_LOGO_KEY, result.logo);
           setCustomMavisLogo(result.logo);
           setMavisFavicon(result.logo);
-        } else {
+          return;
+        }
+
+        // 雲端有明確的 reset 記錄時，以雲端為準，清掉其他裝置留下的舊快取。
+        if (result.updatedAt) {
           localStorage.removeItem(MAVIS_CUSTOM_LOGO_KEY);
           setCustomMavisLogo("");
           setMavisFavicon("/mavis-meta/mavis-logo.jpg?v=2");
+          return;
         }
+
+        // 舊版只存在 localStorage：第一次升級時自動搬到共用 KV，不讓使用者重新上傳。
+        if (cached) {
+          const migrateRes = await fetch(MAVIS_LOGO_API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ brand: "mavis", dataUrl: cached }),
+          });
+          const migrateResult = await migrateRes.json().catch(() => ({}));
+          if (migrateRes.ok && migrateResult.ok && !cancelled) {
+            setCustomMavisLogo(cached);
+            setMavisFavicon(cached);
+            setLogoUploadNotice("已把原本 Logo 同步到所有裝置");
+          }
+          return;
+        }
+
+        localStorage.removeItem(MAVIS_CUSTOM_LOGO_KEY);
+        setCustomMavisLogo("");
+        setMavisFavicon("/mavis-meta/mavis-logo.jpg?v=2");
       } catch {
         // 雲端暫時讀不到時保留 localStorage 快取，不影響目前顯示。
       }
