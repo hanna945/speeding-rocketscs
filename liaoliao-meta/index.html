@@ -7008,6 +7008,24 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <MalErrorBoundary><MetaAdsLedger /></MalErrorBoundary>
 );
 </script>
+<script>
+/* cleanup reverted PWA */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    regs.forEach((reg) => {
+      try {
+        const p = new URL(reg.scope).pathname;
+        if ("/liaoliao-meta/" === "/" ? p === "/" : p.startsWith("/liaoliao-meta/")) reg.unregister();
+      } catch {}
+    });
+  }).catch(() => {});
+}
+if ("caches" in window) {
+  caches.keys().then((keys) => {
+    keys.filter((key) => key === "report-pwa-shell-v1").forEach((key) => caches.delete(key));
+  }).catch(() => {});
+}
+</script>
 </body>
 </html>
 
