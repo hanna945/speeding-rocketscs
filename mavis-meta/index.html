@@ -3024,6 +3024,8 @@ function MetaAdsLedger() {
   const [weekInfo, setWeekInfo] = useState(getLastWeekRange());
   const [weekLoading, setWeekLoading] = useState(false);
   const [viewMode, setViewMode] = useState("month");
+  const [sharedViewSyncing, setSharedViewSyncing] = useState(false);
+  const [sharedViewSyncNotice, setSharedViewSyncNotice] = useState("");
   const [weeksData, setWeeksData] = useState({});
   const [focusWeek, setFocusWeek] = useState(null);
   // 診斷用:error boundary 在這個元件外層,沒辦法直接讀到這裡的 state,錯誤發生時只能靠這個
@@ -3644,6 +3646,49 @@ function MetaAdsLedger() {
     } finally {
       setSheetSyncLoading(false);
     }
+  }
+
+  async function syncSharedBrandData(nextView = viewMode, brandId = activeBrandId) {
+    if (!brandId) {
+      setViewMode(nextView);
+      return;
+    }
+    setSharedViewSyncing(true);
+    setSharedViewSyncNotice("同步共用品牌報表中…");
+    try {
+      // 強制繞過前端 cache，重新抓品牌總報表最新快照。
+      const feed = await loadPublicReport(true);
+      const settings = feed.settings || {};
+      const keyed = (value) => value == null ? {} : { [brandId]: value };
+
+      setCpaThresholds(keyed(settings.cpaTarget));
+      setCpcThresholds(keyed(settings.cpcTarget));
+      setAdRatioThresholds(keyed(settings.adRatioThreshold));
+      setRoasTargets(keyed(settings.roasTarget));
+      setMonthlyBudgets(keyed(settings.monthlyBudget));
+      setProductNames({ [brandId]: settings.productNames || {} });
+
+      // 同一份最新 feed 一次重載月 / 週 / 每日，後續切子頁不會殘留舊資料。
+      await Promise.all([
+        loadAll(brandId),
+        loadAllWeeks(brandId),
+        loadLedger(brandId),
+      ]);
+
+      setViewMode(nextView);
+      setSharedViewSyncNotice("已同步最新共用資料");
+      setTimeout(() => setSharedViewSyncNotice(""), 1800);
+    } catch (err) {
+      setSharedViewSyncNotice("同步失敗，先顯示目前資料");
+      setViewMode(nextView);
+    } finally {
+      setSharedViewSyncing(false);
+    }
+  }
+
+  async function handleBrandSwitch(brandId) {
+    setActiveBrandId(brandId);
+    await syncSharedBrandData(viewMode, brandId);
   }
 
   async function loadAll(brandId, isStale) {
@@ -5484,7 +5529,7 @@ function MetaAdsLedger() {
             <div
               key={b.id}
               className={`mal-brand-chip ${activeBrandId === b.id ? "mal-brand-chip-active" : ""}`}
-              onClick={() => setActiveBrandId(b.id)}
+              onClick={() => handleBrandSwitch(b.id)}
               title={b.id}
             >
               {b.name}
@@ -5494,7 +5539,7 @@ function MetaAdsLedger() {
             className={`mal-btn mal-btn-primary mal-brand-adjust-btn ${viewMode === "adjust" ? "mal-brand-adjust-btn-active" : ""}`}
             onClick={() => {
               setAdjustmentPeriod(viewMode === "week" ? "week" : "month");
-              setViewMode("adjust");
+              syncSharedBrandData("adjust");
             }}
             title="比較同一素材在不同 Campaign / 策略下的表現"
           >
@@ -5525,25 +5570,26 @@ function MetaAdsLedger() {
       {metaUpdateNotice && <div className="mal-notice">✓ {metaUpdateNotice}</div>}
       {autoSyncStatus && <div className="mal-notice mal-notice-syncing">{autoSyncStatus}</div>}
       {refreshAllStatus && <div className="mal-notice mal-notice-syncing">{refreshAllStatus}</div>}
+      {sharedViewSyncNotice && <div className="mal-notice mal-notice-syncing">{sharedViewSyncing ? "↻ " : "✓ "}{sharedViewSyncNotice}</div>}
       {error && <div className="mal-error">⚠ {error}</div>}
       {apiError && <div className="mal-error">⚠ {apiError}</div>}
       {metaUpdateError && <div className="mal-error">⚠ {metaUpdateError}</div>}
 
       <div className="mal-viewmode-switch">
-        <button className={`mal-viewmode-btn ${viewMode === "week" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("week")}>
+        <button disabled={sharedViewSyncing} className={`mal-viewmode-btn ${viewMode === "week" ? "mal-viewmode-btn-active" : ""}`} onClick={() => syncSharedBrandData("week")}>
           🗓 每週報表
         </button>
-        <button className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("month")}>
+        <button disabled={sharedViewSyncing} className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => syncSharedBrandData("month")}>
           📅 每月報表
         </button>
-        <button className={`mal-viewmode-btn ${viewMode === "daily" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("daily")}>
+        <button disabled={sharedViewSyncing} className={`mal-viewmode-btn ${viewMode === "daily" ? "mal-viewmode-btn-active" : ""}`} onClick={() => syncSharedBrandData("daily")}>
           📆 每日報表
         </button>
-        <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
+        <button disabled={sharedViewSyncing} className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => syncSharedBrandData("sponsor")}>
           🎤 業配分析
         </button>
         {activeBrandId === OFFICIAL_SITE_BRAND_ID && (
-          <button className={`mal-viewmode-btn ${viewMode === "coupon" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("coupon")}>
+          <button className={`mal-viewmode-btn ${viewMode === "coupon" ? "mal-viewmode-btn-active" : ""}`} onClick={() => syncSharedBrandData("coupon")}>
             🎟 折價券查詢
           </button>
         )}
