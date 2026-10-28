@@ -78,6 +78,7 @@ export async function onRequestDelete({ request, env }) {
   const url = new URL(request.url);
   const brand = normalizeBrand(url.searchParams.get("brand"));
   if (!brand) return json({ ok: false, error: "invalid_brand" }, 400);
-  await env.REPORT_KV.delete(BRAND_KEYS[brand]);
-  return json({ ok: true, brand, deleted: true });
+  const resetRecord = { dataUrl: null, updatedAt: new Date().toISOString(), reset: true };
+  await env.REPORT_KV.put(BRAND_KEYS[brand], JSON.stringify(resetRecord));
+  return json({ ok: true, brand, deleted: true, updatedAt: resetRecord.updatedAt });
 }
