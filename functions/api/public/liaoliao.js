@@ -44,6 +44,27 @@ function scopedSetting(obj) {
   return Object.prototype.hasOwnProperty.call(obj, BRAND_ID) ? obj[BRAND_ID] : null;
 }
 
+function sanitizeLedgerMap(ledger) {
+  const out = {};
+  for (const [monthKey, record] of Object.entries(ledger || {})) {
+    if (!record || typeof record !== "object") continue;
+    out[monthKey] = {
+      monthKey: record.monthKey || monthKey,
+      year: record.year || null,
+      month: record.month || null,
+      days: Array.isArray(record.days) ? record.days : [],
+      monthTotal: record.monthTotal || null,
+      productCodes: Array.isArray(record.productCodes) ? record.productCodes : [],
+      onePageProductCodes: Array.isArray(record.onePageProductCodes) ? record.onePageProductCodes : [],
+      officialSiteCodes: Array.isArray(record.officialSiteCodes) ? record.officialSiteCodes : [],
+      externalChannelCodes: Array.isArray(record.externalChannelCodes) ? record.externalChannelCodes : [],
+      salesPlatformCodes: Array.isArray(record.salesPlatformCodes) ? record.salesPlatformCodes : [],
+      adSourceCodes: Array.isArray(record.adSourceCodes) ? record.adSourceCodes : [],
+    };
+  }
+  return out;
+}
+
 export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: corsHeaders() });
 }
@@ -78,7 +99,7 @@ export async function onRequestGet({ env }) {
       },
       months,
       weeks,
-      ledger,
+      ledger: sanitizeLedgerMap(ledger),
       settings: {
         cpaTarget: scopedSetting(cpaAll),
         adRatioThreshold: scopedSetting(adRatioAll),
