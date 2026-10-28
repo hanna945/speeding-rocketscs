@@ -3675,8 +3675,35 @@ function MetaAdsLedger() {
         loadLedger(brandId),
       ]);
 
+      // Mavis 與品牌總報表同網域，可沿用這台瀏覽器已記住的 Meta Token。
+      // 業配頁需要精準對齊 Meta Campaign 篩選，因此若本機已有 Token，
+      // 直接重抓目前月份的完整 rows，只更新畫面，不寫回 Meta、不改廣告。
+      if (nextView === "sponsor") {
+        const savedToken = (apiToken || localStorage.getItem(LS_PREFIX + "meta-api-token") || "").trim();
+        const realAccountId = feed && feed.brand && feed.brand.id ? String(feed.brand.id) : "";
+        const availableMonths = Object.keys(feed.months || {}).sort();
+        const liveMonthKey = focusMonth && feed.months && feed.months[focusMonth]
+          ? focusMonth
+          : (availableMonths.length ? availableMonths[availableMonths.length - 1] : null);
+        if (savedToken && realAccountId && liveMonthKey) {
+          try {
+            const [yy, mm] = liveMonthKey.split("-").map(Number);
+            const today = new Date();
+            const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+            const monthEnd = `${liveMonthKey}-${String(new Date(yy, mm, 0).getDate()).padStart(2, "0")}`;
+            const until = monthEnd > todayKey ? todayKey : monthEnd;
+            const liveRecord = await fetchInsightsForRange(savedToken, realAccountId, `${liveMonthKey}-01`, until, false);
+            setMonths((prev) => ({ ...prev, [liveMonthKey]: liveRecord }));
+            setFocusMonth(liveMonthKey);
+            setSharedViewSyncNotice("已用 Meta 完整資料校正業配金額");
+          } catch {
+            // Token 過期或 Meta 暫時失敗時，不影響共用報表正常顯示。
+          }
+        }
+      }
+
       setViewMode(nextView);
-      setSharedViewSyncNotice("已同步最新共用資料");
+      setSharedViewSyncNotice((prev) => prev || "已同步最新共用資料");
       setTimeout(() => setSharedViewSyncNotice(""), 1800);
     } catch (err) {
       setSharedViewSyncNotice("同步失敗，先顯示目前資料");
@@ -4124,7 +4151,7 @@ function MetaAdsLedger() {
     // 而不是 API 預設的歸因窗口。如果沒有這個參數,API 預設的歸因窗口通常比後台顯示用的寬(例如把 7 天內的點擊、
     // 甚至瀏覽後很久才發生的購買都算進來),會導致轉單數比 Meta 後台顯示的「結果」多出好幾倍,CPA 被嚴重低估、
     // ROAS 被嚴重高估——這正是造成轉單數跟後台數字差非常多倍的根本原因,不是重複計算的問題。
-    const insightFields = "ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values";
+    const insightFields = "ad_id,ad_name,campaign_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values";
     let insightsUrl =
       `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
       `&fields=${insightFields}&time_range=${timeRange}&limit=500&access_token=${encToken}`;
@@ -4152,7 +4179,7 @@ function MetaAdsLedger() {
     }
 
     if (!rows.length) {
-      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], syncedAt: new Date().toISOString() };
+      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], sponsorAds: [], syncedAt: new Date().toISOString() };
     }
 
     // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
@@ -4230,8 +4257,21 @@ function MetaAdsLedger() {
       totalReach += parseFloat(row.reach) || 0;
     });
 
-    // 花費門檻只用來決定「廣告明細列表」要不要顯示這支廣告(避免清單被大量花費很少的測試廣告洗版),
-    // 不會再影響上面的總計數字。
+    // 業配統計必須跟 Meta 後台「行銷活動名稱包含 業配」完全同口徑，
+    // 所以從完整 rows 計算，不能先套用單支 500 元明細門檻。
+    const sponsorAds = rows
+      .filter((row) => String(row.campaign_name || "").includes("業配"))
+      .map((row) => ({
+        name: row.ad_name || "(未命名廣告)",
+        adId: row.ad_id || "",
+        campaign: row.campaign_name || "(未分類活動)",
+        spend: parseFloat(row.spend) || 0,
+        conversions: pickPurchaseValue(row.actions),
+        revenue: pickPurchaseValue(row.action_values),
+      }));
+
+    // 花費門檻只用來決定「一般廣告明細列表」要不要顯示這支廣告，
+    // 不再影響業配統計。
     const detailRows = rows.filter((row) => {
       const spend = parseFloat(row.spend) || 0;
       if (spend >= MIN_FETCH_SPEND) return true;
@@ -4316,7 +4356,7 @@ function MetaAdsLedger() {
     return {
       spend: totalSpend, conversions: totalConv, revenue: totalRev,
       impressions: totalImpressions, clicks: totalClicks, linkClicks: totalLinkClicks, reach: totalReach,
-      campaigns: 0, currency, accountId, ads, syncedAt: new Date().toISOString()
+      campaigns: 0, currency, accountId, ads, sponsorAds, syncedAt: new Date().toISOString()
     };
   }
 
