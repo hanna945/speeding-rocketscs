@@ -5381,12 +5381,16 @@ function MetaAdsLedger() {
   const SPONSOR_KEYWORD = "業配";
   const sponsorMonthlyStats = useMemo(() => sortedKeys.map((mk) => {
     const rec = months[mk];
-    const sponsorAds = (rec.ads || []).filter(
-      (ad) => (ad.name && ad.name.includes(SPONSOR_KEYWORD)) || (ad.campaign && ad.campaign.includes(SPONSOR_KEYWORD))
-    );
-    const spend = sponsorAds.reduce((s, a) => s + a.spend, 0);
-    const conversions = sponsorAds.reduce((s, a) => s + a.conversions, 0);
-    const revenue = sponsorAds.reduce((s, a) => s + a.revenue, 0);
+    // 新版共用資料直接保存完整 sponsorAds：它來自未套 $500 明細門檻的 Meta rows，
+    // 口徑等同 Meta 後台「行銷活動名稱包含 業配」。舊資料沒有 sponsorAds 時才退回舊算法。
+    const sponsorAds = Array.isArray(rec.sponsorAds)
+      ? rec.sponsorAds
+      : (rec.rawAds && rec.rawAds.length ? rec.rawAds : (rec.ads || [])).filter(
+          (ad) => ad.campaign && ad.campaign.includes(SPONSOR_KEYWORD)
+        );
+    const spend = sponsorAds.reduce((s, a) => s + Number(a.spend || 0), 0);
+    const conversions = sponsorAds.reduce((s, a) => s + Number(a.conversions || 0), 0);
+    const revenue = sponsorAds.reduce((s, a) => s + Number(a.revenue || 0), 0);
     return {
       monthKey: mk, month: monthLabel(mk), ads: sponsorAds, spend, conversions, revenue,
       cpa: conversions > 0 ? spend / conversions : null,
