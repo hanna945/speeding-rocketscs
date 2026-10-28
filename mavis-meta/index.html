@@ -56,6 +56,15 @@
     box-shadow: none;
   }
   .mal-stamp img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mal-sponsor-month { margin-bottom: 12px; border: 1px solid var(--rule-soft); border-radius: 5px; background: var(--paper-raised); overflow: hidden; }
+  .mal-sponsor-month-summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 13px 16px; user-select: none; }
+  .mal-sponsor-month-summary::-webkit-details-marker { display: none; }
+  .mal-sponsor-month-summary:hover { background: #F7F1E8; }
+  .mal-sponsor-month-title { font-family: 'Noto Serif TC', serif; font-size: 15px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .mal-sponsor-month-summary .mal-section-count { margin-left: 0; flex: 1; }
+  .mal-sponsor-month-chevron { margin-left: auto; color: var(--ink-soft); font-size: 18px; line-height: 1; transition: transform .15s ease; }
+  .mal-sponsor-month[open] .mal-sponsor-month-chevron { transform: rotate(180deg); }
+  .mal-sponsor-month-body { padding: 0 10px 10px; border-top: 1px solid var(--rule-soft); }
   .mal-header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .mal-header-actions-full, .mal-header-actions-secondary, .mal-header-actions-reset-row { display: contents; }
   .mal-title { font-family: 'Noto Serif TC', serif; font-weight: 500; font-size: 25px; margin: 0; letter-spacing: 0.02em; color: var(--ink); }
@@ -6113,45 +6122,48 @@ function MetaAdsLedger() {
 
             <h2 className="mal-section-title">逐月業配廣告明細</h2>
             {sponsorMonthsWithData.map((m) => (
-              <div key={m.monthKey} style={{ marginBottom: 22 }}>
-                <div className="mal-week-analysis-title">
-                  {m.month}
+              <details key={m.monthKey} className="mal-sponsor-month">
+                <summary className="mal-sponsor-month-summary">
+                  <span className="mal-sponsor-month-title">{m.month}</span>
                   <span className="mal-section-count">
-                    (花費 {fmtMoney(m.spend, currency)}、轉單 {fmtInt(m.conversions)}、CPA {m.cpa !== null ? fmtMoney(m.cpa, currency) : "—"}、ROAS {m.roas !== null ? `${m.roas.toFixed(2)}x` : "—"})
+                    花費 {fmtMoney(m.spend, currency)} · 轉單 {fmtInt(m.conversions)} · CPA {m.cpa !== null ? fmtMoney(m.cpa, currency) : "—"} · ROAS {m.roas !== null ? `${m.roas.toFixed(2)}x` : "—"}
                   </span>
-                </div>
-                <div className="mal-ad-list">
-                  {m.ads.map((ad, i) => {
-                  const fbLibLink = fbPostLink(ad.postId);
-                    const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
-                    const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
-                    const fbLink = fbAdsManagerLink(months[m.monthKey].accountId, ad.adIds);
-                    return (
-                      <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
-                        <AdThumb src={ad.image} alt={ad.name} />
-                        <div className="mal-ad-info">
-                          <div className="mal-ad-name" title={ad.name}>{ad.name}<ActiveBadge active={ad.active} /></div>
-                          {ad.utm ? (
-                            <div className="mal-ad-utm" title={ad.utm}>{ad.utm}</div>
-                          ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
-                          {ad.startDate && <span className="mal-ad-startdate">{fmtStartDate(ad.startDate)} 開始投放</span>}
-                          {ad.postPublishDate ? <span className="mal-ad-startdate">📅 {fmtStartDate(ad.postPublishDate)} 前台發佈</span> : <span className="mal-ad-startdate">📌 後台直接發佈</span>}
-                          {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
-                          {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
-                        {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(m.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(m.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
+                  <span className="mal-sponsor-month-chevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div className="mal-sponsor-month-body">
+                  <div className="mal-ad-list">
+                    {m.ads.map((ad, i) => {
+                    const fbLibLink = fbPostLink(ad.postId);
+                      const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
+                      const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
+                      const fbLink = fbAdsManagerLink(months[m.monthKey].accountId, ad.adIds);
+                      return (
+                        <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
+                          <AdThumb src={ad.image} alt={ad.name} />
+                          <div className="mal-ad-info">
+                            <div className="mal-ad-name" title={ad.name}>{ad.name}<ActiveBadge active={ad.active} /></div>
+                            {ad.utm ? (
+                              <div className="mal-ad-utm" title={ad.utm}>{ad.utm}</div>
+                            ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
+                            {ad.startDate && <span className="mal-ad-startdate">{fmtStartDate(ad.startDate)} 開始投放</span>}
+                            {ad.postPublishDate ? <span className="mal-ad-startdate">📅 {fmtStartDate(ad.postPublishDate)} 前台發佈</span> : <span className="mal-ad-startdate">📌 後台直接發佈</span>}
+                            {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                            {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
+                          {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(m.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(m.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
+                          </div>
+                          <div className="mal-ad-stats">
+                            <div><span>廣告費</span>{fmtMoney(ad.spend, currency)}</div>
+                            <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
+                            <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, currency) : "—"}</div>
+                            <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, currency) : "—"}</div>
+                            <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
+                          </div>
                         </div>
-                        <div className="mal-ad-stats">
-                          <div><span>廣告費</span>{fmtMoney(ad.spend, currency)}</div>
-                          <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
-                          <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, currency) : "—"}</div>
-                          <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, currency) : "—"}</div>
-                          <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              </details>
             ))}
           </>
         )
