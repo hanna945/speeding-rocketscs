@@ -20,3 +20,5 @@ id = "d283e1d9fa8f4ec1b1a64f2818649cb0"
 # touch: 觸發重新部署,套用宥凱(光速代操)的 TEAM_CREDENTIALS
 
 # touch: deploy shared cloud logo persistence
+
+# touch: deploy cloud logo migration and reset sync
