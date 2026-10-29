@@ -1223,6 +1223,100 @@
     line-height:1.55;
   }
 
+
+  /* Monthly presentation v5: plan hierarchy + images */
+  .mal-presentation-plan-section {
+    grid-column:1 / -1;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin:8px 0 2px;
+    font-family:'Noto Serif TC',serif;
+    font-size:22px;
+    font-weight:700;
+    color:#4a382d;
+  }
+  .mal-presentation-plan-section::after {
+    content:"";
+    height:1px;
+    flex:1;
+    background:linear-gradient(90deg,rgba(143,112,84,.34),rgba(143,112,84,0));
+  }
+  .mal-presentation-plan-section small {
+    font-family:'Noto Sans TC',sans-serif;
+    font-size:13px;
+    font-weight:600;
+    color:#9a806a;
+    letter-spacing:.03em;
+  }
+  .mal-presentation-plan-card-v3.has-image {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(220px,.82fr);
+    gap:18px;
+    align-items:stretch;
+  }
+  .mal-presentation-plan-copy { min-width:0; }
+  .mal-presentation-plan-image-link {
+    display:flex;
+    min-height:150px;
+    max-height:245px;
+    border-radius:15px;
+    overflow:hidden;
+    background:#eee6dc;
+    border:1px solid rgba(137,113,90,.16);
+    align-self:stretch;
+  }
+  .mal-presentation-plan-image {
+    width:100%;
+    height:100%;
+    min-height:150px;
+    object-fit:contain;
+    background:#f5efe7;
+  }
+  .mal-presentation-density-sparse .mal-presentation-plan-image-link {
+    max-height:300px;
+  }
+  .mal-presentation-density-sparse .mal-presentation-plan-image {
+    min-height:220px;
+  }
+  .mal-presentation-next-group-title {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin:4px 0 10px;
+    font-family:'Noto Serif TC',serif;
+    font-size:20px;
+    font-weight:700;
+    color:#4a382d;
+  }
+  .mal-presentation-next-group-title::after {
+    content:"";
+    height:1px;
+    flex:1;
+    background:rgba(143,112,84,.24);
+  }
+  .mal-presentation-next-project {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) 150px;
+    gap:12px;
+    align-items:stretch;
+  }
+  .mal-presentation-next-project-image {
+    width:100%;
+    height:100%;
+    max-height:120px;
+    object-fit:contain;
+    border-radius:11px;
+    background:#f3ece3;
+    border:1px solid rgba(137,113,90,.15);
+  }
+  @media (max-width:820px) {
+    .mal-presentation-plan-card-v3.has-image,
+    .mal-presentation-next-project { grid-template-columns:1fr; }
+    .mal-presentation-plan-image-link { max-height:220px; }
+    .mal-presentation-next-project-image { max-height:180px; }
+  }
+
 </style>
 </head>
 <body>
@@ -4259,9 +4353,9 @@ function MonthlyPresentation({
 
   const planItems = useMemo(() => {
     const items=[];
-    materialIssues.forEach((m)=>items.push({type:"素材調整",title:m.title||"未命名項目",description:m.content||"",status:m.status||"yellow"}));
-    projectItems.forEach((p)=>items.push({type:"專案進度",title:p.name||"未命名專案",description:p.description||"",status:p.status||"green",meta:[p.owner?"負責人："+p.owner:"",p.dueDate?"期限："+p.dueDate:"",p.progress?"進度："+p.progress:""].filter(Boolean).join("｜"),link:p.link||""}));
-    actionItems.forEach((a)=>items.push({type:"後續操作",title:a.title||"未命名方向",description:a.description||"",status:"green",link:a.link||""}));
+    materialIssues.forEach((m)=>items.push({type:"素材調整方向",title:m.title||"未命名項目",description:m.content||"",status:m.status||"yellow",meta:m.category||""}));
+    projectItems.forEach((p)=>items.push({type:"專案進度",title:p.name||"未命名專案",description:p.description||"",status:p.status||"green",meta:[p.owner?"負責人："+p.owner:"",p.dueDate?"期限："+p.dueDate:"",p.progress?"進度："+p.progress:""].filter(Boolean).join("｜"),link:p.link||"",image:p.image||""}));
+    actionItems.forEach((a)=>items.push({type:"後續操作方向",title:a.title||"未命名方向",description:a.description||"",status:"green",link:a.link||""}));
     return items;
   }, [materialIssues, projectItems, actionItems]);
 
@@ -4269,7 +4363,7 @@ function MonthlyPresentation({
     const pages=[]; let page=[]; let weight=0;
     (items||[]).forEach((item)=>{
       const raw=(item.title||"")+" "+(item.description||"")+" "+(item.meta||"");
-      const itemWeight=Math.max(1,Math.ceil(raw.length/95));
+      const itemWeight=Math.max(1,Math.ceil(raw.length/95)) + (item.image ? 3 : 0);
       if(page.length && weight+itemWeight>maxWeight){ pages.push(page); page=[]; weight=0; }
       page.push(item); weight+=itemWeight;
     });
@@ -4311,6 +4405,14 @@ function MonthlyPresentation({
         </table>
       </div>
     );
+  }
+
+
+  function planSectionLabel(type) {
+    if (type === "素材調整方向") return "素材調整方向";
+    if (type === "專案進度") return "專案進度";
+    if (type === "後續操作方向") return "後續操作方向";
+    return type || "月報內容";
   }
 
   function renderCampaignTable(chunk){
@@ -4447,16 +4549,26 @@ function MonthlyPresentation({
         <div className="mal-presentation-slide">
           <PresentationSectionHead
             title={"月報告"+(planChunks.length>1?" "+(idx+1)+"/"+planChunks.length:"")}
-            subtitle="素材調整方向、專案進度、後續操作方向使用原月報內容；文字中的網址可直接點開。"
+            subtitle="完整帶入素材調整方向、專案進度、後續操作方向；專案圖片、文字與連結同步呈現。"
           />
           <div className={"mal-presentation-plan-grid " + presentationDensityClass(chunk.length)}>
-            {chunk.length?chunk.map((item,i)=><div className="mal-presentation-plan-card-v3" key={item.type+"-"+idx+"-"+i}>
-              <span className="mal-presentation-plan-type">{item.type}</span>
-              <h3>{item.title}</h3>
-              {item.meta?<div className="mal-presentation-project-meta"><span>{item.meta}</span></div>:null}
-              <p><PresentationLinkify text={item.description}/></p>
-              {item.link&&/^https?:\/\//.test(String(item.link).trim())?<a className="mal-presentation-link-chip" href={String(item.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往連結</a>:null}
-            </div>):<div className="mal-presentation-panel">目前這個月份尚未建立月報告內容。</div>}
+            {chunk.length ? chunk.map((item,i)=>{
+              const prevType = i > 0 ? chunk[i-1].type : null;
+              const showSection = i === 0 || item.type !== prevType;
+              return <React.Fragment key={item.type+"-"+idx+"-"+i}>
+                {showSection ? <div className="mal-presentation-plan-section">{planSectionLabel(item.type)}<small>{chunk.filter((x)=>x.type===item.type).length} 項</small></div> : null}
+                <div className={"mal-presentation-plan-card-v3 " + (item.image ? "has-image" : "")}>
+                  <div className="mal-presentation-plan-copy">
+                    <span className="mal-presentation-plan-type">{item.type}</span>
+                    <h3>{item.title}</h3>
+                    {item.meta?<div className="mal-presentation-project-meta"><span>{item.meta}</span></div>:null}
+                    {item.description ? <p><PresentationLinkify text={item.description}/></p> : null}
+                    {item.link&&/^https?:\/\//.test(String(item.link).trim())?<a className="mal-presentation-link-chip" href={String(item.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往連結</a>:null}
+                  </div>
+                  {item.image ? <a className="mal-presentation-plan-image-link" href={item.image} target="_blank" rel="noopener noreferrer" title="點擊放大圖片"><img className="mal-presentation-plan-image" src={item.image} alt={item.title+" 專案圖片"} /></a> : null}
+                </div>
+              </React.Fragment>;
+            }) : <div className="mal-presentation-panel">目前這個月份尚未建立月報告內容。</div>}
           </div>
         </div>
       )
@@ -4467,25 +4579,43 @@ function MonthlyPresentation({
     key:"next-history",
     node:(
       <div className="mal-presentation-slide">
-        <PresentationSectionHead title={(nextMonthKey?monthLabel(nextMonthKey):"下月")+"｜下月重點與近月趨勢"} subtitle={nextHasContent?"已讀取下個月份月報資料。":"下個月份尚未建立資料，先沿用本月後續操作方向作為執行清單。"} />
+        <PresentationSectionHead title={(nextMonthKey?monthLabel(nextMonthKey):"下月")+"｜下月重點與近月趨勢"} subtitle={nextHasContent?"已讀取下個月份月報資料，操作方向與專案內容完整帶入。":"下個月份尚未建立資料，先沿用本月後續操作方向與專案進度作為執行清單。"} />
         <div className="mal-presentation-history-grid">
-          <div className="mal-presentation-compact-card">
-            <h3>下月優先事項</h3>
+          <div className="mal-presentation-compact-card" style={{overflow:"auto"}}>
+            <div className="mal-presentation-next-group-title">後續操作方向</div>
             <div className="mal-presentation-action-stack">
-              {(nextActionItems||[]).slice(0,4).map((a,i)=><div className="mal-presentation-action-item" key={i}><strong>{String(i+1).padStart(2,"0")+"｜"+(a.title||"未命名方向")}</strong><div><PresentationLinkify text={a.description||""}/></div></div>)}
-              {!nextActionItems.length?<div className="mal-presentation-action-item"><strong>尚未建立</strong><div>請在月報告的後續操作方向新增下月工作。</div></div>:null}
-              {(nextProjects||[]).slice(0,2).map((p,i)=><div className="mal-presentation-action-item" key={"p"+i}><strong>{"專案｜"+(p.name||"未命名專案")}</strong><div>{[p.progress,p.dueDate].filter(Boolean).join("｜")}</div>{p.link&&/^https?:\/\//.test(String(p.link).trim())?<a className="mal-presentation-link-chip" href={String(p.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往</a>:null}</div>)}
+              {(nextActionItems||[]).length ? (nextActionItems||[]).map((a,i)=><div className="mal-presentation-action-item" key={i}>
+                <strong>{String(i+1).padStart(2,"0")+"｜"+(a.title||"未命名方向")}</strong>
+                <div><PresentationLinkify text={a.description||""}/></div>
+                {a.link&&/^https?:\/\//.test(String(a.link).trim())?<a className="mal-presentation-link-chip" href={String(a.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往</a>:null}
+              </div>) : <div className="mal-presentation-action-item"><strong>尚未建立</strong><div>請在月報告的後續操作方向新增下月工作。</div></div>}
+            </div>
+
+            <div className="mal-presentation-next-group-title" style={{marginTop:18}}>專案進度</div>
+            <div className="mal-presentation-action-stack">
+              {(nextProjects||[]).length ? (nextProjects||[]).map((p,i)=><div className="mal-presentation-action-item mal-presentation-next-project" key={"p"+i}>
+                <div>
+                  <strong>{p.name||"未命名專案"}</strong>
+                  <div>{[p.owner?"負責人："+p.owner:"",p.progress?"進度："+p.progress:"",p.dueDate?"期限："+p.dueDate:""].filter(Boolean).join("｜")}</div>
+                  {p.description?<div style={{marginTop:5}}><PresentationLinkify text={p.description}/></div>:null}
+                  {p.link&&/^https?:\/\//.test(String(p.link).trim())?<a className="mal-presentation-link-chip" href={String(p.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往</a>:null}
+                </div>
+                {p.image?<a href={p.image} target="_blank" rel="noopener noreferrer" title="點擊放大圖片"><img className="mal-presentation-next-project-image" src={p.image} alt={(p.name||"專案")+" 圖片"} /></a>:null}
+              </div>) : <div className="mal-presentation-action-item"><strong>尚未建立專案</strong><div>目前沒有需要帶到下月持續追蹤的專案。</div></div>}
             </div>
           </div>
-          <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(historyRows.length)}>
-            <table className="mal-presentation-table">
-              <thead><tr><th>月份</th><th>Meta 廣告費</th><th>Meta 轉單</th><th>Meta 營收</th><th>CPA</th><th>ROAS</th></tr></thead>
-              <tbody>{historyRows.slice().reverse().map((r)=>{
-                const cpa=Number(r.conversions||0)>0?Number(r.spend||0)/Number(r.conversions||0):null;
-                const roas=Number(r.spend||0)>0?Number(r.revenue||0)/Number(r.spend||0):null;
-                return <tr key={r.monthKey}><td><strong>{monthLabel(r.monthKey)}</strong></td><td className="num">{fmtMoney(r.spend||0,currencyCode)}</td><td className="num">{fmtInt(r.conversions||0)}</td><td className="num">{fmtMoney(r.revenue||0,currencyCode)}</td><td className="num">{cpa!==null?fmtMoney(cpa,currencyCode):"—"}</td><td className="num">{roas!==null?roas.toFixed(2)+"x":"—"}</td></tr>;
-              })}</tbody>
-            </table>
+          <div>
+            <div className="mal-presentation-next-group-title">近月趨勢</div>
+            <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(historyRows.length)}>
+              <table className="mal-presentation-table">
+                <thead><tr><th>月份</th><th>Meta 廣告費</th><th>Meta 轉單</th><th>Meta 營收</th><th>CPA</th><th>ROAS</th></tr></thead>
+                <tbody>{historyRows.slice().reverse().map((r)=>{
+                  const cpa=Number(r.conversions||0)>0?Number(r.spend||0)/Number(r.conversions||0):null;
+                  const roas=Number(r.spend||0)>0?Number(r.revenue||0)/Number(r.spend||0):null;
+                  return <tr key={r.monthKey}><td><strong>{monthLabel(r.monthKey)}</strong></td><td className="num">{fmtMoney(r.spend||0,currencyCode)}</td><td className="num">{fmtInt(r.conversions||0)}</td><td className="num">{fmtMoney(r.revenue||0,currencyCode)}</td><td className="num">{cpa!==null?fmtMoney(cpa,currencyCode):"—"}</td><td className="num">{roas!==null?roas.toFixed(2)+"x":"—"}</td></tr>;
+                })}</tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
