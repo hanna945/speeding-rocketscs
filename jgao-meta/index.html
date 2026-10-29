@@ -813,7 +813,6 @@ let cloudStatusCache = "unknown";
 let credentialNameCache = "J.GAO";
 let credentialBrandsCache = [{ id: PUBLIC_JGAO_BRAND_ID, name: "J.GAO" }];
 
-function teamKeyHeaders() { return {}; }
 
 async function loadPublicReport(force) {
   if (publicReportCache && !force) return publicReportCache;
@@ -1008,9 +1007,6 @@ function monthKeyFor(brandId, mk) {
 // ---------- 後台「一頁式正確業績」(每日收益表匯入) ----------
 // 每個品牌、每個月存一筆,key 格式跟月報表一致,方便重複匯入時直接覆蓋更新。
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
-function ledgerKeyFor(brandId, monthKey) {
-  return LEDGER_STORAGE_PREFIX + (brandId ? brandId + "::" : "") + monthKey;
-}
 const SHARED_PREFIXES = [LEDGER_STORAGE_PREFIX]; // Shopline 月資料前綴稍後宣告完再併入。
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
@@ -1196,23 +1192,6 @@ function parseLedgerSheet(matrix, year) {
 // LEDGER_PARSER_SYNC_CHECK:END
 
 // 解析整份工作簿(可能包含 12 個月分頁),回傳 { [monthKey]: monthObject }。
-function parseLedgerWorkbook(workbook, year) {
-  const result = {};
-  workbook.SheetNames.forEach((sheetName) => {
-    const m = sheetName.match(LEDGER_MONTH_SHEET_RE);
-    if (!m) return;
-    const monthNum = parseInt(m[1], 10);
-    if (!monthNum || monthNum < 1 || monthNum > 12) return;
-    const sheet = workbook.Sheets[sheetName];
-    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
-    const parsed = parseLedgerSheet(matrix, year);
-    if (parsed) {
-      const monthKey = `${year}-${String(monthNum).padStart(2, "0")}`;
-      result[monthKey] = { monthKey, year, month: monthNum, ...parsed };
-    }
-  });
-  return result;
-}
 
 // 把後台每日資料彙總成指定日期範圍(since ~ until 的 ISO 日期字串)總計,依產品代號分組。
 // ledgerByMonth: { [monthKey]: monthObject },會自動跨月份撈資料。
@@ -3709,16 +3688,10 @@ function MetaAdsLedger() {
 
   // ---------- 後台每日收益表(帳本)/ 每日報表 / 團隊密碼:state ----------
   const [ledgerByMonth, setLedgerByMonth] = useState({});
-  const [ledgerYear, setLedgerYear] = useState(new Date().getFullYear());
-  const [ledgerImportLoading, setLedgerImportLoading] = useState(false);
-  const [ledgerImportError, setLedgerImportError] = useState(null);
-  const [ledgerImportNotice, setLedgerImportNotice] = useState(null);
-  const [dailyMonth, setDailyMonth] = useState(null);
+          const [dailyMonth, setDailyMonth] = useState(null);
   const [dailySubMode, setDailySubMode] = useState("single"); // "single"(選一天) | "matrix"(矩陣總覽)
   const [focusDay, setFocusDay] = useState(null);
-  const [sheetIdInput, setSheetIdInput] = useState("");
-  const [sheetSyncLoading, setSheetSyncLoading] = useState(false);
-  const [cloudStatus, setCloudStatus] = useState(HAS_SHARED_STORAGE ? "artifact" : "unknown");
+      const [cloudStatus, setCloudStatus] = useState(HAS_SHARED_STORAGE ? "artifact" : "unknown");
   const [credentialName, setCredentialName] = useState("");
     // showApiPanel/showLedgerModal:對應的按鈕、彈窗畫面都拿掉了(這兩個是會外流權杖/試算表的舊功能),
   // 但底下還有幾支舊函式(importLedgerFile、syncFromGoogleSheet等)內部呼叫這兩個setter——
