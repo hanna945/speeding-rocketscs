@@ -2315,6 +2315,232 @@ function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cp
     )}
   </div>;
 }
+
+function metaSuiteCsvCell(value) {
+  const s = value == null ? "" : String(value);
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+
+function exportMetaSuiteCsv(currentRecord, periodLabel) {
+  const ads = (currentRecord && currentRecord.ads) || [];
+  if (!ads.length) {
+    window.alert("目前期間沒有可匯出的 Meta 廣告明細。");
+    return;
+  }
+  const header = [
+    "Campaign","Ad Set","Ad","Spend","Conversions","Revenue","ROAS","CPA",
+    "Impressions","Clicks","CTR","CPM","CVR","Reach","Frequency","Active"
+  ];
+  const rows = ads.map((ad) => {
+    const spend = Number(ad.spend || 0);
+    const conversions = Number(ad.conversions || 0);
+    const revenue = Number(ad.revenue || 0);
+    const impressions = Number(ad.impressions || 0);
+    const clicks = Number(ad.linkClicks || ad.clicks || 0);
+    const reach = Number(ad.reach || 0);
+    const roas = spend > 0 ? revenue / spend : null;
+    const cpa = conversions > 0 ? spend / conversions : null;
+    const ctr = impressions > 0 ? clicks / impressions * 100 : null;
+    const cpm = impressions > 0 ? spend / impressions * 1000 : null;
+    const cvr = clicks > 0 ? conversions / clicks * 100 : null;
+    const frequency = reach > 0 ? impressions / reach : null;
+    return [
+      ad.campaign || "", ad.adSet || "", ad.name || "", spend, conversions, revenue,
+      roas == null ? "" : roas.toFixed(4),
+      cpa == null ? "" : cpa.toFixed(2),
+      impressions, clicks,
+      ctr == null ? "" : ctr.toFixed(4),
+      cpm == null ? "" : cpm.toFixed(2),
+      cvr == null ? "" : cvr.toFixed(4),
+      reach,
+      frequency == null ? "" : frequency.toFixed(4),
+      ad.active === false ? "false" : ad.active === true ? "true" : ""
+    ];
+  });
+  const csv = "\uFEFF" + [header, ...rows].map((row) => row.map(metaSuiteCsvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safePeriod = String(periodLabel || "current-period").replace(/[\\/:*?"<>|]+/g, "-");
+  a.href = url;
+  a.download = "meta-ads-extractor-" + safePeriod + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+
+function buildMetaSuiteDiagnostics(currentRecord, previousRecord, roasTarget, cpaTarget, periodType) {
+  const ads = (currentRecord && currentRecord.ads) || [];
+  const prevMap = new Map(((previousRecord && previousRecord.ads) || []).map((ad) => [decisionAdKey(ad), ad]));
+  const campaignCount = new Set(ads.map((ad) => ad.campaign).filter(Boolean)).size;
+  const adSetCount = new Set(ads.map((ad) => [ad.campaign, ad.adSet].filter(Boolean).join("||")).filter(Boolean)).size;
+  const decisionResult = buildDecisionIntelligence(currentRecord, previousRecord, roasTarget, cpaTarget, null, periodType);
+  const decisions = (decisionResult && decisionResult.decisions) || [];
+  const decisionCounts = { SCALE:0, KEEP:0, MONITOR:0, REFRESH:0, REDUCE:0 };
+  decisions.forEach((x) => {
+    const code = x && x.decision && x.decision.code;
+    if (code && Object.prototype.hasOwnProperty.call(decisionCounts, code)) decisionCounts[code] += 1;
+  });
+
+  const autoAllocated = ads.filter((ad) => {
+    const name = String(ad && ad.campaign || "").toUpperCase();
+    return /(^|[^A-Z])(CBO|ASC)([^A-Z]|$)|ADVANTAGE\+|ADV\+/.test(name);
+  }).length;
+  const insufficient = ads.filter((ad) => Number(ad && ad.conversions || 0) < 10).length;
+
+  const findings = [];
+  ads.forEach((ad) => {
+    const spend = Number(ad && ad.spend || 0);
+    const conv = Number(ad && ad.conversions || 0);
+    const impressions = Number(ad && ad.impressions || 0);
+    const clicks = Number(ad && (ad.linkClicks || ad.clicks) || 0);
+    const reach = Number(ad && ad.reach || 0);
+    const ctr = impressions > 0 ? clicks / impressions * 100 : null;
+    const frequency = reach > 0 ? impressions / reach : null;
+    const prev = prevMap.get(decisionAdKey(ad));
+    let prevCtr = null;
+    if (prev) {
+      const pImp = Number(prev.impressions || 0);
+      const pClicks = Number(prev.linkClicks || prev.clicks || 0);
+      prevCtr = pImp > 0 ? pClicks / pImp * 100 : null;
+    }
+    const ctrDelta = metricPctDelta(ctr, prevCtr);
+    if (ctrDelta != null && ctrDelta <= -25 && frequency != null && frequency >= 2.2) {
+      findings.push({
+        level:"orange", type:"Creative fatigue", ad,
+        detail:"CTR 較前期下降 " + Math.abs(ctrDelta).toFixed(0) + "%，Frequency " + frequency.toFixed(2) + "，優先更新素材。"
+      });
+    }
+    if (cpaTarget > 0 && conv === 0 && spend >= cpaTarget * 2) {
+      findings.push({
+        level:"red", type:"Delivery stall", ad,
+        detail:"已花費 " + fmtMoney(spend, currentRecord && currentRecord.currency) + " 且仍無轉單，已達目標 CPA ×2。"
+      });
+    }
+    if (frequency != null && frequency >= 3 && (ctrDelta == null || ctrDelta <= -10)) {
+      findings.push({
+        level:"yellow", type:"Audience saturation", ad,
+        detail:"Frequency " + frequency.toFixed(2) + " 偏高，且 CTR 沒有同步改善，留意受眾飽和。"
+      });
+    }
+  });
+
+  const score = decisionResult ? decisionResult.score : null;
+  return {
+    ads, campaignCount, adSetCount, decisionCounts, autoAllocated, insufficient,
+    findings: findings.sort((a,b) => {
+      const rank = { red:0, orange:1, yellow:2 };
+      return (rank[a.level] ?? 9) - (rank[b.level] ?? 9) || Number(b.ad.spend || 0) - Number(a.ad.spend || 0);
+    }),
+    score
+  };
+}
+
+function MetaAdsOpenSourceSuite({
+  currentRecord,
+  previousRecord,
+  roasTarget = 3,
+  cpaTarget = null,
+  periodType = "week",
+  periodLabel = ""
+}) {
+  const [collapsed, setCollapsed] = useState(true);
+  if (!currentRecord) return null;
+  const diag = buildMetaSuiteDiagnostics(currentRecord, previousRecord, roasTarget, cpaTarget, periodType);
+  const urgent = diag.findings.filter((x) => x.level === "red" || x.level === "orange").length;
+
+  return (
+    <div style={{ margin: "20px 0 24px" }}>
+      <h2
+        className="mal-section-title mal-major-section-title"
+        onClick={() => setCollapsed((v) => !v)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={!collapsed}
+      >
+        Meta Ads Intelligence Suite{periodLabel ? " · " + periodLabel : ""}
+        <span className="mal-major-section-toggle" aria-hidden="true">{collapsed ? "＋" : "−"}</span>
+      </h2>
+
+      {!collapsed && (
+        <div className="mal-owned-collapse-body">
+          <p style={{ fontSize: 12, color: "var(--ink-soft)", margin: "-2px 0 14px", lineHeight: 1.6 }}>
+            Meta Ads Extractor × Meta Ads Genius × Meta Ads Agents 的可用分析邏輯，直接使用目前報表已載入資料。READ ONLY，不會修改 Meta，且不增加 LLM token。
+          </p>
+
+          <div className="mal-cards" style={{ marginBottom: 14 }}>
+            <div className="mal-card">
+              <div className="mal-card-label">Meta Ads Extractor</div>
+              <div className="mal-card-value" style={{ fontSize: 21 }}>{diag.ads.length} Ads</div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-soft)", lineHeight: 1.5 }}>
+                {diag.campaignCount} Campaign · {diag.adSetCount} Ad Set
+              </div>
+              <button
+                className="mal-icon-btn"
+                style={{ marginTop: 9 }}
+                onClick={() => exportMetaSuiteCsv(currentRecord, periodLabel)}
+              >
+                匯出目前資料 CSV
+              </button>
+            </div>
+
+            <div className="mal-card">
+              <div className="mal-card-label">Meta Ads Genius</div>
+              <div className="mal-card-value" style={{ fontSize: 21 }}>
+                {diag.score == null ? "—" : diag.score + "/100"}
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-soft)", lineHeight: 1.55 }}>
+                SCALE {diag.decisionCounts.SCALE} · KEEP {diag.decisionCounts.KEEP}<br/>
+                MONITOR {diag.decisionCounts.MONITOR} · REFRESH {diag.decisionCounts.REFRESH} · REDUCE {diag.decisionCounts.REDUCE}
+              </div>
+              <div style={{ fontSize: 10.8, color: "var(--ink-soft)", marginTop: 5 }}>
+                CBO / ASC / Advantage+ {diag.autoAllocated} 支 · 樣本未滿 10 轉單 {diag.insufficient} 支
+              </div>
+            </div>
+
+            <div className="mal-card">
+              <div className="mal-card-label">Meta Ads Agents</div>
+              <div className="mal-card-value" style={{ fontSize: 21 }}>{diag.findings.length} Signals</div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-soft)", lineHeight: 1.55 }}>
+                優先處理 {urgent} 項<br/>
+                素材疲勞 / 投放卡住 / 受眾飽和
+              </div>
+            </div>
+          </div>
+
+          <div className="mal-insight-box" style={{ marginBottom: 14 }}>
+            <div className="mal-insight-box-title">🤖 Agents 專項診斷</div>
+            {diag.findings.length ? (
+              <ul>
+                {diag.findings.slice(0, 10).map((x, i) => (
+                  <li key={(x.ad && (x.ad.adId || x.ad.name)) + "::" + x.type + "::" + i}>
+                    <strong>
+                      {x.level === "red" ? "🔴" : x.level === "orange" ? "🟠" : "🟡"} {x.type}
+                    </strong>
+                    {" · "}{(x.ad && x.ad.name) || "(未命名廣告)"}：{x.detail}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--ink-soft)" }}>
+                目前沒有偵測到素材疲勞、明顯投放卡住或受眾飽和訊號。
+              </p>
+            )}
+          </div>
+
+          <div className="mal-insight-box">
+            <div className="mal-insight-box-title">資料邊界</div>
+            <p style={{ margin: "7px 0 0", fontSize: 12.5, color: "var(--ink-soft)", lineHeight: 1.65 }}>
+              Pixel / CAPI event health、Event Match Quality 與完整 Activity Log 需要額外的事件健康或變更紀錄資料；目前報表沒有這些欄位，所以這一版不會自行猜測。
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function computeAdSetStats(ads){
   const map={};
   (ads||[]).forEach(ad=>{const campaign=ad.campaign||"(未分類活動)",adSet=ad.adSet||"(未分類廣告組合)",key=campaign+"||"+adSet;if(!map[key])map[key]={campaign,adSet,spend:0,conversions:0,revenue:0,impressions:0,clicks:0,reach:0,adCount:0};const g=map[key];g.spend+=Number(ad.spend||0);g.conversions+=Number(ad.conversions||0);g.revenue+=Number(ad.revenue||0);g.impressions+=Number(ad.impressions||0);g.clicks+=Number(ad.linkClicks||ad.clicks||0);g.reach+=Number(ad.reach||0);g.adCount++;});
@@ -5921,6 +6147,14 @@ function MetaAdsLedger() {
               periodType="month"
               periodLabel={monthLabel(focusMonth)}
             />
+            <MetaAdsOpenSourceSuite
+              currentRecord={focusData}
+              previousRecord={prevData}
+              roasTarget={roasTargets[activeBrandId]}
+              cpaTarget={cpaThresholds[activeBrandId]}
+              periodType="month"
+              periodLabel={monthLabel(focusMonth)}
+            />
           )}
 
           {focusData && (
@@ -6227,6 +6461,14 @@ function MetaAdsLedger() {
                   roasTarget={roasTargets[activeBrandId]}
                   cpaTarget={cpaThresholds[activeBrandId]}
                   cpcTarget={cpcThresholds[activeBrandId]}
+                  periodType="week"
+                  periodLabel={weekLabel(focusWeek)}
+                />
+                <MetaAdsOpenSourceSuite
+                  currentRecord={focusWeekData}
+                  previousRecord={prevWeekData}
+                  roasTarget={roasTargets[activeBrandId]}
+                  cpaTarget={cpaThresholds[activeBrandId]}
                   periodType="week"
                   periodLabel={weekLabel(focusWeek)}
                 />
