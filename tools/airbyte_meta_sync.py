@@ -876,6 +876,78 @@ def apply_day_delta_to_month(
     return month
 
 
+async def rebuild_completed_month_airbyte(
+    connector: FacebookMarketingConnector,
+    base_url: str,
+    brand: dict[str, str],
+    month_start: date,
+    month_until: date,
+    local_today: date,
+    currency: str,
+    metadata: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Bootstrap a month from completed-day Airbyte data when no daily cache exists yet."""
+    if month_until < month_start:
+        return None
+
+    account_id = brand["id"]
+    mk = month_key(month_start)
+    print(
+        f"[{brand['name']}] AIRBYTE BOOTSTRAP {month_start} -> {month_until}, "
+        "all historical campaigns"
+    )
+
+    rows = await fetch_daily_insights(
+        connector,
+        account_id,
+        month_start,
+        month_until,
+        active_campaign_ids=None,
+    )
+
+    cache = kv_get(base_url, cache_key(account_id, mk))
+    if not isinstance(cache, dict):
+        cache = {"version": 3, "accountId": account_id, "month": mk, "days": {}}
+    caches = {mk: cache}
+    update_cache_rows(caches, account_id, month_start, month_until, rows)
+    cache = caches[mk]
+    cache["bootstrapCompletedAt"] = datetime.now(timezone.utc).isoformat()
+    kv_put(base_url, cache_key(account_id, mk), cache)
+
+    existing = kv_get(base_url, month_report_key(account_id, mk))
+    month_reach = await fetch_period_reach(
+        connector,
+        account_id,
+        month_start,
+        month_until,
+    )
+    record = build_report_record(
+        rows,
+        month_reach,
+        metadata,
+        legacy_ad_meta(existing),
+        account_id,
+        currency,
+        month_start,
+        month_until,
+        relax_threshold=True,
+        include_all_ads=True,
+    )
+    record["source"] = "airbyte"
+    record["syncEngine"] = "airbyte"
+    record["syncMode"] = "completed_month_bootstrap_airbyte"
+    record["bootstrapCompletedAt"] = datetime.now(timezone.utc).isoformat()
+    record["effectiveUntil"] = month_until.isoformat()
+    kv_put(base_url, month_report_key(account_id, mk), record)
+
+    # For the current month, today's baseline must be replaced by the rebuilt completed-day
+    # history. Otherwise a later today-only run could restore the stale pre-bootstrap month.
+    if mk == month_key(local_today):
+        kv_put(base_url, day_baseline_key(account_id, local_today), record)
+
+    return record
+
+
 async def reconcile_recent_attribution_airbyte(
     connector: FacebookMarketingConnector,
     base_url: str,
@@ -885,14 +957,16 @@ async def reconcile_recent_attribution_airbyte(
     metadata: dict[str, Any],
     reconcile_days: int,
 ) -> None:
-    """Re-read yesterday and prior completed days through Airbyte to catch delayed attribution."""
+    """Re-read recent completed days through Airbyte to catch delayed attribution."""
     if reconcile_days <= 0:
         return
 
     account_id = brand["id"]
     marker_key = attribution_reconcile_key(account_id, local_today)
     previous = kv_get(base_url, marker_key)
-    if isinstance(previous, dict) and str(previous.get("status") or "").startswith("done"):
+    if isinstance(previous, dict) and (
+        previous.get("complete") is True or previous.get("status") == "done"
+    ):
         print(f"[{brand['name']}] attribution reconciliation already done for {local_today}")
         return
 
@@ -900,6 +974,57 @@ async def reconcile_recent_attribution_airbyte(
         local_today - timedelta(days=offset)
         for offset in range(reconcile_days, 0, -1)
     ]
+
+    # A newly added account can have a valid month report but no Airbyte day cache yet.
+    # Reconstruct the relevant completed month(s) once, instead of guessing a delta and
+    # risking double-counting. Future daily reconciliations then have a trustworthy baseline.
+    missing_by_month: dict[str, list[date]] = defaultdict(list)
+    for day in days:
+        mk = month_key(day)
+        cache = kv_get(base_url, cache_key(account_id, mk))
+        cached_days = cache.get("days") if isinstance(cache, dict) else None
+        if not isinstance(cached_days, dict) or day.isoformat() not in cached_days:
+            missing_by_month[mk].append(day)
+
+    if missing_by_month:
+        bootstrapped_months: list[str] = []
+        for mk, missing_days in sorted(missing_by_month.items()):
+            anchor = missing_days[0]
+            month_start = anchor.replace(day=1)
+            next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+            month_end = next_month - timedelta(days=1)
+            month_until = min(month_end, local_today - timedelta(days=1))
+            await rebuild_completed_month_airbyte(
+                connector,
+                base_url,
+                brand,
+                month_start,
+                month_until,
+                local_today,
+                currency,
+                metadata,
+            )
+            bootstrapped_months.append(mk)
+
+        marker = {
+            "accountId": account_id,
+            "brand": brand.get("name") or account_id,
+            "localDay": local_today.isoformat(),
+            "engine": "airbyte",
+            "requestedDays": [day.isoformat() for day in days],
+            "reconciledDays": [day.isoformat() for day in days],
+            "bootstrappedMonths": bootstrapped_months,
+            "status": "done",
+            "complete": True,
+            "syncedAt": datetime.now(timezone.utc).isoformat(),
+        }
+        kv_put(base_url, marker_key, marker)
+        print(
+            f"[{brand['name']}] attribution bootstrap complete: "
+            + ",".join(bootstrapped_months)
+        )
+        return
+
     reconciled: list[str] = []
     skipped: list[dict[str, str]] = []
 
@@ -908,18 +1033,12 @@ async def reconcile_recent_attribution_airbyte(
         cache = kv_get(base_url, cache_key(account_id, mk))
         if not isinstance(cache, dict) or not isinstance(cache.get("days"), dict):
             skipped.append({"day": day.isoformat(), "reason": "missing_cache"})
-            print(f"[{brand['name']}] reconcile skip {day}: no daily cache")
-            continue
-        if day.isoformat() not in cache["days"]:
-            skipped.append({"day": day.isoformat(), "reason": "missing_day_cache"})
-            print(f"[{brand['name']}] reconcile skip {day}: day not present in cache")
             continue
 
         month_key_value = month_report_key(account_id, mk)
         month_record = kv_get(base_url, month_key_value)
         if not isinstance(month_record, dict):
             skipped.append({"day": day.isoformat(), "reason": "missing_month_record"})
-            print(f"[{brand['name']}] reconcile skip {day}: no month record")
             continue
 
         old_rows = cache["days"].get(day.isoformat()) or []
@@ -970,8 +1089,6 @@ async def reconcile_recent_attribution_airbyte(
         ))
         kv_put(base_url, month_key_value, month_record)
 
-        # If today's frozen baseline already exists (for example a retry later in the day),
-        # apply the same correction there so the next today-only run cannot overwrite it.
         if mk == month_key(local_today):
             baseline_key = day_baseline_key(account_id, local_today)
             baseline = kv_get(base_url, baseline_key)
@@ -1009,7 +1126,6 @@ async def reconcile_recent_attribution_airbyte(
         "syncedAt": datetime.now(timezone.utc).isoformat(),
     }
     kv_put(base_url, marker_key, marker)
-
 
 def merge_month_with_today(
     baseline: dict[str, Any] | None,
