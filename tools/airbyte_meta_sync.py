@@ -914,82 +914,6 @@ def apply_day_delta_to_month(
     return month
 
 
-async def rebuild_completed_month_airbyte(
-    connector: FacebookMarketingConnector,
-    base_url: str,
-    brand: dict[str, str],
-    month_start: date,
-    month_until: date,
-    local_today: date,
-    currency: str,
-    metadata: dict[str, Any],
-) -> dict[str, Any] | None:
-    """Bootstrap a month from completed-day Airbyte data when no daily cache exists yet."""
-    if month_until < month_start:
-        return None
-
-    account_id = brand["id"]
-    mk = month_key(month_start)
-    print(
-        f"[{brand['name']}] AIRBYTE BOOTSTRAP {month_start} -> {month_until}, "
-        "all historical campaigns"
-    )
-
-    rows = await fetch_daily_insights(
-        connector,
-        account_id,
-        month_start,
-        month_until,
-        active_campaign_ids=None,
-    )
-
-    cache = kv_get(base_url, cache_key(account_id, mk))
-    if not isinstance(cache, dict):
-        cache = {"version": 3, "accountId": account_id, "month": mk, "days": {}}
-    caches = {mk: cache}
-    update_cache_rows(caches, account_id, month_start, month_until, rows)
-    cache = caches[mk]
-    cache["bootstrapCompletedAt"] = datetime.now(timezone.utc).isoformat()
-    kv_put(base_url, cache_key(account_id, mk), cache)
-
-    existing = kv_get(base_url, month_report_key(account_id, mk))
-    # Do not make a second giant month-level reach request during bootstrap. Reach is
-    # non-additive, and the report already intentionally preserves the last valid month
-    # reach between reconciliations. Reuse per-ad reach from the existing month snapshot.
-    existing_reach = {
-        str(row.get("adId")): as_float(row.get("reach"))
-        for row in ((existing or {}).get("rawAds") or [])
-        if isinstance(row, dict) and row.get("adId")
-    }
-    record = build_report_record(
-        rows,
-        existing_reach,
-        metadata,
-        legacy_ad_meta(existing),
-        account_id,
-        currency,
-        month_start,
-        month_until,
-        relax_threshold=True,
-        include_all_ads=True,
-    )
-    if isinstance(existing, dict) and as_float(existing.get("reach")):
-        record["reach"] = as_float(existing.get("reach"))
-    record["source"] = "airbyte"
-    record["syncEngine"] = "airbyte"
-    record["syncMode"] = "completed_month_bootstrap_airbyte"
-    record["bootstrapCompletedAt"] = datetime.now(timezone.utc).isoformat()
-    record["effectiveUntil"] = month_until.isoformat()
-    kv_put(base_url, month_report_key(account_id, mk), record)
-
-    # For the current month, today's baseline must be replaced by the rebuilt completed-day
-    # history. Otherwise a later today-only run could restore the stale pre-bootstrap month.
-    if mk == month_key(local_today):
-        kv_put(base_url, day_baseline_key(account_id, local_today), record)
-
-    return record
-
-
 async def reconcile_recent_attribution_airbyte(
     connector: FacebookMarketingConnector,
     base_url: str,
@@ -1017,53 +941,56 @@ async def reconcile_recent_attribution_airbyte(
         for offset in range(reconcile_days, 0, -1)
     ]
 
-    # A newly added account can have a valid month report but no Airbyte day cache yet.
-    # Reconstruct the relevant completed month(s) once, instead of guessing a delta and
-    # risking double-counting. Future daily reconciliations then have a trustworthy baseline.
-    missing_by_month: dict[str, list[date]] = defaultdict(list)
+    # Fast first-run initialization: if a recent completed day has no Airbyte cache yet,
+    # seed only D-2/D-1 from Meta. Do not rebuild the whole month. This gives tomorrow's
+    # reconciliation a trustworthy old value while keeping the first run lightweight.
+    seeded_days: list[str] = []
     for day in days:
         mk = month_key(day)
-        cache = kv_get(base_url, cache_key(account_id, mk))
-        cached_days = cache.get("days") if isinstance(cache, dict) else None
-        if not isinstance(cached_days, dict) or day.isoformat() not in cached_days:
-            missing_by_month[mk].append(day)
+        ckey = cache_key(account_id, mk)
+        cache = kv_get(base_url, ckey)
+        if not isinstance(cache, dict):
+            cache = {"version": 3, "accountId": account_id, "month": mk, "days": {}}
+        if not isinstance(cache.get("days"), dict):
+            cache["days"] = {}
+        if day.isoformat() in cache["days"]:
+            continue
 
-    if missing_by_month:
-        bootstrapped_months: list[str] = []
-        for mk, missing_days in sorted(missing_by_month.items()):
-            anchor = missing_days[0]
-            month_start = anchor.replace(day=1)
-            next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-            month_end = next_month - timedelta(days=1)
-            month_until = min(month_end, local_today - timedelta(days=1))
-            await rebuild_completed_month_airbyte(
-                connector,
-                base_url,
-                brand,
-                month_start,
-                month_until,
-                local_today,
-                currency,
-                metadata,
-            )
-            bootstrapped_months.append(mk)
+        fresh_rows = await fetch_daily_insights(
+            connector,
+            account_id,
+            day,
+            day,
+            active_campaign_ids=None,
+        )
+        cache["days"][day.isoformat()] = fresh_rows
+        cache["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        cache["seededForAttributionAt"] = cache["updatedAt"]
+        kv_put(base_url, ckey, cache)
+        seeded_days.append(day.isoformat())
+        print(
+            f"[{brand['name']}] AIRBYTE SEED {day}: "
+            f"rows={len(fresh_rows)} (no month-total rewrite)",
+            flush=True,
+        )
 
+    if seeded_days:
         marker = {
             "accountId": account_id,
             "brand": brand.get("name") or account_id,
             "localDay": local_today.isoformat(),
             "engine": "airbyte",
             "requestedDays": [day.isoformat() for day in days],
-            "reconciledDays": [day.isoformat() for day in days],
-            "bootstrappedMonths": bootstrapped_months,
-            "status": "done",
+            "seededDays": seeded_days,
+            "reconciledDays": [],
+            "status": "done_seeded",
             "complete": True,
             "syncedAt": datetime.now(timezone.utc).isoformat(),
         }
         kv_put(base_url, marker_key, marker)
         print(
-            f"[{brand['name']}] attribution bootstrap complete: "
-            + ",".join(bootstrapped_months)
+            f"[{brand['name']}] attribution seed complete: "
+            + ",".join(seeded_days)
         )
         return
 
