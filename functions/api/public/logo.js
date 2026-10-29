@@ -1,6 +1,7 @@
 const BRAND_KEYS = {
   mavis: "brand-ui-logo:mavis",
   liaoliao: "brand-ui-logo:liaoliao",
+  jgao: "brand-ui-logo:jgao",
 };
 const MAX_DATA_URL_LENGTH = 1200000;
 
