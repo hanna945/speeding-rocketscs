@@ -32,6 +32,8 @@ from airbyte_agent_sdk.connectors.facebook_marketing import FacebookMarketingCon
 from airbyte_agent_sdk.connectors.facebook_marketing.models import (
     FacebookMarketingServiceAccountKeyAuthenticationAuthConfig,
 )
+from facebook_business.api import FacebookAdsApi
+from facebook_business.adobjects.adaccount import AdAccount
 
 PURCHASE_ACTION_PRIORITY = [
     "omni_purchase",
@@ -359,6 +361,68 @@ async def refresh_metadata(
         "ads": {str(x.get("id")): x for x in ads if x.get("id")},
         "creatives": {str(x.get("id")): x for x in creatives if x.get("id")},
     }
+
+
+def _sdk_dict(value: Any) -> dict[str, Any]:
+    if hasattr(value, "export_all_data"):
+        data = value.export_all_data()
+        return data if isinstance(data, dict) else {}
+    if isinstance(value, dict):
+        return dict(value)
+    try:
+        return dict(value)
+    except Exception:
+        return {}
+
+
+def sdk_account_info(account_id: str) -> dict[str, Any]:
+    account = AdAccount("act_" + account_id.removeprefix("act_"))
+    return _sdk_dict(account.api_get(fields=[
+        "id", "account_id", "name", "currency", "timezone_name", "timezone_offset_hours_utc"
+    ]))
+
+
+def sdk_active_campaigns(account_id: str) -> dict[str, dict[str, Any]]:
+    account = AdAccount("act_" + account_id.removeprefix("act_"))
+    cursor = account.get_campaigns(
+        fields=["id", "name", "objective", "effective_status", "status", "start_time", "created_time"],
+        params={"effective_status": ["ACTIVE"], "limit": 500},
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for item in cursor:
+        row = _sdk_dict(item)
+        campaign_id = str(row.get("id") or "")
+        if campaign_id and str(row.get("effective_status") or "").upper() == "ACTIVE":
+            out[campaign_id] = row
+    return out
+
+
+def sdk_today_active_insights(account_id: str, day: date) -> list[dict[str, Any]]:
+    """Use Meta's official SDK and server-side Insights filtering for ACTIVE campaigns only."""
+    account = AdAccount("act_" + account_id.removeprefix("act_"))
+    cursor = account.get_insights(
+        fields=[
+            "account_id", "account_name", "campaign_id", "campaign_name",
+            "adset_id", "adset_name", "ad_id", "ad_name", "clicks",
+            "impressions", "reach", "spend", "date_start", "date_stop",
+            "actions", "action_values",
+        ],
+        params={
+            "level": "ad",
+            "time_range": {"since": day.isoformat(), "until": day.isoformat()},
+            "time_increment": 1,
+            "use_account_attribution_setting": True,
+            "filtering": [
+                {
+                    "field": "campaign.effective_status",
+                    "operator": "IN",
+                    "value": ["ACTIVE"],
+                }
+            ],
+            "limit": 500,
+        },
+    )
+    return [_sdk_dict(item) for item in cursor]
 
 
 async def fetch_active_campaigns(
@@ -784,7 +848,7 @@ def merge_month_with_today(
 
 
 async def sync_brand(
-    connector: FacebookMarketingConnector,
+    connector: FacebookMarketingConnector | None,
     base_url: str,
     brand: dict[str, str],
     lookback_days: int,
@@ -792,16 +856,18 @@ async def sync_brand(
     force_backfill_days: int,
 ) -> None:
     account_id = brand["id"]
-    account = single_record(await connector.ad_accounts.get(
-        account_id=account_id,
-        fields="id,account_id,name,currency,timezone_name,timezone_offset_hours_utc",
-    ))
+    account = sdk_account_info(account_id)
     offset = as_float(account.get("timezone_offset_hours_utc"))
     local_today = (datetime.now(timezone.utc) + timedelta(hours=offset)).date()
     currency = str(account.get("currency") or "TWD")
     current_month_start = local_today.replace(day=1)
 
-    active_campaigns = await fetch_active_campaigns(connector, account_id)
+    if force_backfill_days > 0:
+        if connector is None:
+            raise RuntimeError("Airbyte connector is required for manual backfill.")
+        active_campaigns = await fetch_active_campaigns(connector, account_id)
+    else:
+        active_campaigns = sdk_active_campaigns(account_id)
     active_campaign_ids = set(active_campaigns.keys())
     print(f"[{brand['name']}] active campaigns={len(active_campaign_ids)}")
 
@@ -849,9 +915,7 @@ async def sync_brand(
         kv_put(base_url, baseline_key, baseline)
 
     print(f"[{brand['name']}] TODAY ONLY {local_today}, active campaigns={len(active_campaign_ids)}")
-    today_rows = await fetch_daily_insights(
-        connector, account_id, local_today, local_today, active_campaign_ids
-    )
+    today_rows = sdk_today_active_insights(account_id, local_today)
 
     # Keep only today's rows in the incremental cache. Historical days are not re-read.
     current_cache = kv_get(base_url, cache_key(account_id, month_key(local_today)))
@@ -909,9 +973,13 @@ async def amain(args: argparse.Namespace) -> int:
     # Fail early if GitHub OIDC is not available before touching Meta.
     github_oidc_token()
 
-    connector = FacebookMarketingConnector(
-        auth_config=FacebookMarketingServiceAccountKeyAuthenticationAuthConfig(account_key=token)
-    )
+    FacebookAdsApi.init(access_token=token)
+
+    connector: FacebookMarketingConnector | None = None
+    if args.backfill_days > 0:
+        connector = FacebookMarketingConnector(
+            auth_config=FacebookMarketingServiceAccountKeyAuthenticationAuthConfig(account_key=token)
+        )
 
     brands = fetch_brand_roster(base_url)
     if args.brand_id:
