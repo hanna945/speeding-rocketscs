@@ -5608,6 +5608,19 @@ function MetaAdsLedger() {
           {focusData && (
             <>
               <SyncedAtNote iso={focusData.syncedAt} source={focusData.source} />
+              <EvidenceExecutiveSummary
+                currentRecord={focusData}
+                previousRecord={prevData}
+                roasTarget={roasTargets[activeBrandId]}
+                cpaTarget={cpaThresholds[activeBrandId]}
+                monthlyBudget={monthlyBudgets[activeBrandId]}
+                periodType="month"
+                periodLabel={monthLabel(focusMonth)}
+                brandName={((brands.find((b) => b.id === activeBrandId) || {}).name || "品牌")}
+                syncedAt={focusData.syncedAt}
+                sourceLabel={activeBrandId === HJ_ONEPAGE_ACCOUNT_ID ? "Meta Ads + 品牌成效帳本 + Shopline" : "Meta Ads + 品牌成效帳本"}
+              />
+              <EvidenceSectionNavigator refreshKey={activeBrandId + "::month::" + focusMonth} />
               <div className="mal-cards">
                 <div className="mal-card">
                   <div className="mal-card-label">廣告費</div>
@@ -5897,6 +5910,18 @@ function MetaAdsLedger() {
             {focusWeekData && (
               <>
                 <SyncedAtNote iso={focusWeekData.syncedAt} source={focusWeekData.source} />
+                <EvidenceExecutiveSummary
+                  currentRecord={focusWeekData}
+                  previousRecord={prevWeekData}
+                  roasTarget={roasTargets[activeBrandId]}
+                  cpaTarget={cpaThresholds[activeBrandId]}
+                  periodType="week"
+                  periodLabel={weekLabel(focusWeek)}
+                  brandName={((brands.find((b) => b.id === activeBrandId) || {}).name || "品牌")}
+                  syncedAt={focusWeekData.syncedAt}
+                  sourceLabel={activeBrandId === HJ_ONEPAGE_ACCOUNT_ID ? "Meta Ads + 品牌成效帳本 + Shopline" : "Meta Ads + 品牌成效帳本"}
+                />
+                <EvidenceSectionNavigator refreshKey={activeBrandId + "::week::" + focusWeek} />
                 <div className="mal-cards">
                   <div className="mal-card">
                     <div className="mal-card-label">廣告費</div>
