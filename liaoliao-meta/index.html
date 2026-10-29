@@ -6015,10 +6015,18 @@ function MetaAdsLedger() {
   const launchFilteredAds = adLaunchFilter === "month" ? monthStartedAds : spendFilteredAds;
   const visibleAds = filterAdsByStatus(launchFilteredAds, adStatusFilter, adSearchKeyword);
   const hiddenAdCount = focusData && focusData.ads ? focusData.ads.length - spendFilteredAds.length : 0;
+  // 主投品項排名看「當月實際有花費」的全部廣告，不限制這個月才新開，也不套用 $500 門檻。
+  // 品項代號優先沿用標準的開頭【CODE】格式；若活動名稱不是以括號開頭，再從名稱中尋找第一組括號代號，
+  // 避免明明有投放花費卻因命名位置不同而整筆漏掉。
+  const monthRankedAds = focusData && focusData.ads
+    ? focusData.ads.filter((ad) => (Number(ad.spend) || 0) > 0)
+    : [];
   const monthLaunchProductTop3 = (() => {
     const byCode = {};
-    monthStartedAds.forEach((ad) => {
-      const code = parseProductCode(ad.campaign);
+    monthRankedAds.forEach((ad) => {
+      const campaignName = String(ad.campaign || "").trim();
+      const inlineMatch = campaignName.match(/[【\[]([^】\]]+)[】\]]/);
+      const code = parseProductCode(campaignName) || (inlineMatch ? inlineMatch[1].trim().toUpperCase() : null);
       if (!code || NON_PRODUCT_CODE_PATTERN.test(code) || isChannelCode(code)) return;
       if (!byCode[code]) byCode[code] = { code, spend: 0, conversions: 0, revenue: 0, adCount: 0 };
       byCode[code].spend += Number(ad.spend) || 0;
@@ -6029,6 +6037,7 @@ function MetaAdsLedger() {
     return Object.values(byCode).sort((a, b) => b.spend - a.spend).slice(0, 3);
   })();
   const monthStartedSpend = monthStartedAds.reduce((sum, ad) => sum + (Number(ad.spend) || 0), 0);
+  const monthRankedSpend = monthRankedAds.reduce((sum, ad) => sum + (Number(ad.spend) || 0), 0);
 
   // ---------- 每日營收報表:直接呈現後台每日收益表(ledgerByMonth)裡「每一天 x 每個產品代號」的明細,不用另外彙總 ----------
   // 選單月份/選單日,優先順序是:①使用者自己手動點過的(dailyMonth/focusDay,只要那筆資料還在就沿用,尊重手動導覽)
@@ -6594,7 +6603,7 @@ function MetaAdsLedger() {
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", fontWeight: 600, marginBottom: 8 }}>本月主投品項 TOP 3（依廣告費）</div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", fontWeight: 600, marginBottom: 8 }}>本月主投品項 TOP 3（依本月廣告費）</div>
               {(
                 <div className="mal-cards mal-top3-cards" style={{ marginBottom: 0 }}>
                   {Array.from({ length: 3 }).map((_, idx) => {
@@ -6605,20 +6614,20 @@ function MetaAdsLedger() {
                           <div className="mal-card-label">#{idx + 1} 主投品項</div>
                           <div className="mal-card-value" style={{ fontSize: 22 }}>尚無品項</div>
                           <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 6 }}>
-                            本月目前沒有第 {idx + 1} 名新投放品項
+                            本月目前沒有第 {idx + 1} 名有花費品項
                           </div>
                         </div>
                       );
                     }
                     const displayName = (productNames[activeBrandId] || {})[item.code];
-                    const share = monthStartedSpend > 0 ? item.spend / monthStartedSpend * 100 : 0;
+                    const share = monthRankedSpend > 0 ? item.spend / monthRankedSpend * 100 : 0;
                     const cpa = item.conversions > 0 ? item.spend / item.conversions : null;
                     return (
                       <div className="mal-card" key={item.code}>
                         <div className="mal-card-label">#{idx + 1} 主投品項</div>
                         <div className="mal-card-value" style={{ fontSize: 24 }}>{item.code}{displayName ? ` · ${displayName}` : ""}</div>
                         <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", marginTop: 6 }}>
-                          廣告費 {fmtMoney(item.spend, focusData.currency)} · 佔新投放 {share.toFixed(1)}%
+                          廣告費 {fmtMoney(item.spend, focusData.currency)} · 佔本月投放 {share.toFixed(1)}%
                         </div>
                         <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 3 }}>
                           {item.adCount} 支廣告 · {fmtInt(item.conversions)} 轉單 · CPA {cpa !== null ? fmtMoney(cpa, focusData.currency) : "—"}
