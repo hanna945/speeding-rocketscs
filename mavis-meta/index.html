@@ -100,6 +100,48 @@
   .mal-empty { border: 1.5px dashed var(--rule); border-radius: 6px; padding: 56px 24px; text-align: center; background: var(--paper-raised); }
   .mal-plan-savestatus { font-family: 'Noto Sans TC', sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
   .mal-plan-savestatus-error { color: var(--red); font-weight: 700; }
+  .mal-plan-load-error { background: #F3E4E9; border: 1px solid #E3C3D0; border-radius: 6px; padding: 14px 16px; margin-top: 20px; color: var(--red); font-size: 13px; line-height: 1.6; }
+  .mal-plan-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 32px 0 16px; flex-wrap: wrap; }
+  .mal-plan-title-row .mal-section-title { margin: 0; }
+  .mal-plan-block { margin-bottom: 24px; }
+  .mal-plan-block-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--blue-deep, var(--blue)); }
+  .mal-plan-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .mal-plan-block-header .mal-plan-block-title { margin-bottom: 0; }
+  .mal-plan-input-category { width: 76px; flex-shrink: 0; text-align: center; }
+  .mal-plan-link-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .mal-plan-input-link { flex: 1; font-size: 12.5px; }
+  .mal-plan-link-go { flex-shrink: 0; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--blue-deep, var(--blue)); text-decoration: none; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper-raised); white-space: nowrap; }
+  .mal-plan-link-go:hover { background: var(--paper); }
+  .mal-plan-image-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); padding: 7px 12px; border: 1.5px dashed var(--rule); border-radius: 5px; cursor: pointer; }
+  .mal-plan-image-add:hover { color: var(--ink); border-color: var(--blue); }
+  .mal-plan-image-wrap { position: relative; margin-top: 8px; display: block; width: 100%; }
+  .mal-plan-image { width: 100%; max-height: 400px; object-fit: contain; background: var(--paper); border-radius: 5px; border: 1px solid var(--rule); display: block; cursor: zoom-in; }
+  .mal-plan-image-remove { position: absolute; top: 6px; right: 6px; font-family: 'Noto Sans TC', sans-serif; font-size: 11px; font-weight: 600; color: #fff; background: rgba(0,0,0,0.6); border: none; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+  .mal-plan-image-remove:hover { background: rgba(168,96,122,0.9); }
+  .mal-image-lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px; cursor: zoom-out; }
+  .mal-image-lightbox-overlay img { max-width: 100%; max-height: 100%; border-radius: 6px; }
+  .mal-plan-ai-error { font-size: 12.5px; color: var(--red); background: #F3E4E9; border-radius: 5px; padding: 8px 12px; margin-bottom: 10px; }
+  .mal-combined-ai-row { margin-bottom: 20px; }
+  .mal-source-note { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 14px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 5px; display: inline-block; }
+  .mal-plan-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; margin-bottom: 10px; }
+  .mal-plan-card-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .mal-plan-index { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: var(--ink-soft); flex-shrink: 0; width: 20px; }
+  .mal-plan-input { font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper); color: var(--ink); }
+  .mal-plan-input-title { flex: 1; font-weight: 600; }
+  .mal-plan-select {
+    font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; padding: 7px 26px 7px 8px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper); color: var(--ink); flex-shrink: 0;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238F8171' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center;
+  }
+  .mal-plan-remove { flex-shrink: 0; width: 26px; height: 26px; border-radius: 5px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; font-size: 12px; }
+  .mal-plan-remove:hover { background: #F3E4E9; border-color: var(--red); color: var(--red); }
+  .mal-plan-card-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 8px; }
+  .mal-plan-textarea { width: 100%; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 5px; background: var(--paper); color: var(--ink); resize: vertical; box-sizing: border-box; line-height: 1.6; }
+  @media (max-width: 560px) {
+    .mal-plan-card-row { flex-wrap: wrap; }
+    .mal-plan-input-title { width: 100%; order: -1; margin-bottom: 4px; }
+  }
   .mal-empty p { color: var(--ink-soft); font-size: 14px; max-width: 440px; margin: 10px auto 20px; line-height: 1.6; }
   .mal-tabs { display: flex; gap: 22px; overflow-x: auto; padding-bottom: 0; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
   .mal-brand-switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -473,13 +515,48 @@
   body.mal-exporting .mal-perf-section-chevron {
     display: none !important;
   }
+  body.mal-exporting .mal-plan-remove,
+  body.mal-exporting .mal-plan-block > .mal-btn,
+  body.mal-exporting .mal-plan-title-row > .mal-btn,
+  body.mal-exporting .mal-plan-block-header > .mal-icon-btn,
+  body.mal-exporting .mal-plan-image-add,
+  body.mal-exporting .mal-plan-image-remove,
+  body.mal-exporting .mal-plan-savestatus {
+    display: none !important;
+  }
+  body.mal-exporting .mal-plan-input,
+  body.mal-exporting .mal-plan-textarea {
+    border: none !important;
+    background: transparent !important;
+    padding: 2px 0 !important;
+  }
+  /* 狀態下拉選單(<select>)是原生表單元件,列印時外觀常帶著瀏覽器自己的邊框/箭頭裝飾,不像
+     正式報告的樣子——列印/匯出PDF時乾脆整個換成旁邊準備好的純文字版本,乾淨清楚。
+     平常(不是匯出模式)這個純文字版本要藏起來,不然畫面上會看到選單旁邊多一段重複的文字。 */
+  .mal-plan-select-export-text { display: none; }
+  body.mal-exporting .mal-plan-select {
+    display: none !important;
+  }
+  body.mal-exporting .mal-plan-select-export-text {
+    display: inline-block;
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 2px 0;
+  }
+  body.mal-exporting .mal-plan-card-row {
+    flex-wrap: wrap;
+  }
+  body.mal-exporting .mal-plan-input-category {
+    width: auto !important;
+    font-weight: 700;
+  }
 </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useRef, useMemo, useImperativeHandle } = React;
 
 // ---------- 共用儲存(Claude Artifact 的 window.storage):團隊資料共用,機密資料(API金鑰等)只留在自己瀏覽器 ----------
 // 如果不是在 Claude Artifact 環境打開(例如直接把檔案存到電腦、用瀏覽器開啟),window.storage 不存在,
@@ -643,7 +720,57 @@ const storage = {
 
 // 「嚴格版」存讀——跟上面 storage.get/set 的差異是:連不上雲端/雲端回錯,這裡會直接把錯誤丟出去,
 // 不會悄悄退回讀寫本機。給AI分析存檔這種「使用者會期待存到雲端、跨裝置看得到」的功能用。
+const REPORT_PLAN_API = "https://speedingscs.pages.dev/api/public/report-plans";
+const REPORT_PLAN_BRAND_ALIASES = {"mavis-public":"1818692121940743"};
+function canonicalReportPlanKey(key) {
+  const m = String(key || "").match(/^(weekly-plan|monthly-plan):([^:]+)::(\d{4}-\d{2}(?:-\d{2})?)$/);
+  if (!m) return key;
+  const brandId = REPORT_PLAN_BRAND_ALIASES[m[2]] || m[2];
+  return `${m[1]}:${brandId}::${m[3]}`;
+}
+function isReportPlanKey(key) {
+  return /^(?:weekly-plan|monthly-plan):[^:]+::\d{4}-\d{2}(?:-\d{2})?$/.test(String(key || ""));
+}
+async function sharedReportPlanRequest(key, value, backupOnly = false) {
+  const canonicalKey = canonicalReportPlanKey(key);
+  if (value === undefined) {
+    const res = await fetch(`${REPORT_PLAN_API}?key=${encodeURIComponent(canonicalKey)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error("report plan get failed: " + res.status);
+    const json = await res.json();
+    if (!json || !json.ok) throw new Error((json && json.error) || "report plan get failed");
+    return json.value == null ? null : { key, value: json.value };
+  }
+  const res = await fetch(REPORT_PLAN_API, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key: canonicalKey, value, backupOnly }),
+  });
+  if (!res.ok) throw new Error("report plan set failed: " + res.status);
+  return await res.json();
+}
+async function syncedReportPlanGet(key) {
+  const local = await localOnlyStorage.get(key).catch(() => null);
+  const remote = await sharedReportPlanRequest(key);
+  if (remote && remote.value != null) {
+    if (local && local.value != null && local.value !== remote.value) {
+      await sharedReportPlanRequest(key, local.value, true).catch(() => {});
+    }
+    await localOnlyStorage.set(key, remote.value).catch(() => {});
+    return { key, value: remote.value };
+  }
+  if (local && local.value != null) {
+    await sharedReportPlanRequest(key, local.value);
+    return local;
+  }
+  return null;
+}
+async function syncedReportPlanSet(key, value) {
+  await localOnlyStorage.set(key, value);
+  return await sharedReportPlanRequest(key, value, false);
+}
+
 async function storageSetStrict(key, value) {
+  if (isReportPlanKey(key)) return await syncedReportPlanSet(key, value);
   if (!isSharedKey(key)) return localOnlyStorage.set(key, value);
   if (HAS_SHARED_STORAGE) return await window.storage.set(key, value, true);
   const status = await probeCloud();
@@ -653,6 +780,7 @@ async function storageSetStrict(key, value) {
   return await cloudStorage.set(key, value);
 }
 async function storageGetStrict(key) {
+  if (isReportPlanKey(key)) return await syncedReportPlanGet(key);
   if (!isSharedKey(key)) return localOnlyStorage.get(key);
   if (HAS_SHARED_STORAGE) return await window.storage.get(key, true);
   const status = await probeCloud();
@@ -4662,12 +4790,16 @@ function MetaAdsLedger() {
   // 依「行銷活動名稱」最前面的括號(例如「【RS】」「【AP】」)自動歸類,統計各產品的營業額/廣告費佔比與利潤。
   // 產品代號完全依實際行銷活動名稱動態產生——新增產品時只要照同一套命名規則建立行銷活動,
   // 不需要在系統裡手動登記新產品,代號就會自動出現在分析裡。
-function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, periodLabel, brandName, minSpend }) {
+  const MonthlyReportSection = React.forwardRef(function MonthlyReportSection(
+    { storageKey, ads, currencyCode, roasTarget, periodLabel, brandName, minSpend },
+    planRef
+  ) {
     const [data, setData] = useState(null); // null = 載入中
     const [saveStatus, setSaveStatus] = useState("");
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState("");
     const [loadError, setLoadError] = useState("");
+    const [lightboxImage, setLightboxImage] = useState(null); // 點縮圖放大看原圖用
     const saveTimerRef = useRef(null);
     // 待存檔的最新內容——跟 saveTimerRef 分開追蹤,是因為「立即存檔」(flush)要能在計時器
     // 還沒觸發前,直接把這裡記著的最新資料送出去,不用等900ms。之前的版本只靠setTimeout,
@@ -4771,9 +4903,12 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
       performSave(data);
     }
 
-    // 自動判斷：比照品牌報表目前模式，不再呼叫 /api/ai/material-issues。
-    // 使用既有投放數據在瀏覽器端依 ROAS、轉單樣本數、花費佔比產生操作方向與素材問題，
-    // 因此不需要 OpenAI API、團隊密碼或額外授權，也不會再出現 Unauthorized。
+    // AI分析:沿用「投放成效」同一套 buildProductBreakdown 邏輯算出逐代號數據,
+    // 送去跟「投放成效」共用同一支 OpenAI 金鑰的另一支後端(material-issues.js,職責不同、金鑰共用),
+    // 請AI挑出「值得下週特別調整」的系列,寫成標題+數據佐證+建議方向。是「新增建議草稿」進現有清單,
+    // 不會清掉使用者已經手動寫好/編輯過的項目,AI生成的項目使用者一樣可以編輯或刪除。
+    // 「下週操作方向」「素材調整方向」兩個子區塊的AI按鈕都呼叫這同一個函式——同一份期間數據,
+    // 沒必要因為使用者按了兩個不同按鈕就打兩次OpenAI,拿到回應後兩個子區塊會一起更新。
     function runAiMaterialAnalysis() {
       if (!data) return;
       setAiLoading(true);
@@ -4784,29 +4919,29 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
 
         const generated = generateRulePlanning(rows, totalRevenue, totalSpend, roasTarget || 3, currencyCode);
         const now = Date.now();
-        const newActionItems = generated.actionItems.map((item, i) => ({
+        const newActionItems = generated.actionItems.map((it, i) => ({
           id: now + i,
-          title: item.title || "",
-          description: item.description || "",
+          title: it.title || "",
+          description: it.description || "",
           generatedByRules: true,
         }));
-        const newMaterialIssues = generated.materialIssues.map((item, i) => ({
+        const newMaterialIssues = generated.materialIssues.map((it, i) => ({
           id: now + 100 + i,
-          title: item.title || "",
-          status: item.status === "red" || item.status === "yellow" || item.status === "green" ? item.status : "yellow",
-          category: item.category || "",
-          content: item.content || "",
+          title: it.title || "",
+          status: it.status === "red" || it.status === "yellow" || it.status === "green" ? it.status : "yellow",
+          category: it.category || "",
+          content: it.content || "",
           generatedByRules: true,
         }));
 
         scheduleSave({
           ...data,
           actionItems: [
-            ...data.actionItems.filter((item) => !item.generatedByRules),
+            ...data.actionItems.filter((it) => !it.generatedByRules),
             ...newActionItems,
           ],
           materialIssues: [
-            ...data.materialIssues.filter((item) => !item.generatedByRules),
+            ...data.materialIssues.filter((it) => !it.generatedByRules),
             ...newMaterialIssues,
           ],
         });
@@ -4819,6 +4954,8 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
 
     // 沒有依賴陣列,每次render都重新指定,理由跟AdPerformanceReport那邊一樣——確保外部觸發時
     // 拿到的一定是包著最新ads/props的版本。
+    useImperativeHandle(planRef, () => ({ triggerAi: runAiMaterialAnalysis }));
+
     if (loadError) {
       return (
         <div className="mal-plan-load-error">
@@ -4845,13 +4982,42 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
       scheduleSave({ ...data, actionItems: data.actionItems.filter((it) => it.id !== id) });
     }
     function addProject() {
-      scheduleSave({ ...data, projects: [...data.projects, { id: Date.now(), name: "", owner: "", dueDate: "", progress: "", status: "green", description: "" }] });
+      scheduleSave({ ...data, projects: [...data.projects, { id: Date.now(), name: "", owner: "", dueDate: "", progress: "", status: "green", description: "", link: "", image: "" }] });
     }
     function updateProject(id, field, value) {
       scheduleSave({ ...data, projects: data.projects.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
     }
     function removeProject(id) {
       scheduleSave({ ...data, projects: data.projects.filter((it) => it.id !== id) });
+    }
+    // 圖片存進雲端資料庫時,是跟整份「月報告」文字內容存在同一個key裡(不是另外開檔案儲存空間),
+    // 原圖(尤其手機拍的照片)動輒4-5MB,同時放幾張很容易撐爆單一key的儲存上限、也會讓每次
+    // 存檔/讀取變慢。選好圖片後,先用畫布把長邊壓縮到最多960px、轉成JPEG(品質0.75)再存,
+    // 壓縮後通常只有幾百KB,對「輔助說明用的示意圖」這種用途來說,畫質已經很夠用。
+    function handleProjectImageUpload(id, file) {
+      if (!file || !file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX_DIM = 960;
+          let { width, height } = img;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL("image/jpeg", 0.75);
+          updateProject(id, "image", compressed);
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
     }
     function addMaterialIssue() {
       scheduleSave({ ...data, materialIssues: [...data.materialIssues, { id: Date.now(), title: "", status: "red", category: "", content: "" }] });
@@ -4866,11 +5032,11 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
     return (
       <>
         <div className="mal-plan-title-row">
-          <h2 className="mal-section-title" style={{ margin: 0 }}>
+          <CollapsibleSectionTitle className="mal-section-title" style={{ margin: 0 }}>
             📋 月報告{saveStatus && (
               <span className={saveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {saveStatus}</span>
             )}
-          </h2>
+          </CollapsibleSectionTitle>
           <button className="mal-btn" onClick={manualSave}>💾 立即儲存</button>
         </div>
         {aiError && <p className="mal-plan-ai-error">⚠ {aiError}</p>}
@@ -4888,6 +5054,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
                 <select className="mal-plan-select" value={m.status} onChange={(e) => updateMaterialIssue(m.id, "status", e.target.value)}>
                   {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
+                <span className="mal-plan-select-export-text">{(STATUS_OPTIONS.find((s) => s.value === m.status) || {}).label}</span>
                 <input className="mal-plan-input mal-plan-input-category" placeholder="分類" value={m.category || ""} onChange={(e) => updateMaterialIssue(m.id, "category", e.target.value)} />
                 <input className="mal-plan-input mal-plan-input-title" placeholder="標題(例如:SR涼感衣吃掉最大預算,CPA偏高)" value={m.title} onChange={(e) => updateMaterialIssue(m.id, "title", e.target.value)} />
                 <button className="mal-plan-remove" onClick={() => removeMaterialIssue(m.id)} title="刪除">✕</button>
@@ -4927,6 +5094,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
                 <select className="mal-plan-select" value={p.status} onChange={(e) => updateProject(p.id, "status", e.target.value)}>
                   {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
+                <span className="mal-plan-select-export-text">{(STATUS_OPTIONS.find((s) => s.value === p.status) || {}).label}</span>
                 <button className="mal-plan-remove" onClick={() => removeProject(p.id)} title="刪除">✕</button>
               </div>
               <div className="mal-plan-card-fields">
@@ -4935,13 +5103,42 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
                 <input className="mal-plan-input" placeholder="目前進度(例如:100% 或 第一階段完成)" value={p.progress} onChange={(e) => updateProject(p.id, "progress", e.target.value)} />
               </div>
               <textarea className="mal-plan-textarea" placeholder="說明…" rows={2} value={p.description} onChange={(e) => updateProject(p.id, "description", e.target.value)} />
+              <div className="mal-plan-link-row">
+                <input className="mal-plan-input mal-plan-input-link" placeholder="連結(選填,例如Google文件、設計稿、參考資料網址)" value={p.link || ""} onChange={(e) => updateProject(p.id, "link", e.target.value)} />
+                {p.link && /^https?:\/\//.test(p.link.trim()) && (
+                  <a className="mal-plan-link-go" href={p.link.trim()} target="_blank" rel="noopener noreferrer">↗ 前往</a>
+                )}
+              </div>
+              {p.image ? (
+                <div className="mal-plan-image-wrap">
+                  <img className="mal-plan-image" src={p.image} alt="專案輔助說明圖片" onClick={() => setLightboxImage(p.image)} />
+                  <button className="mal-plan-image-remove" onClick={() => updateProject(p.id, "image", "")} title="移除圖片">✕ 移除圖片</button>
+                </div>
+              ) : (
+                <label className="mal-plan-image-add" htmlFor={`project-image-${p.id}`}>
+                  📷 新增圖片
+                  <input
+                    id={`project-image-${p.id}`}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => { handleProjectImageUpload(p.id, e.target.files[0]); e.target.value = ""; }}
+                  />
+                </label>
+              )}
             </div>
           ))}
           <button className="mal-btn" onClick={addProject}>+ 新增專案項目</button>
         </div>
+
+        {lightboxImage && (
+          <div className="mal-image-lightbox-overlay" onClick={() => setLightboxImage(null)}>
+            <img src={lightboxImage} alt="放大檢視" />
+          </div>
+        )}
       </>
     );
-  }
+  });
 
   function LedgerVsMetaComparison({ ads, currencyCode, ledgerAgg, onOpenImport, periodLabel }) {
     if (!ledgerAgg) {
