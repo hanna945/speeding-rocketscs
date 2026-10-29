@@ -480,17 +480,55 @@ async def fetch_daily_insights(
 
     rows: list[dict[str, Any]] = []
     cursor = since
+    retryable_hints = (
+        "service temporarily unavailable",
+        "間歇性錯誤",
+        "invalid json",
+        "extra data",
+        "reduce the amount of data",
+        "'code': 1",
+        "'code': 2",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+        "timeout",
+        "timed out",
+    )
+
     while cursor <= until:
-        chunk_until = min(until, cursor + timedelta(days=1))
-        chunk = await paged(
-            connector.ads_insights.list,
-            account_id=account_id,
-            fields="account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,clicks,impressions,reach,spend,date_start,date_stop,actions,action_values",
-            time_range=json.dumps({"since": cursor.isoformat(), "until": chunk_until.isoformat()}),
-            level="ad",
-            time_increment="1",
-            limit=500,
-        )
+        # Historical bootstrap is deliberately one calendar day per request. Some large
+        # accounts exceed Meta response limits even with a two-day window.
+        chunk_until = cursor
+        chunk: list[dict[str, Any]] | None = None
+        for attempt in range(4):
+            try:
+                chunk = await paged(
+                    connector.ads_insights.list,
+                    account_id=account_id,
+                    fields="account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,clicks,impressions,reach,spend,date_start,date_stop,actions,action_values",
+                    time_range=json.dumps({"since": cursor.isoformat(), "until": chunk_until.isoformat()}),
+                    level="ad",
+                    time_increment="1",
+                    limit=200,
+                )
+                break
+            except Exception as exc:
+                msg = str(exc).lower()
+                retryable = any(hint in msg for hint in retryable_hints)
+                if not retryable or attempt >= 3:
+                    raise
+                delay = 2.0 * (2 ** attempt)
+                print(
+                    f"[{account_id}] retry insights {cursor} attempt={attempt + 2}/4 "
+                    f"after {delay:.0f}s: {str(exc)[:180]}",
+                    flush=True,
+                )
+                await asyncio.sleep(delay)
+
+        if chunk is None:
+            raise RuntimeError(f"No insights returned for {account_id} on {cursor}")
+
         if active_campaign_ids is not None:
             chunk = [
                 row for row in chunk
@@ -499,7 +537,7 @@ async def fetch_daily_insights(
         rows.extend(chunk)
         cursor = chunk_until + timedelta(days=1)
         if cursor <= until:
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.35)
     return rows
 
 async def fetch_period_reach(
@@ -915,15 +953,17 @@ async def rebuild_completed_month_airbyte(
     kv_put(base_url, cache_key(account_id, mk), cache)
 
     existing = kv_get(base_url, month_report_key(account_id, mk))
-    month_reach = await fetch_period_reach(
-        connector,
-        account_id,
-        month_start,
-        month_until,
-    )
+    # Do not make a second giant month-level reach request during bootstrap. Reach is
+    # non-additive, and the report already intentionally preserves the last valid month
+    # reach between reconciliations. Reuse per-ad reach from the existing month snapshot.
+    existing_reach = {
+        str(row.get("adId")): as_float(row.get("reach"))
+        for row in ((existing or {}).get("rawAds") or [])
+        if isinstance(row, dict) and row.get("adId")
+    }
     record = build_report_record(
         rows,
-        month_reach,
+        existing_reach,
         metadata,
         legacy_ad_meta(existing),
         account_id,
@@ -933,6 +973,8 @@ async def rebuild_completed_month_airbyte(
         relax_threshold=True,
         include_all_ads=True,
     )
+    if isinstance(existing, dict) and as_float(existing.get("reach")):
+        record["reach"] = as_float(existing.get("reach"))
     record["source"] = "airbyte"
     record["syncEngine"] = "airbyte"
     record["syncMode"] = "completed_month_bootstrap_airbyte"
