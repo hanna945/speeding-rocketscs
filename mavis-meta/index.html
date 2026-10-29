@@ -1307,7 +1307,7 @@ function monthDateRange(monthKey) {
   const until = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
   return { since, until };
 }
-function fmtInt(n)function fmtInt(n) { return Math.round(n).toLocaleString("zh-TW"); }
+function fmtInt(n) { return Math.round(n).toLocaleString("zh-TW"); }
 function fmtMoney(n, currency) {
   try {
     return new Intl.NumberFormat("zh-TW", { style: "currency", currency: currency || "TWD", maximumFractionDigits: 0 }).format(n);
@@ -3861,7 +3861,7 @@ function MetaAdsLedger() {
     }
   }
 
-  async function updateThisMonth() {  async function updateThisMonth() {
+  async function updateThisMonth() {
     if (!activeBrandId) {
       setMetaUpdateError("請先選擇一個品牌。");
       return;
@@ -3895,7 +3895,7 @@ function MetaAdsLedger() {
     }
   }
 
-  async function loadLedger(brandId, isStale) {  async function loadLedger(brandId, isStale) {
+  async function loadLedger(brandId, isStale) {
     try {
       const listRes = await storage.list(LEDGER_STORAGE_PREFIX);
       if (isStale && isStale()) return; // 品牌已經切換了,這次請求過期,不要再往下做白工
@@ -3980,7 +3980,7 @@ function MetaAdsLedger() {
 
   function handleBrandSwitch(brandId) { setActiveBrandId(brandId); }
 
-  async function loadAll(brandId, isStale) {  async function loadAll(brandId, isStale) {
+  async function loadAll(brandId, isStale) {
     setLoading(true); setError(null);
     try {
       const listRes = await storage.list(STORAGE_PREFIX);
@@ -4316,7 +4316,7 @@ function MetaAdsLedger() {
     }
   }
 
-  function apiErrorHint(e) {  function apiErrorHint(e) {
+  function apiErrorHint(e) {
     const msg = (e && e.message) || "";
     if (e && (e.code === 1 || e.code === 2)) {
       return (
@@ -5776,7 +5776,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
   }, [sponsorMonthlyStats]);
   const sponsorMonthsWithData = sponsorMonthlyStats.filter((m) => m.ads.length > 0);
 
-  const sortedVisibleAds = useMemo(  const sortedVisibleAds = useMemo(() => sortAdsByMode(visibleAds, adSortMode), [visibleAds, adSortMode]);
+  const sortedVisibleAds = useMemo(() => sortAdsByMode(visibleAds, adSortMode), [visibleAds, adSortMode]);
 
   // 折價券查詢:依目前選中/搜尋的折價券代碼,從查詢結果的原始訂單裡篩出用過這組代碼的所有訂單(不分大小寫比對)。
   const couponFocusOrders = useMemo(() => {
