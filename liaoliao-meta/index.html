@@ -3666,9 +3666,9 @@ function MetaAdsLedger() {
   const [teamKeyInput, setTeamKeyInput] = useState(getTeamKey());
 
   // ---------- Shopline 對照:state ----------
-  // Worker 網址跟驗證密碼已經固定,直接寫死在程式碼裡。
-  const DEFAULT_SHOPLINE_WORKER_URL = "https://shopline-proxy.hanna-104.workers.dev";
-  const SHOPLINE_PROXY_SECRET = "0d7f31d2c6435ef57cafa4358dc7f0a5ad3bed45c31eb13d";
+  // 公開報表不再持有 Worker URL / 驗證密鑰；Meta 已由中央 Airbyte 同步。
+  const DEFAULT_SHOPLINE_WORKER_URL = "";
+  const SHOPLINE_PROXY_SECRET = "";
   const [shoplineWorkerUrl, setShoplineWorkerUrl] = useState(DEFAULT_SHOPLINE_WORKER_URL);
   const [shoplineWorkerUrlInput, setShoplineWorkerUrlInput] = useState(DEFAULT_SHOPLINE_WORKER_URL);
   const [shoplineMonthsData, setShoplineMonthsData] = useState({}); // { [monthKey]: record }
@@ -4016,33 +4016,19 @@ function MetaAdsLedger() {
 
   async function updateThisMonth() {
     if (!activeBrandId) {
-      setMetaUpdateError("請先選擇一個品牌。");
+      setMetaUpdateError("目前沒有可讀取的品牌資料。");
       return;
     }
     setMetaUpdateLoading("month");
     setMetaUpdateError(null);
     setMetaUpdateNotice(null);
     try {
-      const d = new Date();
-      // 改成重新抓「目前正在看的月份」(focusMonth),不是永遠只抓當月——切到過去月份(例如八月)按這顆
-      // 按鈕,就能把那個月的廣告連同縮圖網址跟 Meta 重抓一次(舊縮圖連結過期後,用這個把縮圖補回來)。
-      const monthKey = focusMonth || `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const since = `${monthKey}-01`;
-      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      const until = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
-      const record = await callMetaWorker("/api/meta/insights", {
-        accountId: activeBrandId,
-        since,
-        until,
-        relax: "false",
-      });
-      record.source = "manual";
-      await storage.set(monthKeyFor(activeBrandId, monthKey), JSON.stringify(record));
-      setFocusMonth(monthKey);
+      publicReportCache = null;
+      await loadPublicReport(true);
       await loadAll(activeBrandId);
-      setMetaUpdateNotice(`已更新 ${monthLabel(monthKey)} 的廣告成效,共 ${record.ads.length} 支廣告。`);
+      setMetaUpdateNotice("已重新載入中央 Airbyte 最新資料。");
     } catch (e) {
-      setMetaUpdateError(friendlyMetaError(e));
+      setMetaUpdateError("重新載入失敗，請稍後再試一次。");
     } finally {
       setMetaUpdateLoading(null);
     }
@@ -6114,7 +6100,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
               <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>還沒有月報資料</h3>
               <p>先更新本月 Meta 廣告資料，就能開始比較同一素材在不同策略下的差異。</p>
               <button className="mal-btn mal-btn-primary" disabled={metaUpdateLoading === "month"} onClick={updateThisMonth}>
-                {metaUpdateLoading === "month" ? "更新中…" : "🔄 更新本月資料"}
+                {metaUpdateLoading === "month" ? "更新中…" : "↻ 重新載入最新資料"}
               </button>
             </div>
           ) : (
@@ -6510,7 +6496,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
           <div className="mal-empty">
             <div style={{ fontSize: 30 }}>🎤</div>
             <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>還沒有任何月報表資料</h3>
-            <p>先按右上角「更新本月資料」,才能進行業配廣告的長線分析。</p>
+            <p>先按右上角「重新載入最新資料」,才能進行業配廣告的長線分析。</p>
             <button className="mal-btn mal-btn-primary" disabled={metaUpdateLoading === "month"} onClick={updateThisMonth}>
               {metaUpdateLoading === "month" ? "更新中…" : `🔄 更新${focusMonth ? monthLabel(focusMonth) : "本月"}資料`}
             </button>
