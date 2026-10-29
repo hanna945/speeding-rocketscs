@@ -987,6 +987,29 @@
   .mal-presentation-project-meta { display:flex; gap:10px; flex-wrap:wrap; margin-top:9px; }
   .mal-presentation-project-meta span { padding:4px 8px; border-radius:999px; background:#f0e7dc; color:#735f4f; font-size:13px; font-weight:700; }
   .mal-presentation-note { margin-top:14px; font-size:15px; line-height:1.55; color:#887666; }
+
+  .mal-presentation-series-table th,.mal-presentation-series-table td { padding-top:19px; padding-bottom:19px; }
+  .mal-presentation-series-table td:first-child { font-size:19px; }
+  .mal-presentation-series-summary {
+    display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:18px;
+  }
+  .mal-presentation-series-summary-card {
+    min-height:128px; padding:20px 22px; border-radius:18px;
+    background:rgba(246,239,230,.92); border:1px solid rgba(137,113,90,.17);
+  }
+  .mal-presentation-series-summary-label { font-size:14px; font-weight:700; color:#8b7563; }
+  .mal-presentation-series-summary-value {
+    margin-top:8px; font:700 28px 'IBM Plex Mono',monospace; color:#493a2f;
+  }
+  .mal-presentation-series-summary-text { margin-top:8px; font-size:16px; line-height:1.5; color:#655548; }
+  .mal-presentation-series-callout {
+    margin-top:16px; padding:20px 24px; border-radius:18px;
+    background:linear-gradient(135deg,rgba(232,219,204,.84),rgba(247,241,233,.94));
+    border:1px solid rgba(137,113,90,.18);
+  }
+  .mal-presentation-series-callout-title { font-family:'Noto Serif TC',serif; font-size:20px; font-weight:700; color:#4b3a2f; }
+  .mal-presentation-series-callout ul { margin:10px 0 0; padding-left:22px; }
+  .mal-presentation-series-callout li { margin:7px 0; font-size:17px; line-height:1.48; }
   .mal-presentation-controls {
     position:absolute; left:50%; bottom:18px; transform:translateX(-50%); z-index:6;
     display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:999px;
@@ -4057,7 +4080,7 @@ function MonthlyPresentation({
   const nextProjects = nextHasContent ? (nextPlan.projects || []) : projectItems;
 
   const seriesChunks = [];
-  for (let i=0; i<ledgerSorted.length; i+=7) seriesChunks.push(ledgerSorted.slice(i,i+7));
+  for (let i=0; i<ledgerSorted.length; i+=6) seriesChunks.push(ledgerSorted.slice(i,i+6));
 
   const slides = [];
 
@@ -4145,13 +4168,26 @@ function MonthlyPresentation({
   });
 
   seriesChunks.forEach((chunk,chunkIndex) => {
+    const chunkSpend = chunk.reduce((sum,r)=>sum+Number(r.spend||0),0);
+    const chunkRevenue = chunk.reduce((sum,r)=>sum+Number(r.revenue||0),0);
+    const chunkConversions = chunk.reduce((sum,r)=>sum+Number(r.conversions||0),0);
+    const chunkRoas = chunkSpend > 0 ? chunkRevenue / chunkSpend : null;
+    const best = chunk.filter((r)=>r.roas !== null).slice().sort((a,b)=>b.roas-a.roas)[0] || null;
+    const highestSpend = chunk.slice().sort((a,b)=>Number(b.spend||0)-Number(a.spend||0))[0] || null;
+    const weak = chunk.filter((r)=>r.spend>0 && (r.roas===null || r.roas < (roasTarget||3))).sort((a,b)=>Number(b.spend||0)-Number(a.spend||0))[0] || null;
+    const noSpend = chunk.filter((r)=>Number(r.spend||0)<=0).length;
+    const chunkShare = ledgerSpend > 0 ? (chunkSpend / ledgerSpend) * 100 : 0;
+
     slides.push({
       key:"series-"+chunkIndex,
       node:(
         <div className="mal-presentation-slide">
-          <PresentationSectionHead title={"投放成效｜系列明細" + (seriesChunks.length > 1 ? " " + (chunkIndex + 1) + "/" + seriesChunks.length : "")} subtitle="字體優先，不硬塞。系列多時自動分頁。" />
-          <div className="mal-presentation-table-wrap" style={{flex:1}}>
-            <table className="mal-presentation-table">
+          <PresentationSectionHead
+            title={"投放成效｜系列明細" + (seriesChunks.length > 1 ? " " + (chunkIndex + 1) + "/" + seriesChunks.length : "")}
+            subtitle="系列資料＋本頁重點判讀，版面以老闆閱讀距離為優先。"
+          />
+          <div className="mal-presentation-table-wrap">
+            <table className="mal-presentation-table mal-presentation-series-table">
               <thead><tr><th>系列</th><th>營業額</th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>CPA</th><th>成交</th><th>帳面利潤</th><th>客單價</th><th>判斷</th></tr></thead>
               <tbody>
                 {chunk.map((r) => {
@@ -4171,6 +4207,33 @@ function MonthlyPresentation({
                 })}
               </tbody>
             </table>
+          </div>
+
+          <div className="mal-presentation-series-summary">
+            <div className="mal-presentation-series-summary-card">
+              <div className="mal-presentation-series-summary-label">本頁系列花費</div>
+              <div className="mal-presentation-series-summary-value">{fmtMoney(chunkSpend,currencyCode)}</div>
+              <div className="mal-presentation-series-summary-text">佔整體廣告費 {chunkShare.toFixed(0)}%｜本頁 ROAS {chunkRoas !== null ? chunkRoas.toFixed(2)+"x" : "—"}</div>
+            </div>
+            <div className="mal-presentation-series-summary-card">
+              <div className="mal-presentation-series-summary-label">效率最高</div>
+              <div className="mal-presentation-series-summary-value">{best ? best.code : "—"}</div>
+              <div className="mal-presentation-series-summary-text">{best && best.roas !== null ? "ROAS "+best.roas.toFixed(2)+"x" : "目前無可比較投放資料"}{best ? "｜營業額 "+fmtMoney(best.revenue,currencyCode) : ""}</div>
+            </div>
+            <div className="mal-presentation-series-summary-card">
+              <div className="mal-presentation-series-summary-label">優先檢查</div>
+              <div className="mal-presentation-series-summary-value">{weak ? weak.code : "無"}</div>
+              <div className="mal-presentation-series-summary-text">{weak ? "花費 "+fmtMoney(weak.spend,currencyCode)+"｜ROAS "+(weak.roas!==null?weak.roas.toFixed(2)+"x":"—") : "本頁有投放的系列皆達標或無明顯異常"}</div>
+            </div>
+          </div>
+
+          <div className="mal-presentation-series-callout">
+            <div className="mal-presentation-series-callout-title">本頁重點</div>
+            <ul>
+              <li>{highestSpend ? "花費最集中在 "+highestSpend.code+"，佔整體 "+highestSpend.spendShare.toFixed(0)+"%，需搭配 ROAS 一起看是否值得持續吃預算。" : "本頁沒有投放花費。"}</li>
+              <li>{best ? best.code+" 是本頁效率最高系列，ROAS "+best.roas.toFixed(2)+"x"+(best.conversions>=10 ? "，已有較足樣本。" : "，但樣本仍需持續累積。") : "本頁暫無足夠資料判斷效率最佳系列。"}</li>
+              <li>{weak ? weak.code+" 為本頁優先檢查系列，建議先看素材疲勞、受眾與頁面轉換，再決定是否降量。" : noSpend>0 ? "本頁有 "+noSpend+" 個系列尚無投放資料，先不與有投放系列直接比較。" : "本頁沒有明顯低效系列，可維持觀察。"}</li>
+            </ul>
           </div>
         </div>
       )
