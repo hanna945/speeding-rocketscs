@@ -99,6 +99,7 @@ jobs:
             --brand-id "${{ github.event.inputs.brand_id || '' }}" \
             --backfill-days "${{ github.event.inputs.backfill_days || '0' }}" \
             --reconcile-days 2 \
+            --request-id "${{ github.event.inputs.request_id || '' }}" \
             --engine "${{ github.event.inputs.engine || 'airbyte' }}"
 
       - name: Update manual sync request status
