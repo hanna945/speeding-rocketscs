@@ -5885,6 +5885,10 @@ function MetaAdsLedger() {
     return { spend, conversions, revenue, cpa: conversions > 0 ? spend / conversions : null, roas: spend > 0 && revenue > 0 ? revenue / spend : null };
   }, [sponsorMonthlyStats]);
   const sponsorMonthsWithData = sponsorMonthlyStats.filter((m) => m.ads.length > 0);
+  const currentCalendarMonth = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
 
   const sortedWeekKeys = useMemo(() => Object.keys(weeksData).sort(), [weeksData]);
   const focusWeekData = focusWeek ? weeksData[focusWeek] : null;
@@ -6820,7 +6824,7 @@ function MetaAdsLedger() {
 
             <CollapsibleSectionTitle className="mal-section-title">逐月業配廣告明細</CollapsibleSectionTitle>
             {sponsorMonthsWithData.map((m) => (
-              <details key={m.monthKey} className="mal-sponsor-month">
+              <details key={m.monthKey} className="mal-sponsor-month" open={m.monthKey === currentCalendarMonth}>
                 <summary className="mal-sponsor-month-summary">
                   <span className="mal-sponsor-month-title">{m.month}</span>
                   <span className="mal-section-count">
