@@ -845,8 +845,6 @@ async function probeCloud(force) {
   return cloudStatusCache;
 }
 function getCredentialName() { return credentialNameCache; }
-function getCredentialBrands() { return credentialBrandsCache; }
-function mergeCredentialBrands() { return credentialBrandsCache.slice(); }
 
 function keyedSetting(value) {
   return value == null ? {} : { [PUBLIC_JGAO_BRAND_ID]: value };
@@ -1332,9 +1330,6 @@ function sortCodesChannelFirst(codes) {
   const channels = codes.filter(isChannelCode);
   const products = codes.filter((c) => !isChannelCode(c));
   return { channels, products, sorted: [...channels, ...products] };
-}
-function fmtDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 // 把 Meta 回傳的投放起始時間(ISO 字串,例如 "2026-07-16T00:00:00+0800")格式化成「7/16」這種簡短格式。
@@ -3992,18 +3987,7 @@ function MetaAdsLedger() {
   // 連線成功後背景觸發一次「登入後自動同步」(/api/sheets/auto):
   // 後端會自己判斷今天有沒有同步過、要不要真的去打 Google API,這裡不用先判斷,呼叫了也不會浪費額度。
   // 純背景動作,失敗就算了(例如還沒設定 Google 服務帳號金鑰),不影響畫面其他功能。
-  async function triggerAutoAccountSync() {
-    try {
-      const res = await fetch("/api/sheets/auto", { headers: teamKeyHeaders() });
-      if (!res.ok) return;
-      const j = await res.json();
-      if (j.synced && j.synced.length) {
-        setNotice(`已自動同步 ${j.synced.length} 個品牌的每日營收(Google 試算表)。`);
-        if (activeBrandId && j.synced.includes(activeBrandId)) loadLedger(activeBrandId);
-      }
-    } catch { /* 背景動作,失敗不影響主要畫面 */ }
-  }
-
+  async 
   // 網頁剛打開的當下,不一定已經知道「目前是哪組登入身份」(密碼可能是這次才輸入的),身份解析出來後,
   // 帳本(metaads-ledger:)的讀寫權限判斷才會正確——但品牌「切換選單」本身不受這個影響。
   // 這個工具是 H&J 專屬的,即使登入的密碼身份(例如「品牌C部」)剛好也能看 Halo-Mavis、J.GAO 這些其他品牌的資料,
@@ -4012,18 +3996,7 @@ function MetaAdsLedger() {
     setBrands((prev) => mergeWithHardcodedBrands(prev.filter((b) => !HARDCODED_BRANDS.some((h) => h.id === b.id))));
   }
 
-  async function saveTeamKey() {
-    setTeamKey(teamKeyInput.trim());
-    const status = await probeCloud(true);
-    setCloudStatus(status);
-    if (status === "connected") {
-      setCredentialName(getCredentialName());
-      /* public read-only mirror: no background sync */
-      refreshBrandsAfterAuth();
-      setShowTeamKeyModal(false);
-    }
-  }
-  useEffect(() => { setShowAllAds(false); }, [focusMonth]);
+  async   useEffect(() => { setShowAllAds(false); }, [focusMonth]);
   useEffect(() => {
     if (rememberToken && apiToken.trim()) {
       storage.set("meta-api-token", apiToken.trim()).catch(() => {});
@@ -4052,23 +4025,7 @@ function MetaAdsLedger() {
     loadShopline();
   }, []);
 
-  async function saveShoplineWorkerUrl() {
-    const trimmed = shoplineWorkerUrlInput.trim().replace(/\/$/, "");
-    if (!trimmed) {
-      setShoplineError("請先貼上你的 Cloudflare Worker 網址。");
-      return;
-    }
-    setShoplineWorkerUrl(trimmed);
-    setShoplineError(null);
-    try {
-      await storage.set(SHOPLINE_WORKER_URL_KEY, trimmed);
-      setShoplineNotice("已儲存 Worker 網址。");
-      setTimeout(() => setShoplineNotice(null), 3000);
-    } catch {
-      setShoplineError("儲存 Worker 網址失敗,請再試一次。");
-    }
-  }
-
+  async 
   async function fetchShoplineData(since, until, storageKey, applyFn) {
     if (!shoplineWorkerUrl) {
       setShoplineError("請先貼上並儲存你的 Cloudflare Worker 網址。");
@@ -4353,17 +4310,7 @@ function MetaAdsLedger() {
     }
   }
 
-  async function deleteMonth(mk) {
-    try {
-      await storage.delete(monthKeyFor(activeBrandId, mk));
-      const updated = { ...months }; delete updated[mk];
-      setMonths(updated);
-      const sorted = Object.keys(updated).sort();
-      if (focusMonth === mk) setFocusMonth(sorted.length ? sorted[sorted.length - 1] : null);
-    } catch { setError("刪除失敗,請再試一次。"); }
-    setConfirmDelete(null);
-  }
-
+  async 
   function handlePrintClick() {
     // 跟匯出 PDF 一樣,列印前先展開所有收合中的「廣告成效分類」區塊,避免收合的內容沒有印出來。
     window.dispatchEvent(new Event(PERF_EXPAND_ALL_EVENT));
@@ -4389,14 +4336,7 @@ function MetaAdsLedger() {
     })();
   }
 
-  async function resetAll() {
-    try {
-      for (const mk of Object.keys(months)) await storage.delete(monthKeyFor(activeBrandId, mk));
-      setMonths({}); setFocusMonth(null);
-    } catch { setError("重置失敗,請再試一次。"); }
-    setConfirmReset(false);
-  }
-
+  async 
   // 每個品牌各自的「CPA 過高」標準是各品牌獨立設定、互不影響,存起來之後下次打開網頁還會記得,
   // 也隨時可以重新設定或修改。輸入空白表示清除這個品牌的標準(改回「尚未設定」,不會顯示過高警示)。
   // 已經拿掉「預設帳本」,所以只要抓到資料,就一定要掛在一個看得到的品牌底下——
@@ -4435,30 +4375,7 @@ function MetaAdsLedger() {
     storage.set("meta-api-cpa-thresholds", JSON.stringify(updated)).catch(() => {});
   }
 
-  function editCpcThreshold(brandId) {
-    const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
-    const current = cpcThresholds[brandId];
-    const input = window.prompt(
-      `設定「${brandName}」的 CPC 目標——Traffic / CPC 類 Campaign 會以 CPC 當主要 Winner 指標。\n留空白可以清除這個品牌的 CPC 目標。`,
-      current != null ? String(current) : ""
-    );
-    if (input === null) return;
-    const trimmed = input.trim().replace(/,/g, "");
-    const updated = { ...cpcThresholds };
-    if (!trimmed) {
-      delete updated[brandId];
-    } else {
-      const num = parseFloat(trimmed);
-      if (!Number.isFinite(num) || num <= 0) {
-        setApiError("CPC 目標請輸入一個大於 0 的數字。");
-        return;
-      }
-      updated[brandId] = num;
-    }
-    setCpcThresholds(updated);
-    storage.set("meta-api-cpc-thresholds", JSON.stringify(updated)).catch(() => {});
-  }
-
+  
   // 跟 editCpaThreshold 同一套模式:每個品牌各自的「廣告費佔比過高」標準(百分比),
   // 超過這個比例,每日報表(選一天/矩陣總覽)裡的廣告費佔比欄位會標紅提醒。
   function editAdRatioThreshold(brandId) {
@@ -4555,47 +4472,9 @@ function MetaAdsLedger() {
     storage.set("meta-api-product-names", JSON.stringify(updated)).catch(() => {});
   }
 
-  async function saveCurrentAsBrand() {
-    if (!apiAccountId.trim()) {
-      setApiError("請先填廣告帳號 ID,才能存成常用品牌。");
-      return;
-    }
-    const name = window.prompt("幫這個廣告帳號取個品牌名稱:");
-    if (!name || !name.trim()) return;
-    const cleanId = apiAccountId.trim().replace(/^act_/, "");
-    const updated = [...brands.filter((b) => b.name !== name.trim()), { name: name.trim(), id: cleanId }];
-    setBrands(updated);
-    try {
-      await storage.set("meta-api-brands", JSON.stringify(updated));
-      // 同時記住這個帳號 ID 是「目前使用中」的,下次打開網頁時才會自動帶入,
-      // 不用等到真的按下抓取資料才會被記住。
-      await storage.set("meta-api-account-id", cleanId).catch(() => {});
-      setApiNotice(`已將「${name.trim()}」存為常用品牌。`);
-      setTimeout(() => setApiNotice(null), 4000);
-    } catch {
-      setApiError("儲存常用品牌失敗,請再試一次。");
-    }
-  }
-
-  function selectBrand(name) {
-    const found = brands.find((b) => b.name === name);
-    if (found) {
-      setApiAccountId(found.id);
-      // 選了常用品牌後也立刻記住,這樣下次打開網頁會直接帶入這個品牌的帳號 ID。
-      storage.set("meta-api-account-id", found.id).catch(() => {});
-    }
-  }
-
-  async function deleteBrand(name) {
-    const updated = brands.filter((b) => b.name !== name);
-    setBrands(updated);
-    try {
-      await storage.set("meta-api-brands", JSON.stringify(updated));
-    } catch {
-      setApiError("刪除常用品牌失敗,請再試一次。");
-    }
-  }
-
+  async 
+  
+  async 
   async function fetchOneBrandMonth(token, accountId, month) {
     const [y, m] = month.split("-").map(Number);
     const since = `${month}-01`;
@@ -5735,208 +5614,16 @@ function MetaAdsLedger() {
     );
   }
 
-  async function fetchFullMonthFromApi() {
-    if (!apiMonth) {
-      setApiError("請選擇月份。");
-      return;
-    }
-    if (!activeBrandId) {
-      setApiError("請先在上方選擇一個品牌。");
-      return;
-    }
-    setApiError(null);
-    setApiNotice(null);
-    setApiLoading(true);
-    try {
-      const [y, m] = apiMonth.split("-").map(Number);
-      const since = `${apiMonth}-01`;
-      const lastDay = new Date(y, m, 0).getDate();
-      const until = `${apiMonth}-${String(lastDay).padStart(2, "0")}`;
-      const record = await callMetaWorker("/api/meta/insights", { accountId: activeBrandId, since, until, relax: "false" });
-      record.source = "manual";
-      await storage.set(monthKeyFor(activeBrandId, apiMonth), JSON.stringify(record));
-      await loadAll(activeBrandId);
-      setFocusMonth(apiMonth);
-      setViewMode("month");
-      setApiNotice(`已抓到 ${monthLabel(apiMonth)} 的資料,共 ${record.ads.length} 支廣告。`);
-      setShowApiPanel(false);
-    } catch (e) {
-      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
-    } finally {
-      setApiLoading(false);
-    }
-  }
-
-  async function fetchBatchFromApi() {
-    if (!apiToken.trim() || !apiMonth) {
-      setApiError("請填入存取權杖並選擇月份。");
-      return;
-    }
-    const targets = brands.filter((b) => selectedBatchBrandIds.includes(b.id));
-    if (!targets.length) {
-      setApiError("請至少勾選一個品牌。");
-      return;
-    }
-    setApiError(null);
-    setApiNotice(null);
-    setApiLoading(true);
-    const progress = targets.map((b) => ({ id: b.id, name: b.name, status: "pending", message: "" }));
-    setBatchProgress(progress);
-    for (let i = 0; i < targets.length; i++) {
-      const b = targets[i];
-      setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "running" } : p)));
-      try {
-        const record = await fetchOneBrandMonth(apiToken.trim(), b.id, apiMonth);
-        record.source = "manual";
-        await storage.set(monthKeyFor(b.id, apiMonth), JSON.stringify(record));
-        setBatchProgress((prev) =>
-          prev.map((p, idx) => (idx === i ? { ...p, status: record.ads.length ? "done" : "empty", message: record.ads.length + " 支廣告" } : p))
-        );
-      } catch (e) {
-        setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "error", message: e.message } : p)));
-      }
-      if (i < targets.length - 1) await new Promise((resolve) => setTimeout(resolve, 4000));
-    }
-    setApiLoading(false);
-    setApiNotice("批次抓取完成,上方可以切換品牌查看結果。");
-    await loadAll(activeBrandId);
-  }
-
+  async 
+  async 
   // 自動更新前3個月月報表:計算當月和前2個月,依次抓取每個月的資料
-  async function fetchRecentMonthsFromApi(monthsCount) {
-    if (!apiToken.trim() || !apiAccountId.trim()) {
-      setApiError("請填入存取權杖跟廣告帳號 ID。");
-      return;
-    }
-    setApiError(null);
-    setApiNotice(null);
-    setApiLoading(true);
-    setShowApiPanel(false);
-    try {
-      const cleanId = apiAccountId.trim().replace(/^act_/, "");
-      const brandIdToUse = await ensureBrandRegistered(cleanId);
-
-      // 計算前 N 個月(包含當月)
-      const monthsToFetch = [];
-      const now = new Date();
-      for (let m = 0; m < monthsCount; m++) {
-        const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
-        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        monthsToFetch.push(monthKey);
-      }
-      monthsToFetch.reverse(); // 反轉,從最早的月開始抓
-
-      const progress = monthsToFetch.map((mk) => ({ id: mk, name: monthLabel(mk), status: "pending", message: "" }));
-      setBatchProgress(progress);
-
-      let successCount = 0, errorCount = 0;
-      for (let m = 0; m < monthsToFetch.length; m++) {
-        const monthKey = monthsToFetch[m];
-        setBatchProgress((prev) => prev.map((p, idx) => (idx === m ? { ...p, status: "running" } : p)));
-        try {
-          const record = await fetchOneBrandMonth(apiToken.trim(), cleanId, monthKey);
-          record.source = "manual";
-          await storage.set(monthKeyFor(brandIdToUse, monthKey), JSON.stringify(record));
-          successCount++;
-          setBatchProgress((prev) =>
-            prev.map((p, idx) => (idx === m ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
-          );
-        } catch (e) {
-          errorCount++;
-          setBatchProgress((prev) => prev.map((p, idx) => (idx === m ? { ...p, status: "error", message: e.message } : p)));
-        }
-        if (m < monthsToFetch.length - 1) await new Promise((r) => setTimeout(r, 4000));
-      }
-
-      setActiveBrandId(brandIdToUse);
-      await loadAll(brandIdToUse);
-      setFocusMonth(monthsToFetch[monthsToFetch.length - 1]); // 聚焦到最新月份
-      setApiNotice(`已自動更新前 ${monthsCount} 個月:成功 ${successCount} 個月${errorCount > 0 ? `,失敗 ${errorCount} 個月` : ""}。`);
-    } catch (e) {
-      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
-    } finally {
-      setApiLoading(false);
-    }
-  }
-
-  async function toggleRememberToken(checked) {
-    setRememberToken(checked);
-    if (checked) {
-      await storage.set("meta-api-remember-token", "1").catch(() => {});
-      if (apiToken.trim()) await storage.set("meta-api-token", apiToken.trim()).catch(() => {});
-    } else {
-      await storage.set("meta-api-remember-token", "0").catch(() => {});
-      await storage.delete("meta-api-token").catch(() => {});
-      // 不記住權杖的話,自動同步也一併關閉,因為沒有存起來的權杖可以自動用
-      if (autoSyncEnabled) {
-        setAutoSyncEnabled(false);
-        await storage.set("meta-api-autosync", "0").catch(() => {});
-      }
-    }
-  }
-
-  async function toggleAutoSync() {
-    setAutoSyncEnabled(false);
-    await storage.set("meta-api-autosync", "0").catch(() => {});
-    setApiNotice("Meta 自動同步已由中央排程接管；此頁只讀取已同步資料。手動抓取功能保留作緊急備援。");
-  }
-
+  async 
+  async 
+  async 
   // J.GAO 頁面只維護月報資料；獨立週資料流程已移除。
   // 已結束的月份只在缺資料時補，當月資料若 3 小時內剛更新過就沿用，避免重複打 Meta API。
   const AUTO_SYNC_DATE_KEY = "meta-auto-sync-last-date";
-  async function runAutoSyncWith(brandsList, force = false) {
-    const targets = (brandsList && brandsList.length) ? brandsList : HARDCODED_BRANDS;
-    if (!targets.length) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    if (!force) {
-      const lastRunRes = await storage.get(AUTO_SYNC_DATE_KEY).catch(() => null);
-      if (lastRunRes && lastRunRes.value === todayStr) return;
-      await storage.set(AUTO_SYNC_DATE_KEY, todayStr).catch(() => {});
-    }
-    const RECENT_MONTHS = 3;
-    let successCount = 0, errorCount = 0;
-    setAutoSyncStatus("自動同步中… 更新近 " + RECENT_MONTHS + " 個月資料");
-    for (const t of targets) {
-      try {
-        const FRESH_ENOUGH_MS = 3 * 3600 * 1000;
-        const now = new Date();
-        for (let m = 0; m < RECENT_MONTHS; m++) {
-          const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
-          const monthKey = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-          if (m > 0) {
-            const existing = await storage.get(monthKeyFor(t.id, monthKey)).catch(() => null);
-            if (existing) continue;
-          } else {
-            const existingRaw = await storage.get(monthKeyFor(t.id, monthKey)).catch(() => null);
-            if (existingRaw && existingRaw.value) {
-              try {
-                const existingRecord = JSON.parse(existingRaw.value);
-                const syncedAtMs = existingRecord.syncedAt ? new Date(existingRecord.syncedAt).getTime() : 0;
-                if (syncedAtMs && Date.now() - syncedAtMs < FRESH_ENOUGH_MS) continue;
-              } catch {}
-            }
-          }
-          try {
-            const since = monthKey + "-01";
-            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-            const until = monthKey + "-" + String(lastDay).padStart(2, "0");
-            const record = await callMetaWorker("/api/meta/insights", { accountId: t.id, since, until, relax: "false" });
-            record.source = "auto";
-            await storage.set(monthKeyFor(t.id, monthKey), JSON.stringify(record));
-            successCount++;
-          } catch { errorCount++; }
-          await new Promise((resolve) => setTimeout(resolve, 4000));
-        }
-      } catch { errorCount++; }
-    }
-    await storage.set(AUTO_SYNC_DATE_KEY, todayStr);
-    setAutoSyncStatus(null);
-    await loadAll(activeBrandId);
-    if (successCount > 0) {
-      setMetaUpdateNotice("已自動同步完成:成功更新 " + successCount + " 筆資料" + (errorCount > 0 ? "," + errorCount + " 筆失敗(可能是頻率限制,之後再手動抓一次即可)" : "") + "。");
-    }
-  }
-
+  async 
   // 手動觸發同步(例如面板裡的「立即同步」按鈕)
   function runAutoSync() {
     return runAutoSyncWith(brands.length ? brands : HARDCODED_BRANDS);
