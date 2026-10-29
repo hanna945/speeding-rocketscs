@@ -3587,17 +3587,6 @@ function MetaAdsLedger() {
   useEffect(() => {
     if (customMavisLogo) setMavisFavicon(customMavisLogo);
   }, [customMavisLogo]);
-
-      
-  // ---------- Shopline 對照:state ----------
-  // Worker 網址跟驗證密碼已經固定,直接寫死在程式碼裡。
-  const DEFAULT_SHOPLINE_WORKER_URL = "";
-  const SHOPLINE_PROXY_SECRET = "";
-  const shoplineWorkerUrl = DEFAULT_SHOPLINE_WORKER_URL;
-    const [shoplineMonthsData, setShoplineMonthsData] = useState({}); // Mavis: SHOPLINE disabled
-      
-  // ---------- 折價券查詢:state(自訂時間範圍,不綁定週/月的固定區間)----------
-              
   // ---------- Meta 廣告成效更新按鈕:state ----------
   const [metaUpdateLoading, setMetaUpdateLoading] = useState(null); // null | "week" | "month"
   const [metaUpdateError, setMetaUpdateError] = useState(null);
@@ -3716,14 +3705,6 @@ function MetaAdsLedger() {
       storage.set("meta-api-token", apiToken.trim()).catch(() => {});
     }
   }, [apiToken, rememberToken]);
-
-
-
-  // 折價券查詢:自訂時間範圍(日曆選的起訖日),不綁定既有的週/月固定區間,查詢結果只放在畫面上,不存進共用/本機儲存空間
-  // (跟月報表的 Shopline 資料是分開的兩份,避免互相覆蓋)。
-
-  // 把訂單的 utm 物件整理成一句話說明「這筆訂單從哪裡來的」,沒有 utm 資料就視為直接流量/非廣告帶來的訂單。
-  
   // 把各種技術性的失敗原因(網路錯誤、JSON 解析失敗、Worker 狀態碼、Meta 頻率限制等)
   // 轉成看得懂的中文說明。原始技術訊息還是會印在瀏覽器 console 裡,真的要除錯可以按 F12 查看,
   // 但畫面上只顯示一般人看得懂的話。
@@ -5006,56 +4987,6 @@ function MetaAdsLedger() {
   const dailyMatrixCodesRaw = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
   const dailyMatrixSplit = sortCodesChannelFirst(dailyMatrixCodesRaw);
   const dailyMatrixCodes = dailyMatrixSplit.sorted;
-  // 真實Shopline訂單金額(不是試算表手動打的數字,是直接從Shopline後台訂單資料算出來的)——
-  // shoplineMonthsData是refreshAllData裡全域載入的,不分品牌,一頁業績這裡直接讀同一份就有,
-  // 不用額外開新的抓取路徑。用日期(YYYY-MM-DD)當key,方便跟矩陣總覽逐日的列對起來。
-  const shopeRealDailyMap = useMemo(() => {
-    const monthRecord = activeDailyMonth ? shoplineMonthsData[activeDailyMonth] : null;
-    if (!monthRecord || !monthRecord.orders) return {};
-    const grouped = groupShoplineOrdersByDay(monthRecord.orders);
-    return Object.fromEntries(grouped.map((g) => [g.date, g]));
-  }, [shoplineMonthsData, activeDailyMonth]);
-
-  // 官網業績「每日報表」用:邏輯跟上面一頁業績那套完全一樣(月份分頁 → 選一天/矩陣總覽,自動帶入今天或最新一天有資料的日期),
-  // 只是資料源換成 shoplineMonthsData(Shopline 訂單),不是 ledgerByMonth(Google 試算表帳本)。
-  // dailyMonth/focusDay/dailySubMode 兩個品牌共用同一組 state——切換品牌時,如果原本選的月份/日期對新資料源無效,
-  // 下面的 fallback 邏輯會自動退回「今天」或「最新一筆有資料的日期」,不需要另外開一組獨立的 state。
-  const officialDailyMonthKeys = useMemo(() => Object.keys(shoplineMonthsData).sort(), [shoplineMonthsData]);
-  const activeOfficialDailyMonth = (dailyMonth && shoplineMonthsData[dailyMonth])
-    ? dailyMonth
-    : shoplineMonthsData[todayParts.monthKey]
-    ? todayParts.monthKey
-    : (officialDailyMonthKeys.length ? officialDailyMonthKeys[officialDailyMonthKeys.length - 1] : null);
-  const officialDailyMonthRecord = activeOfficialDailyMonth ? shoplineMonthsData[activeOfficialDailyMonth] : null;
-  const officialDailyRows = useMemo(
-    () => groupShoplineOrdersByDay(officialDailyMonthRecord ? officialDailyMonthRecord.orders : null),
-    [officialDailyMonthRecord]
-  );
-  // groupShoplineOrdersByDay 回傳的是新到舊排序,這裡另外存一份舊到新的,跟 sortedDailyDays(一頁業績那邊)排序方向一致,
-  // 這樣「選一天」的日期分頁、矩陣總覽的逐日列表,兩個品牌看起來的排列順序才會一樣。
-  const sortedOfficialDailyRows = useMemo(() => officialDailyRows.slice().sort((a, b) => (a.date < b.date ? -1 : 1)), [officialDailyRows]);
-  const activeOfficialFocusDay = (focusDay && sortedOfficialDailyRows.some((d) => d.date === focusDay))
-    ? focusDay
-    : sortedOfficialDailyRows.some((d) => d.date === todayParts.dateKey)
-    ? todayParts.dateKey
-    : (sortedOfficialDailyRows.length ? sortedOfficialDailyRows[sortedOfficialDailyRows.length - 1].date : null);
-  const officialFocusDayRecord = activeOfficialFocusDay ? sortedOfficialDailyRows.find((d) => d.date === activeOfficialFocusDay) : null;
-  const officialDailyMonthTotal = useMemo(() => {
-    return officialDailyRows.reduce(
-      (acc, d) => ({
-        orderCount: acc.orderCount + d.orderCount,
-        grossRevenue: acc.grossRevenue + d.grossRevenue,
-        discountAmount: acc.discountAmount + d.discountAmount,
-        netRevenue: acc.netRevenue + d.netRevenue,
-      }),
-      { orderCount: 0, grossRevenue: 0, discountAmount: 0, netRevenue: 0 }
-    );
-  }, [officialDailyRows]);
-  // 基礎分析用:當月哪一天實收營收最高。
-  const officialHighestRevenueDay = useMemo(() => {
-    if (!officialDailyRows.length) return null;
-    return officialDailyRows.reduce((best, d) => (!best || d.netRevenue > best.netRevenue ? d : best), null);
-  }, [officialDailyRows]);
   // threshold 有給且超過時,回傳標紅、加驚嘆號的樣式;沒給 threshold 或沒超過,就是原本的樣式。
   // adPct / AD_RATIO_CRITICAL_PCT 已經移到檔案最上面的頂層,這裡不用重複定義。
   const netProfitCell = (value) => {
@@ -5499,15 +5430,7 @@ function MetaAdsLedger() {
                   <div className="mal-card-value">{focusData.roas !== null ? `${focusData.roas.toFixed(2)}x` : "—"}</div>
                   <DeltaBadge value={pctChange(focusData.roas, prevData && prevData.roas)} />
                 </div>
-                {SHOPLINE_ENABLED && activeBrandId === ONEPAGE_BRAND_ID && shoplineMonthsData[focusMonth] && (
-                  <div className="mal-card">
-                    <div className="mal-card-label">✅ 真實Shopline訂單(整月)</div>
-                    <div className="mal-card-value">{fmtMoney(sumShoplineOrders(shoplineMonthsData[focusMonth].orders).netRevenue)}</div>
-                    <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>
-                      {sumShoplineOrders(shoplineMonthsData[focusMonth].orders).orderCount} 筆訂單(非試算表數字)
-                    </div>
-                  </div>
-                )}
+                
               </div>
             </>
           )}
@@ -5835,15 +5758,7 @@ function MetaAdsLedger() {
                         <div className="mal-card-label">🏬 全店淨利潤</div>
                         <div className="mal-card-value">{netProfitCell(focusDayRecord.overall.netProfit)}</div>
                       </div>
-                      {shopeRealDailyMap[activeFocusDay] && (
-                        <div className="mal-card">
-                          <div className="mal-card-label">✅ 真實Shopline訂單</div>
-                          <div className="mal-card-value">{fmtMoney(shopeRealDailyMap[activeFocusDay].netRevenue)}</div>
-                          <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>
-                            {shopeRealDailyMap[activeFocusDay].orderCount} 筆訂單(非試算表數字,直接來自Shopline後台)
-                          </div>
-                        </div>
-                      )}
+                      
                     </div>
 
                     <CollapsibleSectionTitle className="mal-section-title">
@@ -5937,7 +5852,6 @@ function MetaAdsLedger() {
                       <tr>
                         <th rowSpan={2} style={{ verticalAlign: "bottom" }}>日期</th>
                         <th colSpan={4} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🏬 全店</th>
-                        <th colSpan={2} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>✅ 真實Shopline訂單</th>
                         {dailyMatrixCodes.map((code, i) => (
                           <th
                             key={code}
@@ -5954,8 +5868,6 @@ function MetaAdsLedger() {
                         <th className="mal-ledger-group-backend">廣告費</th>
                         <th className="mal-ledger-group-backend">廣告費佔比</th>
                         <th className="mal-ledger-group-backend">淨利潤</th>
-                        <th className="mal-ledger-group-backend mal-matrix-group-start">訂單數</th>
-                        <th className="mal-ledger-group-backend">實收營收</th>
                         {dailyMatrixCodes.map((code, i) => {
                           const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
                           const boundary = i === dailyMatrixSplit.channels.length && dailyMatrixSplit.products.length > 0;
@@ -5978,8 +5890,6 @@ function MetaAdsLedger() {
                           <td className="mal-ledger-group-backend">{fmtMoney(d.overall.adSpend)}</td>
                           <td className="mal-ledger-group-backend">{adPct(d.overall.adSpend, d.overall.revenue, adRatioThresholds[activeBrandId])}</td>
                           <td className="mal-ledger-group-backend">{netProfitCell(d.overall.netProfit)}</td>
-                          <td className="mal-ledger-group-backend mal-matrix-group-start">{shopeRealDailyMap[d.date] ? shopeRealDailyMap[d.date].orderCount : "—"}</td>
-                          <td className="mal-ledger-group-backend">{shopeRealDailyMap[d.date] ? fmtMoney(shopeRealDailyMap[d.date].netRevenue) : "—"}</td>
                           {dailyMatrixCodes.map((code, i) => {
                             const v = d.byCode[code];
                             const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
@@ -6002,19 +5912,7 @@ function MetaAdsLedger() {
                           <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.adSpend)}</td>
                           <td className="mal-ledger-group-backend mal-row-month">{adPct(dailyMonthRecord.monthTotal.overall.adSpend, dailyMonthRecord.monthTotal.overall.revenue, adRatioThresholds[activeBrandId])}</td>
                           <td className="mal-ledger-group-backend mal-row-month">{netProfitCell(dailyMonthRecord.monthTotal.overall.netProfit)}</td>
-                          {/* 修正欄位錯位:表頭跟每一天的資料列在「全店」跟各代號之間都有「真實Shopline訂單」2欄(訂單數/實收營收),
-                              但總計列原本漏了這2格,導致總計列所有代號的數字整排往左錯2格——「淨利潤」欄下顯示到別的數字,
-                              跟試算表對不起來。這裡補上該月真實Shopline訂單總計(跟每月報表卡片同一套 sumShoplineOrders 邏輯)。 */}
-                          {(() => {
-                            const rec = activeDailyMonth ? shoplineMonthsData[activeDailyMonth] : null;
-                            const t = rec ? sumShoplineOrders(rec.orders) : null;
-                            return (
-                              <>
-                                <td className="mal-ledger-group-backend mal-matrix-group-start mal-row-month">{t ? fmtInt(t.orderCount) : "—"}</td>
-                                <td className="mal-ledger-group-backend mal-row-month">{t ? fmtMoney(t.netRevenue) : "—"}</td>
-                              </>
-                            );
-                          })()}
+                          
                           {dailyMatrixCodes.map((code, i) => {
                             const v = dailyMonthRecord.monthTotal.byCode[code];
                             const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
