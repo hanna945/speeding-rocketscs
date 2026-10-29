@@ -1351,7 +1351,6 @@ const HARDCODED_BRANDS = [
 ];
 // 明確命名這兩個鎖定品牌的 ID,避免程式碼裡到處出現看不出意義的數字字串。
 // 官網業績的營收資料來源是 Shopline(訂單直接來自官網後台);一頁業績的營收資料來源是 Google 試算表帳本(metaads-ledger)。
-const OFFICIAL_SITE_BRAND_ID = "__NO_OFFICIAL_SITE__";
 const ONEPAGE_BRAND_ID = HARDCODED_BRANDS[0].id; // Halo-Mavis國際連線（光速代操）
 // 把鎖定的品牌跟使用者自己存過的品牌清單合併,鎖定的品牌一定排最前面、一定會出現,
 // 如果使用者存過同一個 id 但取了不同名字,以鎖定清單裡的名字為準(避免被改掉)。
@@ -3890,11 +3889,6 @@ function MetaAdsLedger() {
     loadLedger(activeBrandId, () => cancelled);
     return () => { cancelled = true; }; // 品牌再度切換,或元件卸載時,讓這次還沒跑完的請求作廢
   }, [activeBrandId]);
-  // 切換品牌時,如果目前停留的分頁對新品牌來說已經不存在(例如「折價券查詢」只有官網業績才有),
-  // 自動跳回「每月報表」,避免留在一個沒有對應按鈕、內容可能是空的分頁上。
-  useEffect(() => {
-    if (viewMode === "coupon" && activeBrandId !== OFFICIAL_SITE_BRAND_ID) setViewMode("month");
-  }, [activeBrandId, viewMode]);
   useEffect(() => {
     if (HAS_SHARED_STORAGE) return; // Claude Artifact 已經有共用儲存,不需要再測 Cloudflare API
     probeCloud(true).then((status) => {
@@ -5591,11 +5585,7 @@ function MetaAdsLedger() {
         <button className={`mal-viewmode-btn ${viewMode === "ads" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("ads")}>
           📊 廣告分析
         </button>
-        {activeBrandId === OFFICIAL_SITE_BRAND_ID && (
-          <button className={`mal-viewmode-btn ${viewMode === "coupon" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("coupon")}>
-            🎟 折價券查詢
-          </button>
-        )}
+        
       </div>
 
       {viewMode === "adjust" && (
@@ -5788,15 +5778,11 @@ function MetaAdsLedger() {
                 periodLabel={monthLabel(focusMonth)}
                 roasTarget={roasTargets[activeBrandId]}
                 minSpend={MIN_AD_SPEND}
-                ledgerAgg={activeBrandId === OFFICIAL_SITE_BRAND_ID ? null : aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
                 prevAds={prevData ? prevData.ads : null}
                 prevPeriodLabel={focusIdx > 0 ? monthLabel(sortedKeys[focusIdx - 1]) : ""}
                 collapsible={false}
-                prevLedgerAgg={
-                  activeBrandId === OFFICIAL_SITE_BRAND_ID || focusIdx <= 0
-                    ? null
-                    : aggregateLedgerRange(ledgerByMonth, monthDateRange(sortedKeys[focusIdx - 1]).since, monthDateRange(sortedKeys[focusIdx - 1]).until)
-                }
+                prevLedgerAgg={focusIdx <= 0 ? null : aggregateLedgerRange(ledgerByMonth, monthDateRange(sortedKeys[focusIdx - 1]).since, monthDateRange(sortedKeys[focusIdx - 1]).until)}
               />
               <div className="mal-cards">
                 <div className="mal-card">
@@ -5922,7 +5908,7 @@ function MetaAdsLedger() {
               productNames={productNames[activeBrandId] || {}}
               onEditProductName={editProductName}
               minSpend={MIN_AD_SPEND}
-              ledgerAgg={activeBrandId === OFFICIAL_SITE_BRAND_ID ? null : aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+              ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
               adRatioThreshold={adRatioThresholds[activeBrandId]}
               storageKey={`adperf-ai-month:${activeBrandId}::${focusMonth}`}
               collapsible={false}
@@ -5947,39 +5933,17 @@ function MetaAdsLedger() {
 
 
           {focusData && (
-            activeBrandId === OFFICIAL_SITE_BRAND_ID ? (
-              <>
-                <StaticSectionTitle className="mal-section-title">
-                  {monthLabel(focusMonth)} Shopline 對照(官網實際 vs Meta 回報)
-                </StaticSectionTitle>
-                {shoplineMonthsData[focusMonth] ? (
-                  <ShoplineComparisonView
-                    record={shoplineMonthsData[focusMonth]}
-                    ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
-                    currencyCode={focusData.currency}
-                  />
-                ) : (
-                  <div className="mal-empty">
-                    <p>這個月份還沒有抓取 Shopline 訂單資料,沒辦法比對官網實際業績跟 Meta 回報的落差。</p>
-                    <button className="mal-btn mal-btn-primary" disabled={shoplineLoading} onClick={() => fetchShoplineForMonth(focusMonth)}>
-                      {shoplineLoading ? "抓取中…" : "☁️ 抓取這個月的 Shopline 資料"}
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <StaticSectionTitle className="mal-section-title">
-                  {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
-                </StaticSectionTitle>
-                <LedgerVsMetaComparison
-                  ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
-                  currencyCode={focusData.currency}
-                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
-                  periodLabel="月份"
-                />
-              </>
-            )
+            <>
+              <StaticSectionTitle className="mal-section-title">
+                {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
+              </StaticSectionTitle>
+              <LedgerVsMetaComparison
+                ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
+                currencyCode={focusData.currency}
+                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+                periodLabel="月份"
+              />
+            </>
           )}
 
           <StaticSectionTitle className="mal-section-title">每月明細</StaticSectionTitle>
@@ -6108,131 +6072,6 @@ function MetaAdsLedger() {
 
 
       {viewMode === "daily" && (
-        activeBrandId === OFFICIAL_SITE_BRAND_ID ? (
-          // ---------- 官網業績:每日報表邏輯跟一頁業績完全一樣(月份分頁 → 選一天/矩陣總覽),資料源是 Shopline ----------
-          !officialDailyMonthRecord && officialDailyMonthKeys.length === 0 ? (
-            <div className="mal-empty">
-              <div style={{ fontSize: 30 }}>📆</div>
-              <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>還沒有抓取 Shopline 訂單資料</h3>
-              <p>每日報表需要先抓取 Shopline 訂單,系統才有逐日的資料可以顯示。按「一鍵更新全部」或「折價券查詢」分頁裡的查詢按鈕都可以抓取。</p>
-            </div>
-          ) : (
-            <>
-              <div className="mal-notice" style={{ marginBottom: 18 }}>
-                ☁️ H&J官網業績的營收數據來自 Shopline,不是 Google 試算表。
-              </div>
-              <div className="mal-tabs">
-                {officialDailyMonthKeys.map((mk) => (
-                  <div key={mk} className={`mal-tab ${mk === activeOfficialDailyMonth ? "mal-tab-active" : ""}`} onClick={() => { setDailyMonth(mk); setFocusDay(null); }}>
-                    {monthLabel(mk)}
-                  </div>
-                ))}
-              </div>
-
-              <div className="mal-viewmode-switch" style={{ marginBottom: 18 }}>
-                <button className={`mal-viewmode-btn ${dailySubMode === "single" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setDailySubMode("single")}>
-                  📌 選一天
-                </button>
-                <button className={`mal-viewmode-btn ${dailySubMode === "matrix" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setDailySubMode("matrix")}>
-                  📊 矩陣總覽
-                </button>
-              </div>
-
-              {dailySubMode === "single" && (
-                <>
-                  <div className="mal-tabs">
-                    {sortedOfficialDailyRows.map((d) => (
-                      <div key={d.date} className={`mal-tab ${d.date === activeOfficialFocusDay ? "mal-tab-active" : ""}`} onClick={() => setFocusDay(d.date)}>
-                        {d.date.slice(5)}
-                      </div>
-                    ))}
-                  </div>
-
-                  {officialFocusDayRecord ? (
-                    <>
-                      <div className="mal-cards" style={{ marginBottom: 18 }}>
-                        <div className="mal-card">
-                          <div className="mal-card-label">🏬 訂單數</div>
-                          <div className="mal-card-value">{fmtInt(officialFocusDayRecord.orderCount)}</div>
-                        </div>
-                        <div className="mal-card">
-                          <div className="mal-card-label">🏬 原價營收</div>
-                          <div className="mal-card-value">{fmtMoney(officialFocusDayRecord.grossRevenue)}</div>
-                        </div>
-                        <div className="mal-card">
-                          <div className="mal-card-label">🏬 折扣金額</div>
-                          <div className="mal-card-value">{fmtMoney(officialFocusDayRecord.discountAmount)}</div>
-                        </div>
-                        <div className="mal-card">
-                          <div className="mal-card-label">🏬 實收營收</div>
-                          <div className="mal-card-value">{fmtMoney(officialFocusDayRecord.netRevenue)}</div>
-                        </div>
-                      </div>
-                      <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "-8px 0 0" }}>
-                        Shopline 訂單沒有像後台每日收益表那樣拆分產品代號,這裡只能看全店合計,不能像一頁業績那樣看逐個代號明細。
-                      </p>
-                    </>
-                  ) : (
-                    <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>這一天沒有資料。</p>
-                  )}
-                </>
-              )}
-
-              {dailySubMode === "matrix" && (
-                <>
-                  <CollapsibleSectionTitle className="mal-section-title">
-                    {activeOfficialDailyMonth ? monthLabel(activeOfficialDailyMonth) : ""} 每日營收矩陣
-                    <span className="mal-section-count">({officialDailyRows.length} 天有訂單)</span>
-                  </CollapsibleSectionTitle>
-                  <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
-                    <table className="mal-table">
-                      <thead>
-                        <tr><th>日期</th><th>訂單數</th><th>原價營收</th><th>折扣金額</th><th>實收營收</th></tr>
-                      </thead>
-                      <tbody>
-                        {sortedOfficialDailyRows.map((d) => (
-                          <tr key={d.date}>
-                            <td>{d.date}</td>
-                            <td>{fmtInt(d.orderCount)}</td>
-                            <td>{fmtMoney(d.grossRevenue)}</td>
-                            <td>{fmtMoney(d.discountAmount)}</td>
-                            <td>{fmtMoney(d.netRevenue)}</td>
-                          </tr>
-                        ))}
-                        <tr>
-                          <td className="mal-row-month">總計</td>
-                          <td className="mal-row-month">{fmtInt(officialDailyMonthTotal.orderCount)}</td>
-                          <td className="mal-row-month">{fmtMoney(officialDailyMonthTotal.grossRevenue)}</td>
-                          <td className="mal-row-month">{fmtMoney(officialDailyMonthTotal.discountAmount)}</td>
-                          <td className="mal-row-month">{fmtMoney(officialDailyMonthTotal.netRevenue)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-
-              {officialDailyMonthRecord && (
-                <div className="mal-week-analysis">
-                  <div className="mal-week-analysis-title">基礎分析</div>
-                  <ul>
-                    {officialHighestRevenueDay && (
-                      <li>
-                        {monthLabel(activeOfficialDailyMonth)}實收營收最高的一天是 {officialHighestRevenueDay.date}
-                        ({fmtMoney(officialHighestRevenueDay.netRevenue)},共 {fmtInt(officialHighestRevenueDay.orderCount)} 筆訂單)。
-                      </li>
-                    )}
-                    {officialDailyMonthTotal.grossRevenue > 0 && (
-                      <li>
-                        這個月折扣金額佔原價營收 {((officialDailyMonthTotal.discountAmount / officialDailyMonthTotal.grossRevenue) * 100).toFixed(1)}%。
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              )}
-            </>
-          )
-        ) :
         !dailyMonthRecord && ledgerMonthKeys.length === 0 ? (
           <div className="mal-empty">
             <div style={{ fontSize: 30 }}>📆</div>
@@ -6534,149 +6373,7 @@ function MetaAdsLedger() {
         )
       )}
 
-      {viewMode === "coupon" && (
-        <>
-          <CollapsibleSectionTitle className="mal-section-title">
-            折價券查詢
-            <span className="mal-section-count">(選一段時間查詢,含使用狀況、轉單金額、轉單來源)</span>
-          </CollapsibleSectionTitle>
-
-          <div className="mal-cards" style={{ gridTemplateColumns: "1fr 1fr auto", alignItems: "end", marginBottom: 18 }}>
-            <div className="mal-field" style={{ margin: 0 }}>
-              <label>開始日期</label>
-              <input
-                type="date"
-                value={couponQuerySince}
-                onChange={(e) => setCouponQuerySince(e.target.value)}
-                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}
-              />
-            </div>
-            <div className="mal-field" style={{ margin: 0 }}>
-              <label>結束日期</label>
-              <input
-                type="date"
-                value={couponQueryUntil}
-                onChange={(e) => setCouponQueryUntil(e.target.value)}
-                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}
-              />
-            </div>
-            <button className="mal-btn mal-btn-primary" disabled={couponQueryLoading} onClick={fetchCouponQueryData}>
-              {couponQueryLoading ? "查詢中…" : "🔍 查詢這段期間"}
-            </button>
-          </div>
-
-          {couponQueryError && <div className="mal-error">⚠ {couponQueryError}</div>}
-
-          <div className="mal-field">
-            <label>或者:直接搜尋特定折價券代碼</label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                type="text"
-                value={couponSearchInput}
-                onChange={(e) => setCouponSearchInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && couponSearchInput.trim()) setCouponFocusCode(couponSearchInput.trim()); }}
-                placeholder="輸入折價券代碼,例如 SHASHA77"
-                style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}
-              />
-              <button
-                className="mal-btn"
-                disabled={!couponSearchInput.trim()}
-                onClick={() => setCouponFocusCode(couponSearchInput.trim())}
-              >
-                搜尋
-              </button>
-            </div>
-            <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
-              不分大小寫。要先按上面「查詢這段期間」抓到資料,搜尋才找得到東西——這裡只是在已經抓回來的訂單裡篩選,不是重新對 Shopline 查詢。
-            </p>
-          </div>
-
-          {!couponQueryData ? (
-            <div className="mal-empty">
-              <div style={{ fontSize: 30 }}>🎟</div>
-              <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>選好時間範圍,按「查詢這段期間」開始</h3>
-              <p>查完之後,下面會列出這段期間用過的所有折價券,點一個就能看到詳細的每一筆轉單。</p>
-            </div>
-          ) : (
-            <>
-              <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 15, margin: "0 0 10px" }}>
-                這段期間用過的折價券<span className="mal-section-count">({(couponQueryData.discountSummary || []).length} 個,點一個查看詳細轉單)</span>
-              </h3>
-              {(couponQueryData.discountSummary || []).length === 0 ? (
-                <p style={{ color: "var(--ink-soft)", fontSize: 13.5, marginBottom: 18 }}>這段期間沒有訂單使用折價券。</p>
-              ) : (
-                <div className="mal-tabs">
-                  {couponQueryData.discountSummary.map((d) => (
-                    <div
-                      key={d.code}
-                      className={`mal-tab ${couponFocusCode && couponFocusCode.toUpperCase() === String(d.code).toUpperCase() ? "mal-tab-active" : ""}`}
-                      onClick={() => { setCouponSearchInput(d.code); setCouponFocusCode(d.code); }}
-                    >
-                      {d.code}({fmtInt(d.usageCount)})
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {couponFocusCode && (
-                couponFocusOrders.length === 0 ? (
-                  <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>
-                    在這段期間裡,找不到使用「{couponFocusCode}」這組折價券代碼的訂單(確認代碼有沒有拼對,或者這段時間範圍有沒有涵蓋到)。
-                  </p>
-                ) : (
-                  <>
-                    <div className="mal-cards" style={{ marginBottom: 18 }}>
-                      <div className="mal-card">
-                        <div className="mal-card-label">🎟 使用次數</div>
-                        <div className="mal-card-value">{fmtInt(couponFocusOrders.length)}</div>
-                      </div>
-                      <div className="mal-card">
-                        <div className="mal-card-label">原價營收</div>
-                        <div className="mal-card-value">
-                          {fmtMoney(couponFocusSummary ? couponFocusSummary.grossRevenue : couponFocusOrders.reduce((s, o) => s + (o.subtotal || 0), 0))}
-                        </div>
-                      </div>
-                      <div className="mal-card">
-                        <div className="mal-card-label">折扣金額</div>
-                        <div className="mal-card-value">
-                          {fmtMoney(couponFocusSummary ? couponFocusSummary.discountAmount : couponFocusOrders.reduce((s, o) => s + (o.discountAmount || 0), 0))}
-                        </div>
-                      </div>
-                      <div className="mal-card">
-                        <div className="mal-card-label">實收營收(轉單金額加總)</div>
-                        <div className="mal-card-value">
-                          {fmtMoney(couponFocusSummary ? couponFocusSummary.netRevenue : couponFocusOrders.reduce((s, o) => s + (o.amount || 0), 0))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 15, margin: "0 0 10px" }}>
-                      「{couponFocusCode}」逐筆轉單明細<span className="mal-section-count">(依下單時間新到舊排序)</span>
-                    </h3>
-                    <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
-                      <table className="mal-table">
-                        <thead>
-                          <tr><th>訂單編號</th><th>下單時間</th><th>轉單金額</th><th>轉單來源</th></tr>
-                        </thead>
-                        <tbody>
-                          {couponFocusOrders.map((o) => (
-                            <tr key={o.orderId}>
-                              <td>{o.orderNumber || o.orderId}</td>
-                              <td>{(o.createdAt || "").replace("T", " ").slice(0, 16)}</td>
-                              <td>{fmtMoney(o.amount)}</td>
-                              <td style={{ textAlign: "left" }}>{formatOrderSource(o.utm)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )
-              )}
-            </>
-          )}
-        </>
-      )}
+      
 
 
 
