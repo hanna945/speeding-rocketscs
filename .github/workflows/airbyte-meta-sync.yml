@@ -1,4 +1,5 @@
 name: Airbyte Meta Central Sync
+run-name: Airbyte Meta Central Sync · ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.request_id || 'scheduled' }}
 
 on:
   push:
@@ -30,6 +31,10 @@ on:
         options:
           - airbyte
           - sdk
+      request_id:
+        description: "Optional request ID used by the report UI to track this manual sync."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -56,6 +61,7 @@ jobs:
         run: |
           python -m py_compile tools/airbyte_meta_sync.py
           node --check functions/api/airbyte/brands.js
+          node --check functions/api/airbyte/sync.js
           node --check functions/_shared/githubOidc.js
           node --check 'functions/api/airbyte/kv/item/[key].js'
 
