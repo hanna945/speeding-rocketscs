@@ -1,4 +1,4 @@
-import { resolveCredential } from "../../_shared/auth.js";
+import { verifyGitHubActionsOidc } from "../../_shared/githubOidc.js";
 
 const HIDDEN_REPORT_BRAND_NAMES = new Set(["H&J官網業績"]);
 
@@ -27,29 +27,25 @@ function configuredBrandsFromEnv(env) {
     const creds = JSON.parse(env.TEAM_CREDENTIALS);
     Object.values(creds || {}).forEach((entry) => {
       const list = entry && Array.isArray(entry.brands) ? entry.brands : [];
+      if (list === "*") return;
       list.forEach((brand) => out.push(brand));
     });
   } catch {}
   return out;
 }
 
-function resolveSyncCredential(request, env) {
-  if (env.TEAM_CREDENTIALS) return resolveCredential(request, env);
-  const provided = request.headers.get("X-Team-Key") || "";
-  if (env.TEAM_SECRET && provided !== env.TEAM_SECRET) return null;
-  return { name: "Airbyte Sync", brands: "*", roster: null };
-}
-
 export async function onRequestGet({ request, env }) {
-  const credential = resolveSyncCredential(request, env);
-  if (!credential) {
-    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
+  const claims = await verifyGitHubActionsOidc(request);
+  if (!claims) {
+    return new Response(JSON.stringify({ ok: false, error: "unauthorized_machine_identity" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
 
   const map = new Map();
+  configuredBrandsFromEnv(env).forEach((brand) => mergeBrand(map, brand));
+
   const rawShared = await env.REPORT_KV.get("meta-api-brands");
   if (rawShared) {
     try {
@@ -58,23 +54,12 @@ export async function onRequestGet({ request, env }) {
     } catch {}
   }
 
-  if (credential.brands === "*") {
-    configuredBrandsFromEnv(env).forEach((brand) => mergeBrand(map, brand));
-  } else {
-    (credential.roster || []).forEach((brand) => mergeBrand(map, brand));
-    (credential.brands || []).forEach((id) => {
-      if (!map.has(id)) mergeBrand(map, { id, name: id });
-    });
-    for (const id of [...map.keys()]) {
-      if (!credential.brands.includes(id)) map.delete(id);
-    }
-  }
-
   const brands = [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
   return new Response(JSON.stringify({
     ok: true,
-    mode: "READ_ONLY",
-    credential: credential.name || "",
+    mode: "MACHINE_ONLY_READ_WRITE",
+    auth: "github_actions_oidc",
+    repository: claims.repository,
     brands,
     count: brands.length,
     generatedAt: new Date().toISOString(),
