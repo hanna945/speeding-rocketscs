@@ -1146,9 +1146,6 @@ function ledgerKeyFor(brandId, monthKey) {
 function shoplineMonthKey(monthKey) {
   return SHOPLINE_MONTH_PREFIX + monthKey;
 }
-function shoplineWeekKey(weekStart) {
-  return SHOPLINE_WEEK_PREFIX + weekStart;
-}
 // 把一批 Shopline 訂單(record.orders)依下單日期分組,算出每天的訂單數、原價營收、折扣金額、實收營收。
 // 跟 H-J 那邊的版本邏輯完全一致,直接port過來,不是重新設計一套。
 // 2026-07-30再次修正:先後試過paymentStatus==='completed'(太窄,低估)、==='paid'(更窄,直接變成0),
@@ -4462,7 +4459,7 @@ function MetaAdsLedger() {
     return out;
   }
 
-  // relaxThreshold=true(目前只有「上週報表」會用到):篩選階段不會排除掉「目前還在投放中」的廣告,
+  // relaxThreshold=true(備援抓取需要放寬門檻時使用):篩選階段不會排除掉「目前還在投放中」的廣告,
   // 就算這支廣告這段期間花費還沒到 500,只要現在仍在投放,一樣會保留下來,方便看到剛起步/學習中的廣告。
   // 月報表(fetchOneBrandMonth)沒有帶這個參數,維持原本花費 ≥ 500 才留下的嚴格門檻。
   async function fetchInsightsForRange(token, accountId, since, until, relaxThreshold = false) {
@@ -5623,8 +5620,8 @@ async function toggleRememberToken(checked) {
   const dailyMatrixSplit = sortCodesChannelFirst(dailyMatrixCodesRaw);
   const dailyMatrixCodes = dailyMatrixSplit.sorted;
   // H&J一頁業績專用:讀取H-J那邊已經同步好的真實Shopline訂單資料(共用儲存,不用speedingscs自己抓)。
-  // 同時涵蓋矩陣總覽/選一天用的activeDailyMonth,跟每月/每週報表用的focusMonth/focusWeek——
-  // 三個不同分頁各自選的月份/週可能不一樣,分開判斷、分開讀,已經讀過的不重讀。
+  // 同時涵蓋矩陣總覽/選一天用的activeDailyMonth,跟每月報表用的 focusMonth——
+  // 不同分頁各自選的月份可能不一樣,分開判斷、分開讀,已經讀過的不重讀。
   useEffect(() => {
   if (activeBrandId !== HJ_ONEPAGE_ACCOUNT_ID) return;
   let cancelled = false;
@@ -6645,9 +6642,7 @@ const shopeRealDailyMap = useMemo(() => {
               <select value={apiMode} onChange={(e) => { setApiMode(e.target.value); setBatchProgress(null); }}>
                 <option value="full">直接抓整月資料</option>
                 <option value="multi">多品牌批次抓取</option>
-                <option value="week">上週報表(週一至週日)</option>
-                <option value="recentWeeks">自動回溯抓取過去 N 週</option>
-              </select>
+                </select>
             </div>
 
             <div className="mal-field">
@@ -6732,22 +6727,6 @@ const shopeRealDailyMap = useMemo(() => {
                   <button type="button" className="mal-btn mal-input-row-btn" onClick={saveCurrentAsBrand}>
                     存為常用
                   </button>
-                </div>
-              </div>
-            )}
-
-            {apiMode === "multi" && (
-              <div className="mal-field">
-                <label>要抓整月還是上週?</label>
-                <div style={{ display: "flex", gap: 16 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
-                    <input type="radio" name="batchGranularity" checked={batchGranularity === "month"} onChange={() => setBatchGranularity("month")} />
-                    整月資料
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
-                    <input type="radio" name="batchGranularity" checked={batchGranularity === "week"} onChange={() => setBatchGranularity("week")} />
-                    上週資料(週一至週日)
-                  </label>
                 </div>
               </div>
             )}
