@@ -1317,6 +1317,102 @@
     .mal-presentation-next-project-image { max-height:180px; }
   }
 
+
+  /* Monthly presentation v6: campaign ranking analysis */
+  .mal-campaign-rank-grid {
+    display:grid;
+    grid-template-columns:1fr 1fr .9fr;
+    gap:16px;
+    flex:1;
+    min-height:0;
+  }
+  .mal-campaign-rank-panel {
+    background:rgba(255,255,255,.76);
+    border:1px solid rgba(137,113,90,.17);
+    border-radius:18px;
+    padding:18px 20px;
+    min-width:0;
+  }
+  .mal-campaign-rank-panel h3 {
+    margin:0 0 12px;
+    font-family:'Noto Serif TC',serif;
+    font-size:22px;
+    color:#47372d;
+  }
+  .mal-campaign-rank-list { display:flex; flex-direction:column; gap:9px; }
+  .mal-campaign-rank-item {
+    padding:11px 12px;
+    border-radius:13px;
+    background:#f7f1e9;
+    border:1px solid rgba(137,113,90,.12);
+  }
+  .mal-campaign-rank-item-head {
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .mal-campaign-rank-name {
+    font-size:15px;
+    line-height:1.4;
+    font-weight:800;
+    color:#49382e;
+    min-width:0;
+  }
+  .mal-campaign-rank-metric {
+    font:700 15px 'IBM Plex Mono',monospace;
+    white-space:nowrap;
+    color:#5d4b3e;
+  }
+  .mal-campaign-rank-meta {
+    margin-top:5px;
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    font-size:12px;
+    color:#8b7564;
+  }
+  .mal-campaign-spend-analysis {
+    display:grid;
+    grid-template-columns:1.15fr .85fr;
+    gap:16px;
+    align-items:stretch;
+  }
+  .mal-campaign-spend-verdict {
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:5px 9px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:800;
+    white-space:nowrap;
+  }
+  .mal-campaign-spend-verdict.good { background:#e6f1e8; color:#57735e; }
+  .mal-campaign-spend-verdict.watch { background:#f5ecd7; color:#8b6b35; }
+  .mal-campaign-spend-verdict.bad { background:#f4dfda; color:#995b4e; }
+  .mal-campaign-analysis-text {
+    font-size:14px;
+    line-height:1.55;
+    color:#65564b;
+  }
+  .mal-sponsor-kpis {
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:12px;
+    margin-bottom:14px;
+  }
+  .mal-sponsor-row-judgment {
+    font-size:13px;
+    font-weight:700;
+    line-height:1.45;
+  }
+  @media (max-width:980px) {
+    .mal-campaign-rank-grid,
+    .mal-campaign-spend-analysis { grid-template-columns:1fr; }
+    .mal-sponsor-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  }
+
 </style>
 </head>
 <body>
@@ -4300,27 +4396,118 @@ function MonthlyPresentation({
     return [onePage, ...others].sort((a,b)=>Number(b.revenue||0)-Number(a.revenue||0));
   }, [ledgerBreakdown, perf]);
 
+
+  const generalAds = useMemo(
+    () => ads.filter((ad) => !String(ad.name || "").includes("業配") && !String(ad.campaign || "").includes("業配")),
+    [ads]
+  );
+
   const campaignRows = useMemo(() => {
     const map = {};
-    ads.forEach((ad) => {
+    generalAds.forEach((ad) => {
       const key = ad.campaign || "(未分類活動)";
-      if (!map[key]) map[key] = { name:key, spend:0, revenue:0, conversions:0, postId:ad.postId || "", adId:(ad.adIds && ad.adIds[0]) || ad.adId || "" };
+      if (!map[key]) map[key] = {
+        name:key,
+        spend:0,
+        revenue:0,
+        conversions:0,
+        postId:ad.postId || "",
+        adId:(ad.adIds && ad.adIds[0]) || ad.adId || "",
+      };
       map[key].spend += Number(ad.spend || 0);
       map[key].revenue += Number(ad.revenue || 0);
       map[key].conversions += Number(ad.conversions || 0);
       if (!map[key].postId && ad.postId) map[key].postId = ad.postId;
       if (!map[key].adId && ad.adIds && ad.adIds[0]) map[key].adId = ad.adIds[0];
     });
-    return Object.values(map)
+    const rows = Object.values(map)
       .filter((r)=>r.spend>0 || r.revenue>0)
-      .map((r)=>({ ...r, roas:r.spend > 0 ? r.revenue/r.spend : null }))
-      .sort((a,b)=>b.spend-a.spend);
-  }, [ads]);
+      .map((r)=>({ ...r, roas:r.spend > 0 ? r.revenue/r.spend : null }));
+    const totalSpend = rows.reduce((sum,r)=>sum+Number(r.spend||0),0);
+    return rows.map((r)=>({
+      ...r,
+      spendShare:totalSpend > 0 ? (Number(r.spend||0)/totalSpend)*100 : 0,
+    })).sort((a,b)=>b.spend-a.spend);
+  }, [generalAds]);
 
-  const campaignChunks = useMemo(() => {
-    if (campaignRows.length <= 12) return [campaignRows];
-    const out=[]; for(let i=0;i<campaignRows.length;i+=12) out.push(campaignRows.slice(i,i+12)); return out;
-  }, [campaignRows]);
+  const campaignAnalysis = useMemo(() => {
+    const target = Number(roasTarget || 3);
+    const totalSpend = campaignRows.reduce((sum,r)=>sum+Number(r.spend||0),0);
+    const meaningfulSpend = Math.max(totalSpend * 0.01, 1000);
+
+    const good = campaignRows
+      .filter((r)=>r.spend >= meaningfulSpend && r.roas !== null && r.roas >= target && Number(r.conversions||0) >= 10)
+      .slice()
+      .sort((a,b)=>(b.roas*Math.log1p(b.conversions||0))-(a.roas*Math.log1p(a.conversions||0)))
+      .slice(0,5);
+
+    const bad = campaignRows
+      .filter((r)=>r.spend >= meaningfulSpend && (Number(r.conversions||0) === 0 || r.roas === null || r.roas < target*0.8))
+      .map((r)=>({
+        ...r,
+        wasteScore:Number(r.spend||0) * (1 - Math.min((Number(r.roas||0)/Math.max(target,0.01)),1)),
+      }))
+      .sort((a,b)=>b.wasteScore-a.wasteScore)
+      .slice(0,5);
+
+    const blocked = new Set([...good,...bad].map((r)=>r.name));
+    const watch = campaignRows
+      .filter((r)=>r.spend >= meaningfulSpend && !blocked.has(r.name) && (
+        Number(r.conversions||0) < 10 ||
+        r.roas === null ||
+        (r.roas < target && r.roas >= target*0.8)
+      ))
+      .slice()
+      .sort((a,b)=>b.spend-a.spend)
+      .slice(0,3);
+
+    function spendDecision(r) {
+      const conv = Number(r.conversions||0);
+      const roas = r.roas;
+      const share = Number(r.spendShare||0);
+      if (roas !== null && roas >= target && conv >= 10) {
+        return {
+          verdict:"值得",
+          tone:"good",
+          text:"ROAS "+roas.toFixed(2)+"x 高於目標 "+target.toFixed(1)+"x，且 "+conv+" 筆轉單已有樣本；花費佔 "+share.toFixed(0)+"%，可維持，視量體小幅加碼。",
+        };
+      }
+      if (roas !== null && roas >= target && conv < 10) {
+        return {
+          verdict:"有潛力",
+          tone:"watch",
+          text:"ROAS 已達 "+roas.toFixed(2)+"x，但只有 "+conv+" 筆轉單，樣本仍少；目前花費佔 "+share.toFixed(0)+"%，先維持觀察，不急著大幅放量。",
+        };
+      }
+      if (roas !== null && roas >= target*0.8 && conv >= 10) {
+        return {
+          verdict:"需優化",
+          tone:"watch",
+          text:"已有 "+conv+" 筆轉單，但 ROAS "+roas.toFixed(2)+"x 仍低於目標 "+target.toFixed(1)+"x；花費佔 "+share.toFixed(0)+"%，先調素材／受眾再決定是否續放。",
+        };
+      }
+      if (conv < 10 && roas !== null && roas > 0) {
+        return {
+          verdict:"待觀察",
+          tone:"watch",
+          text:"目前 "+conv+" 筆轉單、ROAS "+roas.toFixed(2)+"x，樣本不足；花費佔 "+share.toFixed(0)+"%，先避免擴量，累積樣本後再判斷。",
+        };
+      }
+      return {
+        verdict:"不值得",
+        tone:"bad",
+        text:"花費佔 "+share.toFixed(0)+"%，但 ROAS "+(roas!==null?roas.toFixed(2)+"x":"—")+"、轉單 "+conv+" 筆，效率明顯不足；若非策略性曝光，應優先降量或停損。",
+      };
+    }
+
+    const highestSpend = campaignRows.slice().sort((a,b)=>b.spend-a.spend).slice(0,5).map((r)=>({
+      ...r,
+      decision:spendDecision(r),
+    }));
+
+    return { good,bad,watch,highestSpend,totalSpend,meaningfulSpend };
+  }, [campaignRows,roasTarget]);
+
 
   const newAds = useMemo(() => ads.filter((ad)=>ad.startDate && monthKey && String(ad.startDate).slice(0,7)===monthKey), [ads,monthKey]);
   const newAdsSorted = useMemo(() => newAds.slice().sort((a,b)=>Number(b.spend||0)-Number(a.spend||0)), [newAds]);
@@ -4415,26 +4602,47 @@ function MonthlyPresentation({
     return type || "月報內容";
   }
 
-  function renderCampaignTable(chunk){
-    const densityClass = presentationDensityClass(chunk.length);
+
+  function renderCampaignRankList(rows, emptyText) {
     return (
-      <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + densityClass}>
-        <table className="mal-presentation-table compact">
-          <thead><tr><th>Campaign</th><th>花費</th><th>Meta 營收</th><th>轉單</th><th>ROAS</th></tr></thead>
-          <tbody>{chunk.length?chunk.map((r)=>{
-            const url=presentationAdUrl(accountId,r);
-            return <tr key={r.name}>
-              <td>{url?<a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{r.name} ↗</a>:r.name}</td>
-              <td className="num">{fmtMoney(r.spend,currencyCode)}</td>
-              <td className="num">{fmtMoney(r.revenue,currencyCode)}</td>
-              <td className="num">{fmtInt(r.conversions||0)}</td>
-              <td className="num">{r.roas!==null?r.roas.toFixed(2)+"x":"—"}</td>
-            </tr>;
-          }):<tr><td colSpan="5">本月沒有 Campaign 資料</td></tr>}</tbody>
-        </table>
+      <div className="mal-campaign-rank-list">
+        {rows.length ? rows.map((r,i)=>{
+          const url=presentationAdUrl(accountId,r);
+          return <div className="mal-campaign-rank-item" key={r.name}>
+            <div className="mal-campaign-rank-item-head">
+              <div className="mal-campaign-rank-name">{String(i+1).padStart(2,"0")}｜{url?<a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{r.name} ↗</a>:r.name}</div>
+              <div className="mal-campaign-rank-metric">{r.roas!==null?r.roas.toFixed(2)+"x":"—"}</div>
+            </div>
+            <div className="mal-campaign-rank-meta">
+              <span>花費 {fmtMoney(r.spend||0,currencyCode)}</span>
+              <span>轉單 {fmtInt(r.conversions||0)}</span>
+              <span>花費佔比 {Number(r.spendShare||0).toFixed(0)}%</span>
+            </div>
+          </div>;
+        }) : <div className="mal-campaign-rank-item">{emptyText}</div>}
       </div>
     );
   }
+
+  function sponsorDecision(ad) {
+    const spend=Number(ad.spend||0);
+    const revenue=Number(ad.revenue||0);
+    const conv=Number(ad.conversions||0);
+    const roas=spend>0?revenue/spend:null;
+    const target=Number(roasTarget||3);
+    if (roas!==null && roas>=target && conv>=5) return {text:"有效，可續投",tone:"good"};
+    if (roas!==null && roas>=target && conv<5) return {text:"ROAS達標，樣本仍少",tone:"watch"};
+    if (conv<5) return {text:"樣本不足，先觀察",tone:"watch"};
+    return {text:"效率偏低，優先檢查",tone:"bad"};
+  }
+
+  const sponsorChunks = useMemo(() => {
+    if (!sponsorAds.length) return [];
+    const out=[];
+    for(let i=0;i<sponsorAds.length;i+=8) out.push(sponsorAds.slice(i,i+8));
+    return out;
+  }, [sponsorAds]);
+
 
   const slides=[];
 
@@ -4515,32 +4723,106 @@ function MonthlyPresentation({
     });
   });
 
-  campaignChunks.forEach((chunk,idx)=>{
-    const topNew=newAdsSorted[0]||null;
-    const topSponsor=sponsorAds[0]||null;
+
+  slides.push({
+    key:"marketing-rankings",
+    node:(
+      <div className="mal-presentation-slide">
+        <PresentationSectionHead
+          title="行銷活動與廣告表現"
+          subtitle="不再逐筆流水帳；用 ROAS、轉單樣本與花費占比直接抓出最好、最差與待觀察 Campaign。業配另頁分析。"
+        />
+        <div className="mal-presentation-marketing-kpis">
+          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">一般 Campaign</div><div className="mal-presentation-mini-stat-value">{campaignRows.length}</div></div>
+          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">一般廣告花費</div><div className="mal-presentation-mini-stat-value">{fmtMoney(campaignAnalysis.totalSpend,currencyCode)}</div></div>
+          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">達標 Top</div><div className="mal-presentation-mini-stat-value">{campaignAnalysis.good.length}</div></div>
+          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">優先處理</div><div className="mal-presentation-mini-stat-value">{campaignAnalysis.bad.length}</div></div>
+        </div>
+        <div className="mal-campaign-rank-grid">
+          <div className="mal-campaign-rank-panel">
+            <h3>表現最好 Top 5</h3>
+            {renderCampaignRankList(campaignAnalysis.good,"目前沒有同時達到 ROAS 目標且具足夠轉單樣本的 Campaign。")}
+          </div>
+          <div className="mal-campaign-rank-panel">
+            <h3>表現最差 Top 5</h3>
+            {renderCampaignRankList(campaignAnalysis.bad,"目前沒有高花費且明顯低於效率門檻的 Campaign。")}
+          </div>
+          <div className="mal-campaign-rank-panel">
+            <h3>待觀察 Top 3</h3>
+            {renderCampaignRankList(campaignAnalysis.watch,"目前沒有需要列入待觀察的 Campaign。")}
+          </div>
+        </div>
+      </div>
+    )
+  });
+
+  slides.push({
+    key:"marketing-high-spend",
+    node:(
+      <div className="mal-presentation-slide">
+        <PresentationSectionHead
+          title="花費最高 Campaign｜值不值得？"
+          subtitle="只看『花得多』沒有意義，這頁直接把花費占比、ROAS、轉單樣本一起判斷。"
+        />
+        <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(campaignAnalysis.highestSpend.length)}>
+          <table className="mal-presentation-table">
+            <thead><tr><th>Campaign</th><th>花費</th><th>花費佔比</th><th>ROAS</th><th>轉單</th><th>判斷</th><th>分析</th></tr></thead>
+            <tbody>{campaignAnalysis.highestSpend.length ? campaignAnalysis.highestSpend.map((r)=>{
+              const url=presentationAdUrl(accountId,r);
+              return <tr key={r.name}>
+                <td>{url?<a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{r.name} ↗</a>:r.name}</td>
+                <td className="num">{fmtMoney(r.spend,currencyCode)}</td>
+                <td className="num">{Number(r.spendShare||0).toFixed(1)}%</td>
+                <td className="num">{r.roas!==null?r.roas.toFixed(2)+"x":"—"}</td>
+                <td className="num">{fmtInt(r.conversions||0)}</td>
+                <td><span className={"mal-campaign-spend-verdict "+r.decision.tone}>{r.decision.verdict}</span></td>
+                <td className="mal-campaign-analysis-text">{r.decision.text}</td>
+              </tr>;
+            }) : <tr><td colSpan="7">本月沒有一般 Campaign 投放資料。</td></tr>}</tbody>
+          </table>
+        </div>
+      </div>
+    )
+  });
+
+  sponsorChunks.forEach((chunk,idx)=>{
     slides.push({
-      key:"marketing-"+idx,
+      key:"sponsor-ads-"+idx,
       node:(
         <div className="mal-presentation-slide">
           <PresentationSectionHead
-            title={"行銷活動與廣告表現"+(campaignChunks.length>1?" "+(idx+1)+"/"+campaignChunks.length:"")}
-            subtitle={idx===0?"Campaign、本月新投放與業配放在同一章節，不再拆成三四張零碎頁面。":"Campaign 明細續頁。"}
+            title={"業配廣告成效"+(sponsorChunks.length>1?" "+(idx+1)+"/"+sponsorChunks.length:"")}
+            subtitle="業配廣告完全獨立於一般 Campaign，避免 KOC／KOL 投放跟日常廣告混在同一排名。"
           />
-          {idx===0?<div className="mal-presentation-marketing-kpis">
-            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">Campaign 數</div><div className="mal-presentation-mini-stat-value">{campaignRows.length}</div></div>
-            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">本月新投放</div><div className="mal-presentation-mini-stat-value">{newAds.length}</div></div>
+          {idx===0?<div className="mal-sponsor-kpis">
             <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配支出</div><div className="mal-presentation-mini-stat-value">{fmtMoney(sponsor?sponsor.spend:0,currencyCode)}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配營收</div><div className="mal-presentation-mini-stat-value">{fmtMoney(sponsor?sponsor.revenue:0,currencyCode)}</div></div>
             <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配 ROAS</div><div className="mal-presentation-mini-stat-value">{sponsor&&sponsor.roas!==null?Number(sponsor.roas).toFixed(2)+"x":"—"}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配轉單</div><div className="mal-presentation-mini-stat-value">{fmtInt(sponsor?sponsor.conversions:0)}</div></div>
           </div>:null}
-          {renderCampaignTable(chunk)}
-          {idx===0?<div className="mal-presentation-callout-row">
-            <div className="mal-presentation-callout"><strong>本月新投放</strong>{topNew?<>花費最高的新投放：{presentationAdUrl(accountId,topNew)?<a className="mal-presentation-ad-link" href={presentationAdUrl(accountId,topNew)} target="_blank" rel="noopener noreferrer">{topNew.name||"廣告"} ↗</a>:(topNew.name||"廣告")}，花費 {fmtMoney(topNew.spend||0,currencyCode)}。</>:"本月沒有新投放資料。"}</div>
-            <div className="mal-presentation-callout"><strong>業配</strong>{topSponsor?<>主要業配：{presentationAdUrl(accountId,topSponsor)?<a className="mal-presentation-ad-link" href={presentationAdUrl(accountId,topSponsor)} target="_blank" rel="noopener noreferrer">{topSponsor.name||topSponsor.campaign||"業配廣告"} ↗</a>:(topSponsor.name||topSponsor.campaign||"業配廣告")}，花費 {fmtMoney(topSponsor.spend||0,currencyCode)}。</>:"本月沒有業配投放資料。"}</div>
-          </div>:null}
+          <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(chunk.length)}>
+            <table className="mal-presentation-table">
+              <thead><tr><th>業配廣告</th><th>花費</th><th>營收</th><th>轉單</th><th>ROAS</th><th>判斷</th></tr></thead>
+              <tbody>{chunk.map((ad,i)=>{
+                const url=presentationAdUrl(accountId,ad);
+                const roas=Number(ad.spend||0)>0?Number(ad.revenue||0)/Number(ad.spend||0):null;
+                const j=sponsorDecision(ad);
+                return <tr key={ad.adId||ad.name||i}>
+                  <td>{url?<a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{ad.name||ad.campaign||"業配廣告"} ↗</a>:(ad.name||ad.campaign||"業配廣告")}</td>
+                  <td className="num">{fmtMoney(ad.spend||0,currencyCode)}</td>
+                  <td className="num">{fmtMoney(ad.revenue||0,currencyCode)}</td>
+                  <td className="num">{fmtInt(ad.conversions||0)}</td>
+                  <td className="num">{roas!==null?roas.toFixed(2)+"x":"—"}</td>
+                  <td className="mal-sponsor-row-judgment"><span className={"mal-campaign-spend-verdict "+j.tone}>{j.text}</span></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
         </div>
       )
     });
   });
+
 
   planChunks.forEach((chunk,idx)=>{
     slides.push({
