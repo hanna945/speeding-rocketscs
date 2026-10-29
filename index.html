@@ -3834,6 +3834,23 @@ function PresentationLinkify({ text }) {
   );
 }
 
+
+function reportTextHttpLinks(text) {
+  const raw = String(text || "");
+  const matches = raw.match(/https?:\/\/[^\s]+/g) || [];
+  return Array.from(new Set(matches.map((url) => url.replace(/[),.;]+$/, ""))));
+}
+
+function ReportTextLinkChips({ text }) {
+  const urls = reportTextHttpLinks(text);
+  if (!urls.length) return null;
+  return (
+    <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:8 }}>
+      {urls.map((url,i)=><a key={url} className="mal-plan-link-go" href={url} target="_blank" rel="noopener noreferrer">↗ 開啟連結{i > 0 ? " " + (i + 1) : ""}</a>)}
+    </div>
+  );
+}
+
 function PresentationSectionHead({ title, subtitle }) {
   return (
     <div className="mal-presentation-section-head">
@@ -6135,6 +6152,7 @@ function MetaAdsLedger() {
                 <button className="mal-plan-remove" onClick={() => removeMaterialIssue(m.id)} title="刪除">✕</button>
               </div>
               <textarea className="mal-plan-textarea" placeholder="數據、問題點、建議方向…(可以換行分段)" rows={4} value={m.content} onChange={(e) => updateMaterialIssue(m.id, "content", e.target.value)} />
+              <ReportTextLinkChips text={m.content} />
             </div>
           ))}
           <button className="mal-btn" onClick={addMaterialIssue}>+ 新增素材問題</button>
@@ -6155,6 +6173,7 @@ function MetaAdsLedger() {
                 <button className="mal-plan-remove" onClick={() => removeActionItem(item.id)} title="刪除">✕</button>
               </div>
               <textarea className="mal-plan-textarea" placeholder="說明…" rows={2} value={item.description} onChange={(e) => updateActionItem(item.id, "description", e.target.value)} />
+              <ReportTextLinkChips text={item.description} />
             </div>
           ))}
           <button className="mal-btn" onClick={addActionItem}>+ 新增方向</button>
@@ -6178,6 +6197,7 @@ function MetaAdsLedger() {
                 <input className="mal-plan-input" placeholder="目前進度(例如:100% 或 第一階段完成)" value={p.progress} onChange={(e) => updateProject(p.id, "progress", e.target.value)} />
               </div>
               <textarea className="mal-plan-textarea" placeholder="說明…" rows={2} value={p.description} onChange={(e) => updateProject(p.id, "description", e.target.value)} />
+              <ReportTextLinkChips text={p.description} />
               <div className="mal-plan-link-row">
                 <input className="mal-plan-input mal-plan-input-link" placeholder="連結(選填,例如Google文件、設計稿、參考資料網址)" value={p.link || ""} onChange={(e) => updateProject(p.id, "link", e.target.value)} />
                 {p.link && /^https?:\/\//.test(p.link.trim()) && (
@@ -7489,12 +7509,12 @@ const shopeRealDailyMap = useMemo(() => {
                   const fbLibLink = fbPostLink(ad.postId);
                     const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
                     const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
-                    const fbLink = fbAdsManagerLink(months[m.monthKey].accountId, ad.adIds);
+                    const fbLink = fbAdsManagerLink(months[m.monthKey].accountId, ad.adIds || (ad.adId ? [ad.adId] : []));
                     return (
                       <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
                         <AdThumb src={ad.image} alt={ad.name} />
                         <div className="mal-ad-info">
-                          <div className="mal-ad-name" title={ad.name}>{ad.name}<ActiveBadge active={ad.active} /></div>
+                          <div className="mal-ad-name" title={ad.name}>{(fbLibLink || fbLink) ? <a href={fbLibLink || fbLink} target="_blank" rel="noopener noreferrer" style={{ color:"inherit", textDecoration:"underline", textDecorationColor:"rgba(169,116,74,.45)", textUnderlineOffset:3 }}>{ad.name} ↗</a> : ad.name}<ActiveBadge active={ad.active} /></div>
                           {ad.utm ? (
                             <div className="mal-ad-utm" title={ad.utm}>{ad.utm}</div>
                           ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
