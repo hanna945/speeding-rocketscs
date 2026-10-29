@@ -397,6 +397,83 @@ def sdk_active_campaigns(account_id: str) -> dict[str, dict[str, Any]]:
     return out
 
 
+def sdk_fill_missing_creative_metadata(
+    account_id: str,
+    ad_ids: list[str],
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Backfill ad/creative metadata only for ads whose thumbnail metadata is missing.
+
+    Normal scheduled sync intentionally avoids enumerating the entire account. This helper
+    uses Meta's server-side ID filtering, so a brand with 80 missing thumbnails takes only
+    a few batched edge requests instead of re-reading every historical ad.
+    """
+    wanted = list(dict.fromkeys(str(x) for x in ad_ids if x))
+    if not wanted:
+        return metadata
+
+    account = AdAccount("act_" + account_id.removeprefix("act_"))
+    out = dict(metadata or {})
+    ads_meta = dict(out.get("ads") or {})
+    creatives = dict(out.get("creatives") or {})
+
+    chunk_size = 50
+    creative_ids: list[str] = []
+    for i in range(0, len(wanted), chunk_size):
+        chunk = wanted[i:i + chunk_size]
+        cursor = account.get_ads(
+            fields=[
+                "id", "name", "adset_id", "campaign_id", "effective_status",
+                "created_time", "creative", "status",
+            ],
+            params={
+                "filtering": [{"field": "id", "operator": "IN", "value": chunk}],
+                "limit": 500,
+            },
+        )
+        for item in cursor:
+            row = _sdk_dict(item)
+            ad_id = str(row.get("id") or "")
+            if not ad_id:
+                continue
+            ads_meta[ad_id] = {**(ads_meta.get(ad_id) or {}), **row}
+            creative_obj = row.get("creative") if isinstance(row.get("creative"), dict) else {}
+            creative_id = str((creative_obj or {}).get("id") or "")
+            if creative_id:
+                creative_ids.append(creative_id)
+
+    creative_ids = list(dict.fromkeys(creative_ids))
+    for i in range(0, len(creative_ids), chunk_size):
+        chunk = creative_ids[i:i + chunk_size]
+        cursor = account.get_ad_creatives(
+            fields=["id", "name", "thumbnail_url", "image_url", "link_url", "status"],
+            params={
+                "filtering": [{"field": "id", "operator": "IN", "value": chunk}],
+                "limit": 500,
+            },
+        )
+        for item in cursor:
+            row = _sdk_dict(item)
+            creative_id = str(row.get("id") or "")
+            if creative_id:
+                creatives[creative_id] = {**(creatives.get(creative_id) or {}), **row}
+
+    out["ads"] = ads_meta
+    out["creatives"] = creatives
+    out["thumbnailBackfillAt"] = datetime.now(timezone.utc).isoformat()
+    return out
+
+
+def metadata_has_image(metadata: dict[str, Any], ad_id: str) -> bool:
+    ads_meta = metadata.get("ads") or {}
+    creatives = metadata.get("creatives") or {}
+    ad_meta = ads_meta.get(str(ad_id)) or {}
+    creative_obj = ad_meta.get("creative") if isinstance(ad_meta.get("creative"), dict) else {}
+    creative_id = str((creative_obj or {}).get("id") or "")
+    creative = creatives.get(creative_id) or {}
+    return bool(creative.get("thumbnail_url") or creative.get("image_url"))
+
+
 def sdk_today_active_insights(account_id: str, day: date) -> list[dict[str, Any]]:
     """Use Meta's official SDK and server-side Insights filtering for ACTIVE campaigns only."""
     account = AdAccount("act_" + account_id.removeprefix("act_"))
@@ -925,10 +1002,34 @@ async def sync_brand(
     update_cache_rows(caches, account_id, local_today, local_today, today_rows)
     kv_put(base_url, cache_key(account_id, month_key(local_today)), caches[month_key(local_today)])
 
-    # Reuse yesterday's metadata. Normal daily sync does not enumerate every ad/adset/creative.
+    # Reuse yesterday's metadata. Normal daily sync still avoids enumerating the whole account.
+    # However, if the current-month baseline contains ads whose image field is empty, refill
+    # metadata only for those exact ad IDs. This prevents the daily active-campaign merge from
+    # carrying an empty thumbnail forward forever.
     metadata = old_meta if isinstance(old_meta, dict) else {"adsets": {}, "ads": {}, "creatives": {}}
     metadata = dict(metadata)
     metadata["campaigns"] = active_campaigns
+
+    legacy = legacy_ad_meta(baseline)
+    candidate_ad_ids = {
+        str(row.get("adId"))
+        for row in (baseline.get("rawAds") or [])
+        if isinstance(row, dict) and row.get("adId")
+    }
+    candidate_ad_ids.update(
+        str(row.get("ad_id"))
+        for row in today_rows
+        if isinstance(row, dict) and row.get("ad_id")
+    )
+    missing_image_ad_ids = [
+        ad_id
+        for ad_id in candidate_ad_ids
+        if not (legacy.get(ad_id) or {}).get("image") and not metadata_has_image(metadata, ad_id)
+    ]
+    if missing_image_ad_ids:
+        print(f"[{brand['name']}] thumbnail backfill ads={len(missing_image_ad_ids)}")
+        metadata = sdk_fill_missing_creative_metadata(account_id, missing_image_ad_ids, metadata)
+
     metadata["syncedAt"] = datetime.now(timezone.utc).isoformat()
     metadata["syncMode"] = "active_campaign_status_only"
     kv_put(base_url, meta_key(account_id), metadata)
