@@ -1,7 +1,10 @@
+import { extendCredentialRoster } from "../../../../_shared/brandDefaults.js";
+
 import { verifyGitHubActionsOidc } from "../../../../_shared/githubOidc.js";
 
 const DOUBLE_COLON_PREFIXES = ["metaads-month:", "metaads-week:", "airbyte-cache:", "airbyte-day-baseline:"];
 const DIRECT_PREFIXES = ["airbyte-meta:"];
+const HJ_OFFICIAL_ACCOUNT_ID = "436280797192761";
 
 function brandIdFromKey(key) {
   for (const prefix of DOUBLE_COLON_PREFIXES) {
@@ -30,14 +33,26 @@ async function allowedBrandIds(env) {
     try {
       const creds = JSON.parse(env.TEAM_CREDENTIALS);
       Object.values(creds || {}).forEach((entry) => {
-        const list = entry && Array.isArray(entry.brands) ? entry.brands : [];
-        list.forEach((brand) => {
+        const rawList = entry && Array.isArray(entry.brands) ? entry.brands : [];
+        const normalized = rawList
+          .map((brand) => {
+            const id = normalizeBrandId(brand);
+            if (!id) return null;
+            return typeof brand === "string"
+              ? { id, name: id }
+              : { id, name: String(brand.name || id) };
+          })
+          .filter(Boolean);
+        const extended = extendCredentialRoster((entry && entry.name) || "", normalized);
+        extended.forEach((brand) => {
           const id = normalizeBrandId(brand);
           if (id) ids.add(id);
         });
       });
     } catch {}
   }
+
+  ids.add(HJ_OFFICIAL_ACCOUNT_ID);
 
   const rawShared = await env.REPORT_KV.get("meta-api-brands");
   if (rawShared) {
