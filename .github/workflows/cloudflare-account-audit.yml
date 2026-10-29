@@ -27,11 +27,19 @@ jobs:
 
           cf_get() {
             local path="$1"
-            curl -fsS "$api$path" -H "Authorization: Bearer $CF_API_TOKEN"
+            curl -sS "$api$path" -H "Authorization: Bearer $CF_API_TOKEN"
+          }
+
+          show_error_or_pass() {
+            jq -e '.success == true' >/dev/null 2>&1 || {
+              jq -c '{success,errors,messages}' 2>/dev/null || cat
+              return 1
+            }
           }
 
           echo "=== PAGES PROJECTS ==="
-          cf_get "/pages/projects?per_page=100" | jq -r '
+          pages_json="$(cf_get "/pages/projects")"
+          echo "$pages_json" | show_error_or_pass && echo "$pages_json" | jq -r '
             .result[]? |
             [
               .name,
@@ -46,11 +54,13 @@ jobs:
           echo
           echo "=== WORKER SCRIPTS ==="
           workers_json="$(cf_get "/workers/scripts")"
-          echo "$workers_json" | jq -r '.result[]?.id // .result[]?.name // empty' | sort
+          echo "$workers_json" | show_error_or_pass &&
+            echo "$workers_json" | jq -r '.result[]?.id // .result[]?.name // empty' | sort
 
           echo
           echo "=== WORKER DOMAINS ==="
-          cf_get "/workers/domains?per_page=100" | jq -r '
+          domains_json="$(cf_get "/workers/domains")"
+          echo "$domains_json" | show_error_or_pass && echo "$domains_json" | jq -r '
             .result[]? |
             [.service, .environment, .hostname, (.enabled|tostring), (.previews_enabled|tostring)] | @tsv
           ' | sort
@@ -76,13 +86,15 @@ jobs:
 
           echo
           echo "=== KV NAMESPACES ==="
-          cf_get "/storage/kv/namespaces?per_page=100" | jq -r '
+          kv_json="$(cf_get "/storage/kv/namespaces?per_page=100")"
+          echo "$kv_json" | show_error_or_pass && echo "$kv_json" | jq -r '
             .result[]? | [.id, .title] | @tsv
           ' | sort -k2
 
           echo
           echo "=== D1 DATABASES ==="
-          cf_get "/d1/database?per_page=100" | jq -r '
+          d1_json="$(cf_get "/d1/database?per_page=100")"
+          echo "$d1_json" | show_error_or_pass && echo "$d1_json" | jq -r '
             .result[]? | [.uuid, .name, (.created_at // ""), (.version // "")] | @tsv
           ' | sort -k2
 
