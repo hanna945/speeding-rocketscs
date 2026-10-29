@@ -1040,152 +1040,6 @@ function toNum(v) {
 
 // 解析單一分頁(一個月份)成 { monthKey, days: [...], productCodes: [...] }。
 // year 由匯入時使用者指定(表單裡沒有年份資訊,只有分頁月份)。
-function parseLedgerSheet(matrix, year) {
-  if (!matrix || matrix.length < 3) return null;
-  const row1 = matrix[0] || [];
-  const row2 = matrix[1] || [];
-  const blocks = [];
-  // fallback 防呆用:文字比對找不到欄位、要用固定位移量保底之前,先確認那一欄「沒有寫任何標籤」。
-  // 那一欄已經寫著別的欄位名(例:SHOPLINE 區塊的 c+4 是 GOOGLE、KP 門市/經銷的 c+2 是抽成費用/貨物成本,
-  // 或已經跨進下一個代號的區塊),就代表這個區塊根本沒有這個欄位——硬用固定位移會把別人的數字當成
-  // 自己的廣告費/利潤(SHOPLINE 的帳面利潤曾因此顯示成 GOOGLE 廣告費)。回傳 null,讀值時 toNum(row[null])
-  // 自然是 0,寧可空白也不要錯的數字。
-  const emptyLabelCol = (col) => (((row2[col] || "").toString().trim()) ? null : col);
-  // 不再寫死從T欄(index19)開始掃描——這個假設對某些品牌是錯的(例如宥凱的整體總表只到第8欄,
-  // 產品代號第9欄就開始了,寫死19會把前面的代號整批跳過)。改成從第1欄開始逐欄掃描,
-  // 但「帳面營業額」第一次出現一定是整體/全店總表本身(不是產品代號),要跳過不當成代號,
-  // 從第二次出現開始才是真正的產品代號區塊——不管整體總表實際多寬,都能正確定位。
-  let skippedOverall = false;
-  for (let c = 1; c < Math.max(row1.length, row2.length); c += 1) {
-    if ((row2[c] || "").toString().trim() === "帳面營業額") {
-      if (!skippedOverall) { skippedOverall = true; continue; }
-      const code = (row1[c] || "").toString().trim().toUpperCase();
-      if (!code) continue;
-      // 「平均客單價」「廣告費」「帳面利潤」「稅後淨利/實際利潤」都不用固定位移量推算在第幾欄,
-      // 改成直接往右找寫著這些字的儲存格,用文字比對定位——避免某個代號剛好欄位排列跟其他代號
-      // 不一樣時,固定位移量抓歪卻沒人發現。這裡不是理論上的假設:蝦皮、MOMO 這兩個代號實際上就是
-      // 沒有「平均客單價」這一欄(行銷通路直接看訂單、沒有這個概念),導致後面的廣告費/利潤欄位
-      // 整批往左遞補一格,固定位移量在這兩個代號上會直接抓錯欄。
-      // 搜尋範圍限制在 c ~ c+11(11欄),超過這個範圍代表已經進到下一個代號的區塊,不能再往下找;
-      // 真的找不到才退回原本的固定位移量當保底,不會整個欄位直接空著。
-      const SEARCH_LIMIT = 12;
-      let colAov = null;
-      let colSpend = null;
-      let colProfit = null;
-      let colNetProfit = null;
-      let colGoogleSpend = null; // 只有少數代號(目前已知:H&J一頁業績的SHOPLINE區塊)會有這欄,大部分代號沒有
-      let blockEnd = c + SEARCH_LIMIT;
-      // 搜尋界線加一道保險:碰到下一個區塊的起點(下一個「帳面營業額」)就停,絕不跨進下一個代號的
-      // 欄位範圍——SHOPLINE 區塊比標準區塊窄,原本的搜尋範圍會越界「偷到」隔壁 SR 的平均客單價。
-      for (let n = c + 1; n < blockEnd; n++) {
-        if ((row2[n] || "").toString().trim() === "帳面營業額") { blockEnd = n; break; }
-      }
-      for (let k = c + 1; k < blockEnd; k++) {
-        const label = (row2[k] || "").toString().trim();
-        if (colAov === null && label === "平均客單價") colAov = k;
-        // 廣告費/帳面利潤,原本用精確比對,MOMO、LINE禮物的欄名其實是「廣告費(平台抽成)」,
-        // 門市、經銷的利潤欄名是「帳面利潤:扣貨物成本」「帳面利潤:貨物成本」這種帶冒號後綴的寫法,
-        // 精確比對全部對不上、會落到後面的固定位移量保底(而保底位移量對這幾個代號來說是錯的,
-        // 通常會抓到旁邊的百分比顯示欄,數字很小但不是0,不會被『沒資料』的判斷擋下來)。
-        // 改成 startsWith,只要開頭是這幾個字就算數,涵蓋全部後綴變體。
-        // 2026-07-30新增:「FB廣告費」也算數(H&J一頁業績SHOPLINE區塊的實際欄名不是「廣告費」,是
-        // 「FB廣告費」,原本比對不到、導致搜尋一路延伸到緊接著的下一個代號區塊,誤抓別人的廣告費欄位
-        // 當成自己的——這正是SHOPLINE跟SR顯示出一模一樣廣告費數字的根本原因。
-        if (colSpend === null && (label.startsWith("廣告費") || label === "FB廣告費")) colSpend = k;
-        if (colGoogleSpend === null && label === "GOOGLE") colGoogleSpend = k;
-        if (colProfit === null && label.startsWith("帳面利潤")) colProfit = k;
-        if (colNetProfit === null && (label === "稅後淨利" || label.startsWith("實際利潤") || label.startsWith("真實利潤"))) colNetProfit = k;
-      }
-      blocks.push({
-        code,
-        name: (row1[c + 1] || "").toString().trim(),
-        colRevenue: c,
-        colAov: colAov, // 找不到就是 null(蝦皮/MOMO本來就沒有這欄,orders 會算不出來,直接顯示 "—",不會硬套錯的欄位)
-        colSpend: colSpend !== null ? colSpend : emptyLabelCol(c + 2),
-        colProfit: colProfit !== null ? colProfit : emptyLabelCol(c + 4),
-        colNetProfit: colNetProfit !== null ? colNetProfit : emptyLabelCol(c + 6),
-        colGoogleSpend,
-      });
-      // Google廣告費比照其他通路(蝦皮、MOMO等)的做法,獨立列成自己的一個代號區塊——這樣矩陣總覽/
-      // 選一天/每週/每月才能跟其他代號一樣,自動出現在同樣的地方,不用另外寫顯示邏輯。這是純廣告費
-      // 支出(不是產品線),沒有自己的營收/利潤,固定填0,不是沒抓到資料。
-      if (colGoogleSpend !== null) {
-        blocks.push({
-          code: "GOOGLE",
-          name: "Google廣告",
-          colRevenue: null,
-          colAov: null,
-          colSpend: colGoogleSpend,
-          colProfit: null,
-          colNetProfit: null,
-        });
-      }
-    }
-  }
-  // 全店(整體)的「淨利」欄位改用文字比對定位——原本寫死 row[7]||row[6] 其實只符合 H&J 的版型:
-  // KP 的真實利潤在第6欄、第7欄是百分比(被當成 0.28 這種數字,畫面顯示 $0);Mavis/J.GAO 的第7欄是
-  // 另外登記的廣告費(直接把廣告費金額當成全店淨利顯示)。改成依「稅後淨利 → 真實利潤 → 實際利潤」的
-  // 優先順序,在全店區塊的範圍內(第2欄起、到第一個產品代號區塊之前)找標籤;全部找不到才退回舊的
-  // row[7]||row[6] 行為(對未知版型維持原本結果,不會更糟)。H&J 的「(改)稅後淨利」會被第一優先命中、
-  // 「(原)」不含這些關鍵字所以自然跳過,跟原本取值一致。
-  const firstBlockCol = blocks.length ? blocks[0].colRevenue : Math.max(row1.length, row2.length);
-  let overallNetCol = null;
-  const OVERALL_NET_TIERS = [
-    (l) => l.includes("稅後淨利"),
-    (l) => l.startsWith("真實利潤"),
-    (l) => l.startsWith("實際利潤"),
-  ];
-  for (const tierMatches of OVERALL_NET_TIERS) {
-    for (let k = 2; k < firstBlockCol; k++) {
-      const l = (row2[k] || "").toString().trim();
-      if (l && tierMatches(l)) { overallNetCol = k; break; }
-    }
-    if (overallNetCol !== null) break;
-  }
-  const days = [];
-  let totalRow = null;
-  for (let r = 2; r < matrix.length; r++) {
-    const row = matrix[r] || [];
-    const dateCell = row[0];
-    if (dateCell instanceof Date) {
-      const iso = excelDateToISO(dateCell);
-      const overall = {
-        revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
-        netProfit: overallNetCol !== null ? toNum(row[overallNetCol]) : toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
-      };
-      const byCode = {};
-      blocks.forEach((b) => {
-        const revenue = toNum(row[b.colRevenue]);
-        const spend = toNum(row[b.colSpend]);
-        const aov = toNum(row[b.colAov]);
-        if (revenue === 0 && spend === 0) return; // 這天這個產品沒有資料,不建立空物件,避免污染平均值計算
-        byCode[b.code] = {
-          revenue, spend, aov,
-          profit: toNum(row[b.colProfit]),
-          netProfit: toNum(row[b.colNetProfit]),
-          orders: aov > 0 ? revenue / aov : null,
-        };
-      });
-      days.push({ date: iso, overall, byCode });
-    } else if (typeof dateCell === "string" && dateCell.trim() === "總結") {
-      const overall = {
-        revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
-        netProfit: overallNetCol !== null ? toNum(row[overallNetCol]) : toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
-      };
-      const byCode = {};
-      blocks.forEach((b) => {
-        byCode[b.code] = {
-          revenue: toNum(row[b.colRevenue]), spend: toNum(row[b.colSpend]),
-          profit: toNum(row[b.colProfit]), netProfit: toNum(row[b.colNetProfit]),
-        };
-      });
-      totalRow = { overall, byCode };
-      break; // 「總結」之後是代言費、預估獲利等其他彙總列,不屬於逐日資料,停止解析
-    }
-  }
-  if (!days.length) return null;
-  return { days, monthTotal: totalRow, productCodes: blocks.map((b) => b.code) };
-}
 // LEDGER_PARSER_SYNC_CHECK:END
 
 // 解析整份工作簿(可能包含 12 個月分頁),回傳 { [monthKey]: monthObject }。
@@ -3809,10 +3663,7 @@ function MetaAdsLedger() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [couponQueryData, setCouponQueryData] = useState(null);
-  const [couponQueryLoading, setCouponQueryLoading] = useState(false);
-  const [couponQueryError, setCouponQueryError] = useState(null);
-  const [couponSearchInput, setCouponSearchInput] = useState("");
-  const [couponFocusCode, setCouponFocusCode] = useState(null);
+        const [couponFocusCode, setCouponFocusCode] = useState(null);
 
   // ---------- Meta 廣告成效更新按鈕:state ----------
   const [metaUpdateLoading, setMetaUpdateLoading] = useState(null); // null | "month"
@@ -3982,48 +3833,12 @@ function MetaAdsLedger() {
     }
   }
 
-  function fetchShoplineForMonth(monthKey) {
-    const { since, until } = monthRangeForShopline(monthKey);
-    return fetchShoplineData(since, until, shoplineMonthKey(monthKey), (data) => {
-      setShoplineMonthsData((prev) => ({ ...prev, [monthKey]: data }));
-    });
-  }
-
+  
   // 折價券查詢:自訂時間範圍(日曆選的起訖日),不綁定既有的週/月固定區間,查詢結果只放在畫面上,不存進共用/本機儲存空間
   // (跟月報表的 Shopline 資料是分開的兩份,避免互相覆蓋)。
-  async function fetchCouponQueryData() {
-    if (!couponQuerySince || !couponQueryUntil) {
-      setCouponQueryError("請選擇開始與結束日期。");
-      return;
-    }
-    if (!shoplineWorkerUrl) {
-      setCouponQueryError("請先在「Shopline 對照」分頁貼上並儲存 Worker 網址。");
-      return;
-    }
-    setCouponQueryLoading(true);
-    setCouponQueryError(null);
-    setCouponFocusCode(null);
-    try {
-      const res = await fetch(`${shoplineWorkerUrl}/api/orders?since=${couponQuerySince}&until=${couponQueryUntil}`, {
-        headers: { "X-Proxy-Auth": SHOPLINE_PROXY_SECRET },
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || `Worker 回應錯誤 (status ${res.status})`);
-      setCouponQueryData(data);
-    } catch (e) {
-      setCouponQueryError("查詢失敗:" + e.message);
-    } finally {
-      setCouponQueryLoading(false);
-    }
-  }
-
+  async 
   // 把訂單的 utm 物件整理成一句話說明「這筆訂單從哪裡來的」,沒有 utm 資料就視為直接流量/非廣告帶來的訂單。
-  function formatOrderSource(utm) {
-    if (!utm || Object.keys(utm).length === 0) return "直接流量 / 無 UTM";
-    const parts = [utm.utm_source, utm.utm_medium, utm.utm_campaign, utm.utm_content, utm.utm_term].filter(Boolean);
-    return parts.length ? parts.join(" / ") : "有 UTM 但欄位皆為空";
-  }
-
+  
   // 把各種技術性的失敗原因(網路錯誤、JSON 解析失敗、Worker 狀態碼、Meta 頻率限制等)
   // 轉成看得懂的中文說明。原始技術訊息還是會印在瀏覽器 console 裡,真的要除錯可以按 F12 查看,
   // 但畫面上只顯示一般人看得懂的話。
@@ -5065,7 +4880,7 @@ function MetaAdsLedger() {
     );
   }
 
-  function ShoplineComparisonView({ record, ads, currencyCode }) {
+  ) {
     if (!record) return null;
     const { rows, unmatched, matchedOrderCount, totalValidOrders } = matchShoplineOrdersToAds(record.orders, ads);
     const discountRows = record.discountSummary || [];
