@@ -413,6 +413,61 @@ async def refresh_metadata(
     }
 
 
+async def refresh_delivery_status_metadata(
+    connector: FacebookMarketingConnector,
+    account_id: str,
+    old_meta: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Refresh only delivery-state metadata for campaigns/adsets/ads.
+
+    This is intentionally lighter than refresh_metadata(): no creative enumeration.
+    Existing creative/link metadata is preserved so normal 6-hour syncs stay inexpensive
+    while paused/archived/deleted ad states remain current.
+    """
+    old_meta = old_meta if isinstance(old_meta, dict) else {}
+
+    campaigns = await paged(
+        connector.campaigns.list,
+        account_id=account_id,
+        fields="id,name,objective,effective_status,status,start_time,created_time",
+        limit=500,
+    )
+    adsets = await paged(
+        connector.ad_sets.list,
+        account_id=account_id,
+        fields="id,name,campaign_id,effective_status,status,start_time,created_time,optimization_goal,learning_stage_info",
+        limit=500,
+    )
+    ads = await paged(
+        connector.ads.list,
+        account_id=account_id,
+        fields="id,name,adset_id,campaign_id,effective_status,status,created_time,creative",
+        limit=500,
+    )
+
+    def merge_rows(old_rows: Any, fresh_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        current = old_rows if isinstance(old_rows, dict) else {}
+        out = {str(key): dict(value) for key, value in current.items() if isinstance(value, dict)}
+        for row in fresh_rows:
+            row_id = str(row.get("id") or "")
+            if not row_id:
+                continue
+            out[row_id] = {**out.get(row_id, {}), **row}
+        return out
+
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        **old_meta,
+        "syncedAt": now,
+        "statusSyncedAt": now,
+        "syncMode": "airbyte_delivery_status_refresh",
+        "campaigns": merge_rows(old_meta.get("campaigns"), campaigns),
+        "adsets": merge_rows(old_meta.get("adsets"), adsets),
+        "ads": merge_rows(old_meta.get("ads"), ads),
+        "creatives": old_meta.get("creatives") if isinstance(old_meta.get("creatives"), dict) else {},
+    }
+
+
 def _load_meta_sdk():
     """Lazy-load Meta Business SDK only for the explicit emergency fallback path."""
     from facebook_business.api import FacebookAdsApi
