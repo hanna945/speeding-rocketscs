@@ -214,7 +214,7 @@
   .mal-dash-legend span { display: flex; align-items: center; gap: 8px; }
   .mal-dash-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
   /* 成效分類改成書刊式文字頁籤,不是大型卡片——這裡不是真正的篩選(點了會捲動到對應區塊,
-     不是隱藏其他分類),但視覺上要跟其他頁籤(週報表/月報表、投放狀態)用同一套語言。 */
+     不是隱藏其他分類),但視覺上要跟其他頁籤(月報表、投放狀態)用同一套語言。 */
   .mal-perf-tabs { display: flex; gap: 22px; overflow-x: auto; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
   .mal-perf-card {
     display: block; background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0;
@@ -3063,7 +3063,7 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 這支元件原本(另一個對話 session)漏掉了函式宣告那一行,只有內文沒有包起來,會直接造成語法錯誤。
 // 補回宣告——這支元件寫在最外層(跟 roasTier/HorizontalBarChart/exportAdPerformanceToWord 同一層),
 // 不在主 App 元件裡面,所以拿不到 brands/activeBrandId 這些畫面狀態,要透過 props 傳進來,不能用 closure 讀。
-// forwardRef + useImperativeHandle:讓外層(週報表/月報表主畫面)可以直接呼叫這個元件內部的
+// forwardRef + useImperativeHandle:讓外層(月報表主畫面)可以直接呼叫這個元件內部的
 // generateAiInsights,藉此做出「一個按鈕同時觸發投放成效+月報告兩邊AI分析」的效果——
 // 選這個做法是因為兩邊(這裡、ReportPlanningSection)原本各自的AI邏輯、loading/error狀態管理
 // 都已經測過沒問題,用ref讓外部觸發內部既有函式,比整個拆掉重寫、把狀態都提到最外層風險小很多。
@@ -3081,7 +3081,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
   const [editText, setEditText] = useState("");
   const [aiSaveStatus, setAiSaveStatus] = useState("");
   // 自動判斷結果(insights+逐代號判斷)存到雲端,不然重新整理/換裝置就不見了——
-  // key跟「月報告」同一套設計,依品牌+週期分開存,彼此不會互相蓋掉。只讀不寫silent失敗:
+  // key跟「月報告」同一套設計,依品牌+月份分開存,彼此不會互相蓋掉。只讀不寫silent失敗:
   // 讀取失敗就當作「還沒有存檔」處理,不會用錯誤訊息打斷使用者第一次打開頁面的體驗。
   useEffect(() => {
     if (!storageKey) return;
@@ -3655,11 +3655,11 @@ function MetaAdsLedger() {
       activeBrandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "(無)",
       brandCount: brands.length,
       }; }, [viewMode, activeBrandId, brands]);
-  // 「一次AI分析」按鈕用的ref——月報表、週報表各自的「投放成效」「月報告」元件實例是分開的,
-  // 所以要各自一組ref,不能共用(月報表按了不該連動去觸發週報表那邊的分析)。
+  // 「一次AI分析」按鈕用的ref——月報表各自的「投放成效」「月報告」元件實例是分開的,
+  // 所以要各自一組ref,不能共用(月報表按鈕只觸發目前月報分析)。
   const monthlyAdReportRef = useRef(null);
   const monthlyPlanRef = useRef(null);
-  // 「一次AI分析」共用觸發函式——月報表、週報表的按鈕都呼叫這個,只是傳進來的ref組合不同。
+  // 「一次AI分析」共用觸發函式——月報表的按鈕都呼叫這個,只是傳進來的ref組合不同。
   // 用Promise.allSettled不是Promise.all:兩邊AI分析本來就是各自獨立的呼叫,其中一個失敗
   // (例如額度用完)不該擋住另一個正常顯示結果,兩邊各自的loading/error狀態已經各自處理好了。
   function triggerCombinedAi(adRef, planRef) {
@@ -4215,7 +4215,7 @@ function MetaAdsLedger() {
     storage.set("meta-api-adratio-thresholds", JSON.stringify(updated)).catch(() => {});
   }
 
-  // 跟 editAdRatioThreshold 同一套模式:「投放成效報告」(週報表/月報表裡的卡片+長條圖+分級表格)
+  // 跟 editAdRatioThreshold 同一套模式:「投放成效報告」(月報表裡的卡片+長條圖+分級表格)
   // 用的 ROAS 目標倍數,沒設定的話預設 3(對應範例報表的「目標 3.0x」)。
   function editRoasTarget(brandId) {
     const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
@@ -4886,7 +4886,7 @@ function MetaAdsLedger() {
   // 產品代號完全依實際行銷活動名稱動態產生——新增產品時只要照同一套命名規則建立行銷活動,
   // 不需要在系統裡手動登記新產品,代號就會自動出現在分析裡。
   // 「一頁式正確業績」比對區塊:後台每日收益表匯入後的實際營收/廣告費,vs. Meta 回報的轉單金額,依產品代號逐一比對落差。
-  // 月報告 / 後續規劃區塊——每個品牌、每個週期(週/月)各自獨立一份,存在KV,使用者自己編輯,
+  // 月報告 / 後續規劃區塊——每個品牌、每個月份各自獨立一份,存在KV,使用者自己編輯,
   // 不是系統自動產生的。三個子區塊對應 Hanna 提供的範例格式:後續操作方向(編號+標題+說明)、
   // 專案進度(負責人/預定完成日/進度/狀態燈號/說明)、素材調整方向(狀態燈號+標題+內容)。
   // 900ms 防抖自動儲存,不用按「儲存」按鈕,跟這裡其他設定(ROAS目標等)是不同的儲存模式——
@@ -4904,7 +4904,7 @@ function MetaAdsLedger() {
     const saveTimerRef = useRef(null);
     // 待存檔的最新內容——跟 saveTimerRef 分開追蹤,是因為「立即存檔」(flush)要能在計時器
     // 還沒觸發前,直接把這裡記著的最新資料送出去,不用等900ms。之前的版本只靠setTimeout,
-    // 使用者打完字後如果馬上切換品牌/週期/把App切到背景,計時器根本還沒觸發存檔動作就消失了,
+    // 使用者打完字後如果馬上切換品牌/月份/把App切到背景,計時器根本還沒觸發存檔動作就消失了,
     // 資料就真的遺失——這是這次修正的根本原因。
     const pendingSaveRef = useRef(null);
 
@@ -4950,7 +4950,7 @@ function MetaAdsLedger() {
 
     // 三層保護,確保「還沒等到900ms就離開」的情境一定會把最新內容存下去:
     // ①頁面被切到背景/分頁不可見(手機切App、鎖螢幕最常見)②使用者關閉分頁/離開網站
-    // ③這個元件本身被卸載(例如切換品牌或週期,key改變導致React整個重新建立元件實例)。
+    // ③這個元件本身被卸載(例如切換品牌或月份,key改變導致React整個重新建立元件實例)。
     useEffect(() => {
       function handleVisibilityChange() {
         if (document.visibilityState === "hidden") flushPendingSave();
@@ -6838,7 +6838,7 @@ const shopeRealDailyMap = useMemo(() => {
             <h3>匯入後台每日收益表</h3>
             <p className="mal-modal-sub">
               上傳「每日收益表」.xlsx 檔(跟範例表單一致:分頁是「1月」~「12月」,欄位依產品代號拆分)。
-              系統會自動抓出每個分頁對應的月份,存成該品牌的後台實際業績,週報表/月報表會自動比對 Meta 回報的落差。
+              系統會自動抓出每個分頁對應的月份,存成該品牌的後台實際業績,月報表會自動比對 Meta 回報的落差。
               重新匯入同一個月份會直接覆蓋更新。
             </p>
             <div className="mal-field">
