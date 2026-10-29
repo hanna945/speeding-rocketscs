@@ -903,10 +903,9 @@ const STORAGE_PREFIX = "metaads-month:";
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
 const MONTHLY_PLAN_PREFIX = "monthly-plan:";
 const ADPERF_AI_MONTH_PREFIX = "adperf-ai-month:";
-// 2026-07-30新增:H-J那邊已經在同步真實Shopline訂單資料(shopline-week:/shopline-month:),
+// 2026-07-30新增:H-J那邊已經在同步真實Shopline訂單資料(shopline-month:),
 // key格式完全一致,speedingscs這裡只要讀,不用自己另外抓——H&J一頁業績透過speedingscs看矩陣總覽時,
 // 就能顯示跟H-J同一套「真實Shopline訂單」欄位,不用speedingscs自己重新建一套API呼叫/同步邏輯。
-const SHOPLINE_WEEK_PREFIX = "shopline-week:";
 const SHOPLINE_MONTH_PREFIX = "shopline-month:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
@@ -3628,8 +3627,7 @@ function MetaAdsLedger() {
   // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS——即使使用者手動連續按「抓上週」再按「抓月報表」也一樣受限,
   // 不再只靠批次迴圈裡的 4 秒 delay(那個只保護「同一輪批次抓取」,不會保護「先抓周報表、再手動切去抓月報表」這種跨動作的情境)。
   const lastApiCallRef = useRef(0);
-  const [apiMode, setApiMode] = useState("full"); // "full" | "multi" | "week" | "recentWeeks"
-  const [recentWeeksCount, setRecentWeeksCount] = useState(4);
+  const [apiMode, setApiMode] = useState("full"); // "full" | "multi"
   const [apiToken, setApiToken] = useState("");
   const [apiAccountId, setApiAccountId] = useState("");
   const [brands, setBrands] = useState([]);
@@ -3642,12 +3640,7 @@ function MetaAdsLedger() {
   // 沒辦法從行銷活動名稱自動抓出乾淨的產品名稱(命名不夠固定),所以讓使用者自己設定,類似 roasTargets 那樣。
   const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
   const [batchProgress, setBatchProgress] = useState(null);
-  const [weekInfo, setWeekInfo] = useState(getLastWeekRange());
-  const [weekLoading, setWeekLoading] = useState(false);
   const [viewMode, setViewMode] = useState("month");
-  const [weeksData, setWeeksData] = useState({});
-  const [focusWeek, setFocusWeek] = useState(null);
-  const [batchGranularity, setBatchGranularity] = useState("month");
   const [apiMonth, setApiMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -3669,15 +3662,11 @@ function MetaAdsLedger() {
       activeBrandId,
       activeBrandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "(無)",
       brandCount: brands.length,
-      focusWeek,
-    };
-  }, [viewMode, activeBrandId, brands, focusWeek]);
+      }; }, [viewMode, activeBrandId, brands]);
   // 「一次AI分析」按鈕用的ref——月報表、週報表各自的「投放成效」「週報告」元件實例是分開的,
   // 所以要各自一組ref,不能共用(月報表按了不該連動去觸發週報表那邊的分析)。
   const monthlyAdReportRef = useRef(null);
   const monthlyPlanRef = useRef(null);
-  const weeklyAdReportRef = useRef(null);
-  const weeklyPlanRef = useRef(null);
   // 「一次AI分析」共用觸發函式——月報表、週報表的按鈕都呼叫這個,只是傳進來的ref組合不同。
   // 用Promise.allSettled不是Promise.all:兩邊AI分析本來就是各自獨立的呼叫,其中一個失敗
   // (例如額度用完)不該擋住另一個正常顯示結果,兩邊各自的loading/error狀態已經各自處理好了。
@@ -3693,7 +3682,6 @@ function MetaAdsLedger() {
   // 真實Shopline訂單資料(不是試算表手動打的數字)——H&J一頁業績(2157995930925784)專用,
   // 直接讀H-J那邊已經在同步、共用的 shopline-month: 資料,不用speedingscs自己另外抓一次。
   const [shoplineMonthsData, setShoplineMonthsData] = useState({});
-  const [shoplineWeeksData, setShoplineWeeksData] = useState({});
   const HJ_ONEPAGE_ACCOUNT_ID = "2157995930925784";
   const [dailySubMode, setDailySubMode] = useState("single"); // "single"(選一天) | "matrix"(矩陣總覽)
   const [focusDay, setFocusDay] = useState(null);
@@ -5897,9 +5885,7 @@ const shopeRealDailyMap = useMemo(() => {
       {apiError && <div className="mal-error">⚠ {apiError}</div>}
 
       <div className="mal-viewmode-switch mal-report-navigation">
-        <button className={`mal-viewmode-btn ${viewMode === "week" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("week")}>
-          🗓 每週報表
-        </button>
+        
         <button className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("month")}>
           📅 每月報表
         </button>
@@ -6217,238 +6203,6 @@ const shopeRealDailyMap = useMemo(() => {
           </div>
         </>
       ))}
-
-      {viewMode === "week" && (
-        sortedWeekKeys.length === 0 ? (
-          <div className="mal-empty">
-            <div style={{ fontSize: 30 }}>🗓</div>
-            <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>還沒有任何週報表</h3>
-            <p>點右上角「連接 Meta API」,模式選「上週報表」或「多品牌批次抓取」(選上週資料),抓一次之後這裡就會出現。</p>
-            <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}>🔌 連接 Meta API</button>
-          </div>
-        ) : (
-          <>
-            <div className="mal-tabs">
-              {sortedWeekKeys.map((wk) => (
-                <div key={wk} className={`mal-tab ${wk === focusWeek ? "mal-tab-active" : ""}`} onClick={() => setFocusWeek(wk)}>
-                  {weekLabel(wk)}
-                </div>
-              ))}
-            </div>
-
-            {focusWeekData && (
-              <>
-                <SyncedAtNote iso={focusWeekData.syncedAt} source={focusWeekData.source} />
-                <EvidenceExecutiveSummary
-                  currentRecord={focusWeekData}
-                  previousRecord={prevWeekData}
-                  roasTarget={roasTargets[activeBrandId]}
-                  cpaTarget={cpaThresholds[activeBrandId]}
-                  periodType="week"
-                  periodLabel={weekLabel(focusWeek)}
-                  brandName={((brands.find((b) => b.id === activeBrandId) || {}).name || "品牌")}
-                  syncedAt={focusWeekData.syncedAt}
-                  sourceLabel={activeBrandId === HJ_ONEPAGE_ACCOUNT_ID ? "Meta Ads + 品牌成效帳本 + Shopline" : "Meta Ads + 品牌成效帳本"}
-                />
-                <EvidenceSectionNavigator refreshKey={activeBrandId + "::week::" + focusWeek} />
-                <div className="mal-cards">
-                  <div className="mal-card">
-                    <div className="mal-card-label">廣告費</div>
-                    <div className="mal-card-value">{fmtMoney(focusWeekData.spend, focusWeekData.currency)}</div>
-                  </div>
-                  <div className="mal-card">
-                    <div className="mal-card-label">轉單數</div>
-                    <div className="mal-card-value">{fmtInt(focusWeekData.conversions)}</div>
-                  </div>
-                  <div className="mal-card">
-                    <div className="mal-card-label">轉單金額</div>
-                    <div className="mal-card-value">{focusWeekData.revenue > 0 ? fmtMoney(focusWeekData.revenue, focusWeekData.currency) : "—"}</div>
-                  </div>
-                  <div className="mal-card">
-                    <div className="mal-card-label">CPA</div>
-                    <div className="mal-card-value">
-                      {focusWeekData.conversions > 0 ? fmtMoney(focusWeekData.spend / focusWeekData.conversions, focusWeekData.currency) : "—"}
-                    </div>
-                    {cpaThresholds[activeBrandId] != null && focusWeekData.conversions > 0 && (focusWeekData.spend / focusWeekData.conversions) > cpaThresholds[activeBrandId] && (
-                      <div style={{ fontSize: 11, color: "var(--red)", fontWeight: 600, marginTop: 4 }}>⚠ 超過標準 ${cpaThresholds[activeBrandId]}</div>
-                    )}
-                  </div>
-                  <div className="mal-card">
-                    <div className="mal-card-label">ROAS</div>
-                    <div className="mal-card-value">
-                      {focusWeekData.spend > 0 && focusWeekData.revenue > 0 ? `${(focusWeekData.revenue / focusWeekData.spend).toFixed(2)}x` : "—"}
-                    </div>
-                  </div>
-                  {activeBrandId === HJ_ONEPAGE_ACCOUNT_ID && shoplineWeeksData[focusWeek] && (
-                    <div className="mal-card">
-                      <div className="mal-card-label">✅ 真實Shopline訂單(整週)</div>
-                      <div className="mal-card-value">{fmtMoney(sumShoplineOrders(shoplineWeeksData[focusWeek].orders).netRevenue)}</div>
-                      <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>
-                        {sumShoplineOrders(shoplineWeeksData[focusWeek].orders).orderCount} 筆訂單(非試算表數字)
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mal-week-analysis">
-                  <div className="mal-week-analysis-title">基本分析</div>
-                  <ul>
-                    {computeWeekAnalysis(focusWeekData).map((line, i) => (
-                      <li key={i}>{line}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <DecisionIntelligencePanel
-                  currentRecord={focusWeekData}
-                  previousRecord={prevWeekData}
-                  roasTarget={roasTargets[activeBrandId]}
-                  cpaTarget={cpaThresholds[activeBrandId]}
-                  periodType="week"
-                  periodLabel={weekLabel(focusWeek)}
-                />
-                <MetaAdsOpenSourceSuite
-                  currentRecord={focusWeekData}
-                  previousRecord={prevWeekData}
-                  roasTarget={roasTargets[activeBrandId]}
-                  cpaTarget={cpaThresholds[activeBrandId]}
-                  periodType="week"
-                  periodLabel={weekLabel(focusWeek)}
-                />
-                <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
-
-                <div className="mal-combined-ai-row">
-                  <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(weeklyAdReportRef, weeklyPlanRef)}>
-                    ⚙️ 一次自動判斷(投放成效＋週報告)
-                  </button>
-                </div>
-
-                <div data-pdf-section="ad-performance">
-                  <AdPerformanceReport
-                    ref={weeklyAdReportRef}
-                    key={`${activeBrandId}::${focusWeek}`}
-                    ledgerAgg={aggregateLedgerRange(ledgerByMonth, focusWeek, addDaysISO(focusWeek, 6))}
-                    currencyCode={focusWeekData.currency}
-                    periodLabel={(() => {
-                      const r = weekDateRange(focusWeek);
-                      const fmtMD = (iso) => { const [, m, d] = iso.split("-"); return `${Number(m)}/${Number(d)}`; };
-                      return `${fmtMD(r.since)} - ${fmtMD(r.until)}`;
-                    })()}
-                    roasTarget={roasTargets[activeBrandId]}
-                    brands={brands}
-                    activeBrandId={activeBrandId}
-                    onEditRoasTarget={editRoasTarget}
-                    productNames={productNames[activeBrandId] || {}}
-                    onEditProductName={editProductName}
-                    adRatioThreshold={adRatioThresholds[activeBrandId]}
-                    onOpenImport={() => setShowLedgerModal(true)}
-                    storageKey={`adperf-ai-week:${activeBrandId}::${focusWeek}`}
-                  />
-                </div>
-
-                <div data-pdf-section="campaign-analysis">
-                  <CampaignAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
-                <AdSetAnalysis ads={focusWeekData.ads} currencyCode={focusWeekData.currency} />
-                </div>
-                <div data-pdf-section="performance-breakdown">
-                  <PerformanceBreakdown ads={filterAdsByStatus(focusWeekData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusWeekData.currency} accountId={focusWeekData.accountId} />
-                </div>
-
-                <div data-pdf-section="ad-list">
-                {focusWeekData.ads && focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND).length > 0 && (
-                  <StatusFilterButtons statusValue={adStatusFilter} onStatusChange={setAdStatusFilter} keyword={adSearchKeyword} onKeywordChange={setAdSearchKeyword} />
-                )}
-
-                {focusWeekData.ads && filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter, adSearchKeyword).length > 0 && (
-                  <>
-                    <div className="mal-ad-header-row">
-                      <CollapsibleSectionTitle className="mal-section-title mal-section-title-flex">{weekLabel(focusWeek)} 廣告明細</CollapsibleSectionTitle>
-                      <select className="mal-ad-sort-select" value={adSortMode} onChange={(e) => setAdSortMode(e.target.value)}>
-                        <option value="spend">排序:廣告費（高→低）</option>
-                        <option value="cpa">排序:CPA（好→壞）</option>
-                        <option value="roas">排序:ROAS（好→壞）</option>
-                        <option value="composite">排序:綜合成效（好→壞）</option>
-                        <option value="startDate">排序:投放時間（新→舊）</option>
-                        <option value="postPublishDate">排序:前台發表時間（新→舊）</option>
-                      </select>
-                    </div>
-                    <div className="mal-ad-list">
-                      {sortAdsByMode(filterAdsByStatus(focusWeekData.ads.filter((a) => a.spend >= MIN_AD_SPEND), adStatusFilter, adSearchKeyword), adSortMode).slice(0, 10).map((ad, i) => {
-                        const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
-                        const fbLibLink = fbPostLink(ad.postId);
-                        const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
-                        const fbLink = fbAdsManagerLink(focusWeekData.accountId, ad.adIds);
-                        return (
-                          <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
-                            <AdThumb src={ad.image} alt={ad.name} />
-                            <div className="mal-ad-info">
-                              <div className="mal-ad-name" title={ad.name}>
-                                {ad.name}
-                                <ActiveBadge active={ad.active} />
-                                {cpaThresholds[activeBrandId] != null && adCpa !== null && adCpa > cpaThresholds[activeBrandId] && (
-                                  <span style={{ color: "var(--red)", fontWeight: 600, fontSize: 11 }}> ⚠ CPA過高</span>
-                                )}
-                              </div>
-                              {ad.campaign && <div className="mal-ad-utm" title={ad.campaign}>{ad.campaign}</div>}
-                              {ad.utm ? (
-                                <div className="mal-ad-utm" title={ad.utm}>{ad.utm}</div>
-                              ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
-                              {ad.startDate && <span className="mal-ad-startdate">{fmtStartDate(ad.startDate)} 開始投放</span>}
-                              {ad.postPublishDate ? <span className="mal-ad-startdate">📰 {fmtStartDate(ad.postPublishDate)} 前台發表</span> : <span className="mal-ad-startdate">📌 後台直接發佈</span>}
-                              {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
-                              {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
-                        {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(focusWeekData.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(focusWeekData.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
-                            </div>
-                            <div className="mal-ad-stats">
-                              <div><span>廣告費</span>{fmtMoney(ad.spend, focusWeekData.currency)}</div>
-                              <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
-                              <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, focusWeekData.currency) : "—"}</div>
-                              <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, focusWeekData.currency) : "—"}</div>
-                              <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-                </div>
-
-                <div data-pdf-section="weekly-plan">
-                <WeeklyPlanningSection
-                  ref={weeklyPlanRef}
-                  storageKey={`weekly-plan:${activeBrandId}::${focusWeek}`}
-                  key={`weekplan::${activeBrandId}::${focusWeek}`}
-                  ads={focusWeekData.ads}
-                  currencyCode={focusWeekData.currency}
-                  roasTarget={roasTargets[activeBrandId]}
-                  periodLabel={(() => {
-                    const r = weekDateRange(focusWeek);
-                    const fmtMD = (iso) => { const [, m, d] = iso.split("-"); return `${Number(m)}/${Number(d)}`; };
-                    return `${fmtMD(r.since)} - ${fmtMD(r.until)}`;
-                  })()}
-                  brandName={(brands.find((b) => b.id === activeBrandId) || {}).name || ""}
-                  minSpend={MIN_AD_SPEND}
-                />
-                </div>
-
-                <div className="mal-modal-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
-                  <button
-                    className="mal-icon-btn"
-                    onClick={async () => {
-                      await storage.delete(weekKeyFor(activeBrandId, focusWeek));
-                      await loadAllWeeks(activeBrandId);
-                    }}
-                    title="刪除這週資料"
-                  >
-                    🗑 刪除這週資料
-                  </button>
-                </div>
-              </>
-            )}
-          </>
-        )
-      )}
 
       {viewMode === "sponsor" && (
         loading ? <p style={{ color: "var(--ink-soft)" }}>載入帳本中…</p> : sortedKeys.length === 0 ? (
@@ -6913,12 +6667,12 @@ const shopeRealDailyMap = useMemo(() => {
                 <label className="mal-checkbox-row" style={{ marginTop: 8, fontSize: 12.5 }}>
                   <input type="checkbox" checked={autoSyncEnabled} onChange={(e) => toggleAutoSync(e.target.checked)} />
                   <span className="mal-checkbox-box"></span>
-                  <span>開啟網頁時自動檢查並補抓上週 / 上個月的資料</span>
+                  <span>開啟網頁時自動檢查並補抓上個月的資料</span>
                 </label>
               )}
               {autoSyncEnabled && rememberToken && (
                 <p style={{ fontSize: 11.5, color: "var(--ink-secondary)", marginTop: 8, lineHeight: 1.5 }}>
-                  只在打開這個網頁的當下才會檢查,不會在你沒開網頁時於背景執行。已經抓過的週/月不會重抓。
+                  只在打開這個網頁的當下才會檢查,不會在你沒開網頁時於背景執行。已經抓過的月份不會重抓。
                 </p>
               )}
             </div>
@@ -6932,7 +6686,7 @@ const shopeRealDailyMap = useMemo(() => {
                   disabled={!!autoSyncStatus}
                   onClick={runAutoSync}
                 >
-                  {autoSyncStatus ? "同步中…" : "立即檢查並補抓上週/上月資料"}
+                  {autoSyncStatus ? "同步中…" : "立即檢查並補抓上月資料"}
                 </button>
               </div>
             )}
@@ -7027,38 +6781,7 @@ const shopeRealDailyMap = useMemo(() => {
               </div>
             )}
 
-            {(apiMode === "week" || (apiMode === "multi" && batchGranularity === "week")) && (
-              <div className="mal-field">
-                <label>上週日期範圍</label>
-                <div style={{ height: 42, display: "flex", alignItems: "center", padding: "0 13px", border: "1px solid var(--rule)", borderRadius: "5px", background: "var(--paper-raised)", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px", boxSizing: "border-box" }}>
-                  {weekInfo.since} ~ {weekInfo.until}
-                </div>
-                <p style={{ fontSize: 11.5, color: "var(--ink-secondary)", marginTop: 8, lineHeight: 1.5 }}>
-                  自動抓「上一個完整的週一到週日」,只統計「購買」類型的轉換。花費 ≥ 500 的廣告會收錄;花費雖然還不到 500,但目前仍在投放中的廣告也會一併收錄,方便觀察剛起步的廣告。
-                </p>
-              </div>
-            )}
-
-            {apiMode === "recentWeeks" && (
-              <div className="mal-field">
-                <label>要往前回溯抓幾週?</label>
-                <select
-                  value={recentWeeksCount}
-                  onChange={(e) => setRecentWeeksCount(Number(e.target.value))}
-                >
-                  <option value={2}>過去 2 週</option>
-                  <option value={4}>過去 4 週</option>
-                  <option value={8}>過去 8 週</option>
-                  <option value={12}>過去 12 週</option>
-                </select>
-                <p style={{ fontSize: 11.5, color: "var(--ink-secondary)", marginTop: 8, lineHeight: 1.5 }}>
-                  會從「上週」開始,一週一週往前抓(每週都是完整的週一到週日),每抓完一週會間隔 4 秒再抓下一週,避免觸發 Meta 頻率限制。
-                  週數越多需要等待的時間越長,過程中請不要關掉這個分頁。已經抓過的週份重新抓取會直接覆蓋更新。
-                </p>
-              </div>
-            )}
-
-            {(apiMode === "full" || (apiMode === "multi" && batchGranularity === "month")) && (
+            {(apiMode === "full" || apiMode === "multi") && (
               <div className="mal-field">
                 <label>要抓哪個月?</label>
                 <input
