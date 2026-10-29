@@ -1310,13 +1310,14 @@ def merge_month_with_today(
             ("utm:" + str(ad.get("utm")) if ad.get("utm") else "ad:" + str(ad.get("adId") or ""))
             + "::campaign:" + str(ad.get("campaign") or "")
             + "::adset:" + str(ad.get("adSet") or "")
-            + "::" + ("on" if ad.get("active") else "off")
+            + "::status:" + str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN"))
         )
         g = grouped.setdefault(key, {
             "utm": ad.get("utm") or "",
             "names": set(), "image": "", "postId": "",
             "spend": 0.0, "conversions": 0.0, "revenue": 0.0,
             "impressions": 0, "clicks": 0, "linkClicks": 0, "reach": 0.0,
+            "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
             "active": bool(ad.get("active")), "campaigns": set(), "adSets": set(),
             "adSetIds": set(), "adIds": set(), "startDate": None, "postPublishDate": None,
         })
