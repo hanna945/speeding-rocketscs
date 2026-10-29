@@ -810,6 +810,11 @@ function setTeamKey(v) {
     else localStorage.removeItem(TEAM_KEY_STORAGE_KEY);
   } catch {}
 }
+function resetCredentialCache() {
+  cloudStatusCache = "unknown";
+  credentialNameCache = "";
+  credentialBrandsCache = null;
+}
 function teamKeyHeaders() {
   const k = getTeamKey();
   return k ? { "X-Team-Key": k } : {};
@@ -822,7 +827,11 @@ async function probeCloud(force) {
   if (cloudStatusCache !== "unknown" && !force) return cloudStatusCache;
   try {
     const res = await fetch(`${CLOUD_KV_BASE}/list?prefix=`, { headers: teamKeyHeaders() });
-    if (res.status === 401) cloudStatusCache = "unauthorized";
+    if (res.status === 401) {
+      cloudStatusCache = "unauthorized";
+      credentialNameCache = "";
+      credentialBrandsCache = null;
+    }
     else if (res.ok) {
       cloudStatusCache = "connected";
       try {
@@ -831,9 +840,15 @@ async function probeCloud(force) {
         credentialBrandsCache = (j && j.credentialBrands) || null;
       } catch { credentialNameCache = ""; credentialBrandsCache = null; }
     }
-    else cloudStatusCache = "unavailable";
+    else {
+      cloudStatusCache = "unavailable";
+      credentialNameCache = "";
+      credentialBrandsCache = null;
+    }
   } catch {
     cloudStatusCache = "unavailable";
+    credentialNameCache = "";
+    credentialBrandsCache = null;
   }
   return cloudStatusCache;
 }
@@ -3560,15 +3575,38 @@ function MetaAdsLedger() {
     }
   }
 
+  function openDepartmentSwitcher() {
+    resetCredentialCache();
+    setCredentialName("");
+    setTeamKeyInput("");
+    setCloudStatus("unknown");
+    setShowTeamKeyModal(true);
+  }
+
   async function saveTeamKey() {
-    setTeamKey(teamKeyInput.trim());
+    const nextKey = teamKeyInput.trim();
+    const previousKey = getTeamKey();
+    resetCredentialCache();
+    setTeamKey(nextKey);
     const status = await probeCloud(true);
     setCloudStatus(status);
     if (status === "connected") {
       setCredentialName(getCredentialName());
+      await refreshBrandsAfterAuth();
       triggerAutoAccountSync();
-      refreshBrandsAfterAuth();
       setShowTeamKeyModal(false);
+      return;
+    }
+
+    setTeamKey(previousKey);
+    resetCredentialCache();
+    if (previousKey) {
+      const restored = await probeCloud(true);
+      setCloudStatus(restored);
+      if (restored === "connected") {
+        setCredentialName(getCredentialName());
+        await refreshBrandsAfterAuth();
+      }
     }
   }
   useEffect(() => { setShowAllAds(false); }, [focusMonth]);
@@ -5656,8 +5694,10 @@ function MetaAdsLedger() {
           <div className="mal-header-actions-primary">
             <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}><span className="mal-btn-emoji">🔌</span> 連接 Meta API</button>
             {!HAS_SHARED_STORAGE && (
-              <button className="mal-btn" onClick={() => { setTeamKeyInput(getTeamKey()); setShowTeamKeyModal(true); }}>
-                {cloudStatus === "connected" ? <><span className="mal-btn-emoji">☁️</span> {credentialName || "已連線"}</> : <><span className="mal-btn-emoji">🔑</span> 團隊密碼</>}
+              <button type="button" className="mal-btn" onClick={openDepartmentSwitcher} title="切換登入部門">
+                {cloudStatus === "connected"
+                  ? <><span className="mal-btn-emoji">🔄</span> 切換部門{credentialName ? "（" + credentialName + "）" : ""}</>
+                  : <><span className="mal-btn-emoji">🔑</span> 登入部門</>}
               </button>
             )}
           </div>
@@ -7007,10 +7047,10 @@ function MetaAdsLedger() {
       {showTeamKeyModal && (
         <div className="mal-modal-overlay">
           <div className="mal-modal">
-            <h3>登入身份密碼</h3>
+            <h3>切換部門</h3>
             <p className="mal-modal-sub">
-              這個網站部署在 Cloudflare 上,後台設定了 <code>TEAM_CREDENTIALS</code>(多組密碼,各自綁定能看的品牌)。
-              輸入你自己那組密碼,系統會自動判斷你能看哪些品牌的資料。密碼只存在你自己的瀏覽器裡,不會被同步出去。
+              輸入要切換到的部門密碼。每個部門只會載入自己有權限的品牌；切換成功後會立即重新整理品牌清單。
+              密碼只存在你自己的瀏覽器裡，不會同步給其他人。
             </p>
             <div className="mal-field">
               <label>密碼</label>
@@ -7031,7 +7071,7 @@ function MetaAdsLedger() {
             </p>
             <div className="mal-modal-actions">
               <button className="mal-btn" onClick={() => setShowTeamKeyModal(false)}>關閉</button>
-              <button className="mal-btn mal-btn-primary" onClick={saveTeamKey}>儲存並測試連線</button>
+              <button className="mal-btn mal-btn-primary" onClick={saveTeamKey}>登入並切換</button>
             </div>
           </div>
         </div>
