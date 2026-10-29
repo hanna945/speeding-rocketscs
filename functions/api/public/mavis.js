@@ -81,13 +81,11 @@ export async function onRequestGet({ env }) {
   try {
     const brand = await resolveBrand(env);
     const monthPrefix = `metaads-month:${brand.id}::`;
-    const weekPrefix = `metaads-week:${brand.id}::`;
     const ledgerPrefix = `metaads-ledger:${brand.id}::`;
     const [
-      months, weeks, ledger, cpaAll, cpcAll, adRatioAll, roasAll, budgetAll, productNamesAll,
+      months, ledger, cpaAll, cpcAll, adRatioAll, roasAll, budgetAll, productNamesAll,
     ] = await Promise.all([
       readPrefixMap(env, monthPrefix),
-      readPrefixMap(env, weekPrefix),
       readPrefixMap(env, ledgerPrefix),
       readJson(env, "meta-api-cpa-thresholds", {}),
       readJson(env, "meta-api-cpc-thresholds", {}),
@@ -100,7 +98,6 @@ export async function onRequestGet({ env }) {
       ok: true,
       brand,
       months,
-      weeks,
       ledger: sanitizeLedgerMap(ledger),
       settings: {
         cpaTarget: scopedSetting(cpaAll, brand.id),
