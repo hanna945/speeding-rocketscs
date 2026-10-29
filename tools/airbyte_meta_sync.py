@@ -10,7 +10,8 @@ It also keeps private incremental cache keys:
   airbyte-cache:<brandId>::YYYY-MM
   airbyte-meta:<brandId>
 
-The browser-side direct Meta API path remains available as a fallback.
+Scheduled syncs use the Airbyte Facebook Marketing connector only. The Meta Business SDK
+is retained as a manual emergency fallback and is never required by scheduled runs.
 """
 
 from __future__ import annotations
@@ -32,9 +33,6 @@ from airbyte_agent_sdk.connectors.facebook_marketing import FacebookMarketingCon
 from airbyte_agent_sdk.connectors.facebook_marketing.models import (
     FacebookMarketingServiceAccountKeyAuthenticationAuthConfig,
 )
-from facebook_business.api import FacebookAdsApi
-from facebook_business.adobjects.adaccount import AdAccount
-
 PURCHASE_ACTION_PRIORITY = [
     "omni_purchase",
     "purchase",
@@ -363,6 +361,25 @@ async def refresh_metadata(
     }
 
 
+def _load_meta_sdk():
+    """Lazy-load Meta Business SDK only for the explicit emergency fallback path."""
+    from facebook_business.api import FacebookAdsApi
+    from facebook_business.adobjects.adaccount import AdAccount
+    return FacebookAdsApi, AdAccount
+
+
+async def airbyte_account_info(
+    connector: FacebookMarketingConnector,
+    account_id: str,
+) -> dict[str, Any]:
+    """Read account currency/timezone through the same Airbyte connector used for sync."""
+    result = await connector.ad_accounts.get(
+        account_id=account_id.removeprefix("act_"),
+        fields="id,account_id,name,currency,timezone_name,timezone_offset_hours_utc",
+    )
+    return single_record(result)
+
+
 def _sdk_dict(value: Any) -> dict[str, Any]:
     if hasattr(value, "export_all_data"):
         data = value.export_all_data()
@@ -376,6 +393,7 @@ def _sdk_dict(value: Any) -> dict[str, Any]:
 
 
 def sdk_account_info(account_id: str) -> dict[str, Any]:
+    _, AdAccount = _load_meta_sdk()
     account = AdAccount("act_" + account_id.removeprefix("act_"))
     return _sdk_dict(account.api_get(fields=[
         "id", "account_id", "name", "currency", "timezone_name", "timezone_offset_hours_utc"
@@ -383,6 +401,7 @@ def sdk_account_info(account_id: str) -> dict[str, Any]:
 
 
 def sdk_active_campaigns(account_id: str) -> dict[str, dict[str, Any]]:
+    _, AdAccount = _load_meta_sdk()
     account = AdAccount("act_" + account_id.removeprefix("act_"))
     cursor = account.get_campaigns(
         fields=["id", "name", "objective", "effective_status", "status", "start_time", "created_time"],
@@ -398,7 +417,8 @@ def sdk_active_campaigns(account_id: str) -> dict[str, dict[str, Any]]:
 
 
 def sdk_today_active_insights(account_id: str, day: date) -> list[dict[str, Any]]:
-    """Use Meta's official SDK and server-side Insights filtering for ACTIVE campaigns only."""
+    """Emergency fallback: Meta SDK server-side Insights filtering for ACTIVE campaigns."""
+    _, AdAccount = _load_meta_sdk()
     account = AdAccount("act_" + account_id.removeprefix("act_"))
     cursor = account.get_insights(
         fields=[
@@ -854,9 +874,15 @@ async def sync_brand(
     lookback_days: int,
     metadata_max_age_hours: int,
     force_backfill_days: int,
+    engine: str,
 ) -> None:
     account_id = brand["id"]
-    account = sdk_account_info(account_id)
+    if engine == "sdk":
+        account = sdk_account_info(account_id)
+    else:
+        if connector is None:
+            raise RuntimeError("Airbyte connector is required for scheduled sync.")
+        account = await airbyte_account_info(connector, account_id)
     offset = as_float(account.get("timezone_offset_hours_utc"))
     local_today = (datetime.now(timezone.utc) + timedelta(hours=offset)).date()
     currency = str(account.get("currency") or "TWD")
@@ -866,8 +892,12 @@ async def sync_brand(
         if connector is None:
             raise RuntimeError("Airbyte connector is required for manual backfill.")
         active_campaigns = await fetch_active_campaigns(connector, account_id)
-    else:
+    elif engine == "sdk":
         active_campaigns = sdk_active_campaigns(account_id)
+    else:
+        if connector is None:
+            raise RuntimeError("Airbyte connector is required for scheduled sync.")
+        active_campaigns = await fetch_active_campaigns(connector, account_id)
     active_campaign_ids = set(active_campaigns.keys())
     print(f"[{brand['name']}] active campaigns={len(active_campaign_ids)}")
 
@@ -914,8 +944,22 @@ async def sync_brand(
         baseline = existing_month if isinstance(existing_month, dict) else {}
         kv_put(base_url, baseline_key, baseline)
 
-    print(f"[{brand['name']}] TODAY ONLY {local_today}, active campaigns={len(active_campaign_ids)}")
-    today_rows = sdk_today_active_insights(account_id, local_today)
+    print(
+        f"[{brand['name']}] TODAY ONLY {local_today}, engine={engine}, "
+        f"active campaigns={len(active_campaign_ids)}"
+    )
+    if engine == "sdk":
+        today_rows = sdk_today_active_insights(account_id, local_today)
+    else:
+        if connector is None:
+            raise RuntimeError("Airbyte connector is required for scheduled sync.")
+        today_rows = await fetch_daily_insights(
+            connector,
+            account_id,
+            local_today,
+            local_today,
+            active_campaign_ids,
+        )
 
     # Keep only today's rows in the incremental cache. Historical days are not re-read.
     current_cache = kv_get(base_url, cache_key(account_id, month_key(local_today)))
@@ -930,7 +974,7 @@ async def sync_brand(
     metadata = dict(metadata)
     metadata["campaigns"] = active_campaigns
     metadata["syncedAt"] = datetime.now(timezone.utc).isoformat()
-    metadata["syncMode"] = "active_campaign_status_only"
+    metadata["syncMode"] = f"{engine}_active_campaign_status_only"
     kv_put(base_url, meta_key(account_id), metadata)
 
     today_reach = {
@@ -958,6 +1002,9 @@ async def sync_brand(
         local_today,
         len(active_campaign_ids),
     )
+    month_record["source"] = "airbyte" if engine == "airbyte" else "meta_sdk_fallback"
+    month_record["syncEngine"] = engine
+    month_record["syncMode"] = f"today_active_only_{engine}"
     kv_put(base_url, month_key_value, month_record)
 
     print(
@@ -973,13 +1020,15 @@ async def amain(args: argparse.Namespace) -> int:
     # Fail early if GitHub OIDC is not available before touching Meta.
     github_oidc_token()
 
-    FacebookAdsApi.init(access_token=token)
-
     connector: FacebookMarketingConnector | None = None
-    if args.backfill_days > 0:
+    if args.engine == "airbyte" or args.backfill_days > 0:
         connector = FacebookMarketingConnector(
             auth_config=FacebookMarketingServiceAccountKeyAuthenticationAuthConfig(account_key=token)
         )
+
+    if args.engine == "sdk":
+        FacebookAdsApi, _ = _load_meta_sdk()
+        FacebookAdsApi.init(access_token=token)
 
     brands = fetch_brand_roster(base_url)
     if args.brand_id:
@@ -988,7 +1037,10 @@ async def amain(args: argparse.Namespace) -> int:
     if not brands:
         raise RuntimeError("No brands returned by the machine-only Airbyte roster endpoint.")
 
-    print(f"Central sync roster: {len(brands)} unique brand(s), auth=github_actions_oidc")
+    print(
+        f"Central sync roster: {len(brands)} unique brand(s), "
+        f"engine={args.engine}, auth=github_actions_oidc"
+    )
     errors = []
     for index, brand in enumerate(brands, start=1):
         print(f"({index}/{len(brands)}) {brand['name']} [{brand['id']}]")
@@ -998,6 +1050,7 @@ async def amain(args: argparse.Namespace) -> int:
                 lookback_days=args.lookback_days,
                 metadata_max_age_hours=args.metadata_max_age_hours,
                 force_backfill_days=args.backfill_days,
+                engine=args.engine,
             )
         except Exception as exc:
             errors.append((brand, exc))
@@ -1016,7 +1069,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lookback-days", type=int, default=1, help="Compatibility option. Scheduled sync reads today only; use --backfill-days for history.")
     parser.add_argument("--metadata-max-age-hours", type=int, default=24)
-    parser.add_argument("--backfill-days", type=int, default=0, help="Manual override for current-month backfill window.")
+    parser.add_argument("--backfill-days", type=int, default=0, help="Manual override for current-month Airbyte backfill window.")
+    parser.add_argument(
+        "--engine",
+        choices=("airbyte", "sdk"),
+        default="airbyte",
+        help="Sync engine. Scheduled runs use airbyte; sdk is emergency manual fallback only.",
+    )
     parser.add_argument("--brand-id", default="", help="Optional single account ID for manual debugging.")
     parser.add_argument("--brand-gap-seconds", type=float, default=3.0)
     return parser.parse_args()
