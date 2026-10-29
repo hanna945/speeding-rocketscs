@@ -83,9 +83,71 @@
 - 這個服務帳號的金鑰只申請「檢視」權限的 Sheets API scope,就算金鑰外洩,對方也不能用它修改你的試算表,但仍然能讀到內容,請一樣比照密碼規格保管,不要把 JSON 金鑰內容貼到聊天工具或公開的地方。
 - 如果之後想收回某份試算表的存取權,直接到那份 Sheet 的「共用」設定裡移除服務帳號的信箱即可,不影響其他試算表,也完全不涉及「一般存取權」那個公開設定。
 
-## 步驟 8(選用):設定公司共用的 Meta 權杖
+## 步驟 8(建議):啟用 Airbyte Meta 集中同步
 
-*(這一版沒有啟用這個功能——目前維持原本「每個人自己貼 Token,可以勾選記住」的方式。如果之後想改成大家共用一組、不用各自貼 Token,跟我說一聲,我可以幫你加回來。)*
+品牌報表已加入 Airbyte Facebook Marketing 的中央同步層。這層的目的不是取代既有報表，而是把所有品牌的 Meta 讀取集中到 GitHub Actions，寫回原本的 Cloudflare KV 格式。報表本身仍讀 `metaads-month:` / `metaads-week:`，因此既有月報、週報、業配分析、Evidence、Genius / Agents、同素材比較與 H&J Shopline 特例都不用重做。
+
+目前保留原本「瀏覽器直接連 Meta API」作為 fallback。Airbyte 啟用後，平常不需要每個人各自用瀏覽器重複抓同一批 Meta 資料。
+
+### 架構
+
+```
+Meta Marketing API
+       ↓
+Airbyte Facebook Marketing Agent Connector
+       ↓
+GitHub Actions（每 6 小時）
+       ↓
+Cloudflare KV
+       ↓
+品牌報表 / H&J / MAIVS / 撩撩既有分析
+```
+
+### 品牌清單不是寫死
+
+Airbyte 會呼叫受保護的 `/api/airbyte/brands`，從目前的 `TEAM_CREDENTIALS` 與共用 `meta-api-brands` 動態取得這個登入身份能看的品牌。現在品牌報表有 7 個品牌，但程式不會把數字 7 寫死；未來新增第 8 個品牌，只要加入既有品牌權限/清單就會自動納入。
+
+### GitHub 需要新增 2 個 Repository Secrets
+
+到 GitHub Repo → Settings → Secrets and variables → Actions → New repository secret：
+
+1. `META_SYSTEM_USER_TOKEN`
+   - Meta System User 的長效 Access Token。
+   - System User 必須被指派到要同步的所有 Meta 廣告帳號。
+   - Airbyte 官方建議 server-to-server 使用 System User Token。
+2. `REPORT_TEAM_KEY`
+   - 品牌報表目前 `TEAM_CREDENTIALS` 裡的一組 key。
+   - 這組身份必須能讀寫要同步的全部品牌；若使用 `brands:"*"` 最簡單。
+   - 如果目前還是舊的 `TEAM_SECRET` 模式，這裡填同一組 TEAM_SECRET 即可。
+
+可選 GitHub Repository Variable：
+
+- `REPORT_BASE_URL`：若未設定，預設使用 `https://speedingscs.pages.dev`。
+
+Secrets 沒有設定完成以前，排程會顯示「installed but dormant」並正常結束，不會破壞既有報表、也不會打 Meta API。
+
+### 同步策略
+
+- 排程：每 6 小時一次。
+- Insights 使用 `time_increment=1` 一次取得多天的逐日資料，不再像瀏覽器版整月每 4 天切一段反覆抓。
+- 最近 8 天會重新同步，用來吸收 Meta 歸因延遲造成的回補。
+- 舊日期保存在 `airbyte-cache:<brandId>::YYYY-MM`，不需要每次重新抓整個月。
+- Campaign / Ad Set / Ads / Creative metadata 最多每 24 小時更新一次。
+- 本月資料會重建成原本的 `metaads-month:<brandId>::YYYY-MM`。
+- 已完成的上週會寫成原本的 `metaads-week:<brandId>::YYYY-MM-DD`。
+- 畫面更新時間會標示「Airbyte 集中同步」。
+- 全程 READ ONLY 對 Meta，不會修改 Campaign、預算、開關或素材。
+
+### 手動執行 / 除錯
+
+GitHub → Actions → **Airbyte Meta Central Sync** → Run workflow。
+
+可以：
+- 留空 Brand ID：同步目前身份可見的所有品牌。
+- 填 Brand ID：只測一個品牌。
+- `backfill_days`：需要重新補近期資料時指定天數；0 代表使用正常 incremental cache / lookback 邏輯。
+
+修改前備份分支：`backup/pre-airbyte-central-sync-20261029`。
 
 ## 步驟 9(選用):比共用密碼更好的做法——Cloudflare Access
 
