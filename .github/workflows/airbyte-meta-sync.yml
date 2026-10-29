@@ -91,4 +91,5 @@ jobs:
             --metadata-max-age-hours 24 \
             --brand-id "${{ github.event.inputs.brand_id || '' }}" \
             --backfill-days "${{ github.event.inputs.backfill_days || '0' }}" \
+            --reconcile-days 2 \
             --engine "${{ github.event.inputs.engine || 'airbyte' }}"
