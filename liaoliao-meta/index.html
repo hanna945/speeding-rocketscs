@@ -6557,7 +6557,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
 
             <CollapsibleSectionTitle className="mal-section-title">逐月業配廣告明細</CollapsibleSectionTitle>
             {sponsorMonthsWithData.map((m) => (
-              <details key={m.monthKey} className="mal-sponsor-month" open={m.monthKey === currentCalendarMonth}>
+              <details key={m.monthKey} className="mal-sponsor-month" defaultOpen={m.monthKey === currentCalendarMonth}>
                 <summary className="mal-sponsor-month-summary">
                   <span className="mal-sponsor-month-title">{m.month}</span>
                   <span className="mal-section-count">
