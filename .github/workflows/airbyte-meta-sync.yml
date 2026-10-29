@@ -53,12 +53,13 @@ jobs:
         env:
           META_SYSTEM_USER_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
           REPORT_TEAM_KEY: ${{ secrets.REPORT_TEAM_KEY }}
+          REPORT_TEAM_KEYS_JSON: ${{ secrets.REPORT_TEAM_KEYS_JSON }}
         run: |
-          if [ -n "$META_SYSTEM_USER_TOKEN" ] && [ -n "$REPORT_TEAM_KEY" ]; then
+          if [ -n "$META_SYSTEM_USER_TOKEN" ] && { [ -n "$REPORT_TEAM_KEYS_JSON" ] || [ -n "$REPORT_TEAM_KEY" ]; }; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Airbyte sync is installed but dormant. Add META_SYSTEM_USER_TOKEN and REPORT_TEAM_KEY repository secrets to activate it."
+            echo "Airbyte sync is installed but dormant. Add META_SYSTEM_USER_TOKEN plus REPORT_TEAM_KEYS_JSON (preferred) or REPORT_TEAM_KEY."
           fi
 
       - name: Install Airbyte Agent SDK
@@ -70,6 +71,7 @@ jobs:
         env:
           META_SYSTEM_USER_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
           REPORT_TEAM_KEY: ${{ secrets.REPORT_TEAM_KEY }}
+          REPORT_TEAM_KEYS_JSON: ${{ secrets.REPORT_TEAM_KEYS_JSON }}
           REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
         run: |
           python tools/airbyte_meta_sync.py             --lookback-days 8             --metadata-max-age-hours 24             --brand-id "${{ github.event.inputs.brand_id || '' }}"             --backfill-days "${{ github.event.inputs.backfill_days || '0' }}"
