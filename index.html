@@ -1021,9 +1021,7 @@ const cloudStorage = {
 };
 
 const REPORT_PLAN_API = "/api/public/report-plans";
-function isReportPlanKey(key) {
-  return /^\b(?:weekly-plan|monthly-plan):[^:]+::\d{4}-\d{2}(?:-\d{2})?$/.test(String(key || ""));
-}
+function isReportPlanKey(key) { return /^\\bmonthly-plan:[^:]+::\\d{4}-\\d{2}$/.test(String(key || "")); }
 async function sharedReportPlanGet(key) {
   const res = await fetch(`${REPORT_PLAN_API}?key=${encodeURIComponent(key)}`, { cache: "no-store" });
   if (!res.ok) throw new Error("report plan get failed: " + res.status);
@@ -4986,8 +4984,6 @@ function MetaAdsLedger() {
     };
   }
 
-  // 自動回溯抓取過去 N 週(週一~週日),依序一週一週抓、中間間隔 4 秒避免觸發 Meta 頻率限制。
-  // 每一週都是獨立呼叫 fetchInsightsForRange,所以就算某一週失敗,也不會影響其他週的結果。
   // ---------- 投放中廣告成效分類(成效好 / 成效正常 / 成效不好 / 學習中) ----------
   const LEARNING_MIN_CONVERSIONS = 10; // 轉單數不足,還看不出真實成效,先歸類為「學習中」
   const PERF_LABELS = { good: "成效好", normal: "成效正常", poor: "成效不好", learning: "學習中" };
