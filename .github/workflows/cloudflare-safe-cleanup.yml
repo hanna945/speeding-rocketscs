@@ -1,0 +1,47 @@
+name: Cloudflare Safe Cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cloudflare-safe-cleanup.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove verified duplicate Cloudflare resources
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CF_API_TOKEN:-}"
+          test -n "${CF_ACCOUNT_ID:-}"
+          api="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID"
+
+          cf_delete() {
+            local path="$1"
+            local label="$2"
+            echo "DELETE $label"
+            body="$(curl -sS -X DELETE "$api$path" -H "Authorization: Bearer $CF_API_TOKEN")"
+            echo "$body" | jq -c '{success,errors,messages,result}'
+            echo "$body" | jq -e '.success == true' >/dev/null
+          }
+
+          echo "Protected resources: speedingscs, hj-brand-report, brand-report-cron-sync, shopline-proxy, REPORT_KV"
+
+          cf_delete "/pages/projects/hj-shopline-report" "Pages hj-shopline-report"
+          cf_delete "/pages/projects/rocket" "Pages rocket"
+          cf_delete "/pages/projects/speeding-rocket" "Pages speeding-rocket"
+          cf_delete "/pages/projects/speedingrocket" "Pages speedingrocket"
+
+          cf_delete "/workers/scripts/brand-report-cloudflare" "Worker brand-report-cloudflare"
+
+          cf_delete "/storage/kv/namespaces/d1c488eadc704d319ee762138f718b08" "KV speed-kv (verified 0 keys)"
+
+          echo "CLEANUP_COMPLETE"
