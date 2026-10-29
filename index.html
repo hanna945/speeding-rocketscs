@@ -1090,6 +1090,139 @@
     .mal-presentation-kpi-5,.mal-presentation-plan-grid,.mal-presentation-callout-row { grid-template-columns:1fr; }
   }
 
+
+  /* Monthly presentation v4: adaptive content density */
+  .mal-presentation-fill-table {
+    flex:1;
+    min-height:0;
+    display:flex;
+  }
+  .mal-presentation-fill-table > table {
+    width:100%;
+    height:100%;
+  }
+  .mal-presentation-density-sparse .mal-presentation-table th,
+  .mal-presentation-table-wrap.mal-presentation-density-sparse .mal-presentation-table th {
+    font-size:16px;
+    padding:18px 18px;
+  }
+  .mal-presentation-density-sparse .mal-presentation-table td,
+  .mal-presentation-table-wrap.mal-presentation-density-sparse .mal-presentation-table td {
+    font-size:19px;
+    padding:20px 18px;
+  }
+  .mal-presentation-density-sparse .mal-presentation-table td.num,
+  .mal-presentation-table-wrap.mal-presentation-density-sparse .mal-presentation-table td.num {
+    font-size:18px;
+  }
+  .mal-presentation-density-roomy .mal-presentation-table th,
+  .mal-presentation-table-wrap.mal-presentation-density-roomy .mal-presentation-table th {
+    font-size:14px;
+    padding:14px 14px;
+  }
+  .mal-presentation-density-roomy .mal-presentation-table td,
+  .mal-presentation-table-wrap.mal-presentation-density-roomy .mal-presentation-table td {
+    font-size:17px;
+    padding:15px 14px;
+  }
+  .mal-presentation-density-roomy .mal-presentation-table td.num,
+  .mal-presentation-table-wrap.mal-presentation-density-roomy .mal-presentation-table td.num {
+    font-size:16px;
+  }
+  .mal-presentation-density-normal .mal-presentation-table th,
+  .mal-presentation-table-wrap.mal-presentation-density-normal .mal-presentation-table th {
+    font-size:13px;
+    padding:12px 11px;
+  }
+  .mal-presentation-density-normal .mal-presentation-table td,
+  .mal-presentation-table-wrap.mal-presentation-density-normal .mal-presentation-table td {
+    font-size:15px;
+    padding:12px 11px;
+  }
+  .mal-presentation-density-normal .mal-presentation-table td.num,
+  .mal-presentation-table-wrap.mal-presentation-density-normal .mal-presentation-table td.num {
+    font-size:14px;
+  }
+  .mal-presentation-density-dense .mal-presentation-table th,
+  .mal-presentation-table-wrap.mal-presentation-density-dense .mal-presentation-table th {
+    font-size:12px;
+    padding:9px 9px;
+  }
+  .mal-presentation-density-dense .mal-presentation-table td,
+  .mal-presentation-table-wrap.mal-presentation-density-dense .mal-presentation-table td {
+    font-size:13px;
+    padding:9px 9px;
+  }
+  .mal-presentation-density-dense .mal-presentation-table td.num,
+  .mal-presentation-table-wrap.mal-presentation-density-dense .mal-presentation-table td.num {
+    font-size:12.5px;
+  }
+
+  .mal-presentation-density-sparse .mal-presentation-roas-meter-value { font-size:15px; }
+  .mal-presentation-density-roomy .mal-presentation-roas-meter-value { font-size:14px; }
+  .mal-presentation-density-sparse .mal-presentation-roas-meter-track { height:11px; }
+  .mal-presentation-density-roomy .mal-presentation-roas-meter-track { height:10px; }
+
+  .mal-presentation-channel-layout.mal-presentation-density-sparse,
+  .mal-presentation-channel-layout.mal-presentation-density-roomy {
+    align-items:stretch;
+  }
+  .mal-presentation-channel-layout.mal-presentation-density-sparse .mal-presentation-compact-card,
+  .mal-presentation-channel-layout.mal-presentation-density-roomy .mal-presentation-compact-card {
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+  }
+  .mal-presentation-channel-layout.mal-presentation-density-sparse .mal-presentation-compact-card h3 {
+    font-size:27px;
+    margin-bottom:18px;
+  }
+  .mal-presentation-channel-layout.mal-presentation-density-sparse .mal-presentation-mini-stat {
+    padding:22px 20px;
+  }
+  .mal-presentation-channel-layout.mal-presentation-density-sparse .mal-presentation-mini-stat-label {
+    font-size:16px;
+  }
+  .mal-presentation-channel-layout.mal-presentation-density-sparse .mal-presentation-mini-stat-value {
+    font-size:34px;
+  }
+  .mal-presentation-channel-layout.mal-presentation-density-roomy .mal-presentation-mini-stat-value {
+    font-size:29px;
+  }
+  .mal-presentation-channel-layout.mal-presentation-density-sparse .mal-presentation-section-note,
+  .mal-presentation-channel-layout.mal-presentation-density-roomy .mal-presentation-section-note {
+    font-size:17px;
+    line-height:1.65;
+  }
+
+  .mal-presentation-plan-grid.mal-presentation-density-sparse,
+  .mal-presentation-plan-grid.mal-presentation-density-roomy {
+    flex:1;
+    grid-auto-rows:minmax(0,1fr);
+    align-content:stretch;
+  }
+  .mal-presentation-plan-grid.mal-presentation-density-sparse .mal-presentation-plan-card-v3 {
+    padding:24px 26px;
+  }
+  .mal-presentation-plan-grid.mal-presentation-density-sparse .mal-presentation-plan-card-v3 h3 {
+    font-size:24px;
+  }
+  .mal-presentation-plan-grid.mal-presentation-density-sparse .mal-presentation-plan-card-v3 p {
+    font-size:18px;
+    line-height:1.6;
+  }
+  .mal-presentation-plan-grid.mal-presentation-density-roomy .mal-presentation-plan-card-v3 h3 {
+    font-size:21px;
+  }
+  .mal-presentation-plan-grid.mal-presentation-density-roomy .mal-presentation-plan-card-v3 p {
+    font-size:17px;
+  }
+
+  .mal-presentation-slide .mal-presentation-section-head p {
+    font-size:17px;
+    line-height:1.55;
+  }
+
 </style>
 </head>
 <body>
@@ -3922,6 +4055,15 @@ function ReportTextLinkChips({ text }) {
   );
 }
 
+
+function presentationDensityClass(count) {
+  const n = Number(count || 0);
+  if (n <= 4) return "mal-presentation-density-sparse";
+  if (n <= 8) return "mal-presentation-density-roomy";
+  if (n <= 11) return "mal-presentation-density-normal";
+  return "mal-presentation-density-dense";
+}
+
 function PresentationSectionHead({ title, subtitle }) {
   return (
     <div className="mal-presentation-section-head">
@@ -4145,8 +4287,9 @@ function MonthlyPresentation({
   function displaySeriesName(code){ return productNames && productNames[code] ? code+"("+productNames[code]+")" : code; }
 
   function renderSeriesTable(chunk){
+    const densityClass = presentationDensityClass(chunk.length);
     return (
-      <div className="mal-presentation-table-wrap">
+      <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + densityClass}>
         <table className="mal-presentation-table mal-presentation-series-table-v3">
           <thead><tr><th>系列</th><th>業績</th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>CPA</th><th>成交</th><th>帳面利潤</th><th>客單價</th><th>判斷</th></tr></thead>
           <tbody>{chunk.map((r)=>{
@@ -4171,8 +4314,9 @@ function MonthlyPresentation({
   }
 
   function renderCampaignTable(chunk){
+    const densityClass = presentationDensityClass(chunk.length);
     return (
-      <div className="mal-presentation-table-wrap">
+      <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + densityClass}>
         <table className="mal-presentation-table compact">
           <thead><tr><th>Campaign</th><th>花費</th><th>Meta 營收</th><th>轉單</th><th>ROAS</th></tr></thead>
           <tbody>{chunk.length?chunk.map((r)=>{
@@ -4226,8 +4370,8 @@ function MonthlyPresentation({
     node:(
       <div className="mal-presentation-slide">
         <PresentationSectionHead title="營運與通路成效" subtitle="把一頁式投放、官網與其他通路放在同一張月度經營視角。" />
-        <div className="mal-presentation-channel-layout">
-          <div className="mal-presentation-table-wrap">
+        <div className={"mal-presentation-channel-layout " + presentationDensityClass(channelRows.length)}>
+          <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(channelRows.length)}>
             <table className="mal-presentation-table compact">
               <thead><tr><th>來源</th><th>類型</th><th>營收</th><th>花費</th><th>帳面利潤</th><th>ROAS</th></tr></thead>
               <tbody>{channelRows.map((r)=><tr key={r.code}><td><strong>{r.code}</strong></td><td>{r.type||"通路"}</td><td className="num">{fmtMoney(r.revenue||0,currencyCode)}</td><td className="num">{Number(r.spend||0)>0?fmtMoney(r.spend,currencyCode):"—"}</td><td className="num">{r.profit!==null&&r.profit!==undefined?fmtMoney(r.profit,currencyCode):"—"}</td><td className="num">{r.roas!==null&&r.roas!==undefined?r.roas.toFixed(2)+"x":"—"}</td></tr>)}</tbody>
@@ -4305,7 +4449,7 @@ function MonthlyPresentation({
             title={"月報告"+(planChunks.length>1?" "+(idx+1)+"/"+planChunks.length:"")}
             subtitle="素材調整方向、專案進度、後續操作方向使用原月報內容；文字中的網址可直接點開。"
           />
-          <div className="mal-presentation-plan-grid">
+          <div className={"mal-presentation-plan-grid " + presentationDensityClass(chunk.length)}>
             {chunk.length?chunk.map((item,i)=><div className="mal-presentation-plan-card-v3" key={item.type+"-"+idx+"-"+i}>
               <span className="mal-presentation-plan-type">{item.type}</span>
               <h3>{item.title}</h3>
@@ -4333,7 +4477,7 @@ function MonthlyPresentation({
               {(nextProjects||[]).slice(0,2).map((p,i)=><div className="mal-presentation-action-item" key={"p"+i}><strong>{"專案｜"+(p.name||"未命名專案")}</strong><div>{[p.progress,p.dueDate].filter(Boolean).join("｜")}</div>{p.link&&/^https?:\/\//.test(String(p.link).trim())?<a className="mal-presentation-link-chip" href={String(p.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往</a>:null}</div>)}
             </div>
           </div>
-          <div className="mal-presentation-table-wrap">
+          <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(historyRows.length)}>
             <table className="mal-presentation-table">
               <thead><tr><th>月份</th><th>Meta 廣告費</th><th>Meta 轉單</th><th>Meta 營收</th><th>CPA</th><th>ROAS</th></tr></thead>
               <tbody>{historyRows.slice().reverse().map((r)=>{
