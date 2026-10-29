@@ -1039,6 +1039,57 @@
     .mal-presentation-dot-row { display:none; }
   }
 
+
+  /* Monthly presentation v3: story-first composition */
+  .mal-presentation-kpi-5 { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; }
+  .mal-presentation-kpi-5 .mal-presentation-card { min-height:116px; padding:18px 20px; }
+  .mal-presentation-kpi-5 .mal-presentation-card-value { font-size:clamp(29px,3vw,46px); }
+  .mal-presentation-compact-card { background:rgba(255,255,255,.74); border:1px solid rgba(137,113,90,.17); border-radius:18px; padding:18px 20px; min-width:0; }
+  .mal-presentation-compact-card h3 { margin:0 0 10px; font-family:'Noto Serif TC',serif; font-size:20px; color:#49392f; }
+  .mal-presentation-channel-layout { display:grid; grid-template-columns:1.35fr .65fr; gap:18px; flex:1; min-height:0; }
+  .mal-presentation-mini-stats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  .mal-presentation-mini-stat { padding:16px 17px; border-radius:16px; background:#f4ece2; border:1px solid rgba(137,113,90,.14); }
+  .mal-presentation-mini-stat-label { font-size:13px; font-weight:700; color:#8c7562; }
+  .mal-presentation-mini-stat-value { margin-top:6px; font:700 25px 'IBM Plex Mono',monospace; color:#48392e; }
+  .mal-presentation-series-table-v3 { font-size:14px; }
+  .mal-presentation-series-table-v3 th,.mal-presentation-series-table-v3 td { padding:10px 10px; }
+  .mal-presentation-series-table-v3 th { font-size:12px; }
+  .mal-presentation-series-table-v3 td.num { font-size:13px; }
+  .mal-presentation-series-table-v3 td:first-child { font-size:16px; }
+  .mal-presentation-roas-meter { min-width:94px; display:grid; grid-template-columns:1fr auto; gap:7px; align-items:center; }
+  .mal-presentation-roas-meter-track { height:8px; border-radius:999px; background:#eadfd3; overflow:hidden; }
+  .mal-presentation-roas-meter-fill { height:100%; border-radius:999px; background:#8d9079; }
+  .mal-presentation-roas-meter-fill.warn { background:#b18a55; }
+  .mal-presentation-roas-meter-fill.bad { background:#b86759; }
+  .mal-presentation-roas-meter-value { font:700 12px 'IBM Plex Mono',monospace; color:#5a493d; white-space:nowrap; }
+  .mal-presentation-section-note { margin:0 0 14px; font-size:15px; line-height:1.55; color:#7d6b5c; }
+  .mal-presentation-marketing-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:15px; }
+  .mal-presentation-marketing-kpis .mal-presentation-mini-stat { min-height:86px; }
+  .mal-presentation-callout-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+  .mal-presentation-callout { padding:16px 18px; border-radius:16px; background:linear-gradient(135deg,rgba(241,232,221,.92),rgba(251,247,241,.9)); border:1px solid rgba(137,113,90,.15); font-size:15px; line-height:1.5; }
+  .mal-presentation-callout strong { display:block; margin-bottom:5px; color:#4a392f; font-size:16px; }
+  .mal-presentation-plan-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; align-content:start; }
+  .mal-presentation-plan-type { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; margin-bottom:7px; border-radius:999px; background:#eee3d7; color:#785c48; font-size:12px; font-weight:800; }
+  .mal-presentation-plan-card-v3 { min-height:128px; padding:17px 19px; border-radius:17px; background:rgba(255,255,255,.75); border:1px solid rgba(137,113,90,.16); }
+  .mal-presentation-plan-card-v3 h3 { margin:0 0 7px; font-size:18px; color:#44362d; }
+  .mal-presentation-plan-card-v3 p { margin:0; font-size:15px; line-height:1.5; color:#67584d; }
+  .mal-presentation-history-grid { display:grid; grid-template-columns:.92fr 1.08fr; gap:18px; flex:1; min-height:0; }
+  .mal-presentation-action-stack { display:flex; flex-direction:column; gap:11px; }
+  .mal-presentation-action-item { padding:15px 17px; border-radius:16px; background:rgba(255,255,255,.74); border:1px solid rgba(137,113,90,.15); }
+  .mal-presentation-action-item strong { display:block; font-size:17px; color:#45372d; margin-bottom:5px; }
+  .mal-presentation-action-item div { font-size:14px; line-height:1.45; color:#6d5d50; }
+  .mal-presentation-table.compact th,.mal-presentation-table.compact td { padding:11px 12px; }
+  .mal-presentation-table.compact { font-size:14px; }
+  .mal-presentation-table.compact td.num { font-size:13px; }
+  @media (max-width:980px) {
+    .mal-presentation-kpi-5 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .mal-presentation-channel-layout,.mal-presentation-history-grid { grid-template-columns:1fr; }
+    .mal-presentation-marketing-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  }
+  @media (max-width:640px) {
+    .mal-presentation-kpi-5,.mal-presentation-plan-grid,.mal-presentation-callout-row { grid-template-columns:1fr; }
+  }
+
 </style>
 </head>
 <body>
@@ -3882,6 +3933,7 @@ function PresentationSectionHead({ title, subtitle }) {
   );
 }
 
+
 function MonthlyPresentation({
   currentRecord,
   previousRecord,
@@ -3892,6 +3944,8 @@ function MonthlyPresentation({
   monthKey,
   roasTarget = 3,
   cpaTarget = null,
+  monthlyBudget = null,
+  productNames = {},
   sponsorStats = null,
   topProducts = [],
   history = [],
@@ -3931,196 +3985,236 @@ function MonthlyPresentation({
   const currentPlan = planState.current || { actionItems: [], projects: [], materialIssues: [] };
   const nextPlan = planState.next || { actionItems: [], projects: [], materialIssues: [] };
 
-  const metaBreakdown = useMemo(() => buildProductBreakdown(ads, 500), [ads]);
-  const merged = useMemo(
-    () => mergeChannelBreakdown(metaBreakdown.rows, metaBreakdown.totalRevenue, metaBreakdown.totalSpend, ledgerAgg),
-    [metaBreakdown, ledgerAgg]
+  const ledgerBreakdown = useMemo(
+    () => ledgerAgg ? buildLedgerProductBreakdown(ledgerAgg) : { rows: [], officialSiteRows: [], externalChannelRows: [] },
+    [ledgerAgg]
   );
-  const previousMerged = useMemo(() => {
-    if (!previousRecord && !previousLedgerAgg) return null;
-    const prevAds = previousRecord && Array.isArray(previousRecord.ads) ? previousRecord.ads : [];
-    const prevMeta = buildProductBreakdown(prevAds, 500);
-    return mergeChannelBreakdown(prevMeta.rows, prevMeta.totalRevenue, prevMeta.totalSpend, previousLedgerAgg);
-  }, [previousRecord, previousLedgerAgg]);
+  const previousBreakdown = useMemo(
+    () => previousLedgerAgg ? buildLedgerProductBreakdown(previousLedgerAgg) : { rows: [], officialSiteRows: [], externalChannelRows: [] },
+    [previousLedgerAgg]
+  );
 
-  const metaMetrics = computeDeliveryMetrics(safeRecord);
-  const prevMetaMetrics = computeDeliveryMetrics(previousRecord);
-  const revenueDelta = previousMerged ? metricPctDelta(merged.grandTotalRevenue, previousMerged.grandTotalRevenue) : null;
-  const spendDelta = previousMerged ? metricPctDelta(merged.grandTotalSpend, previousMerged.grandTotalSpend) : null;
-  const metaRoasDelta = prevMetaMetrics ? metricPctDelta(metaMetrics.roas, prevMetaMetrics.roas) : null;
-  const conversionDelta = prevMetaMetrics ? metricPctDelta(metaMetrics.conversions, prevMetaMetrics.conversions) : null;
-
-  const ledgerRows = useMemo(() => {
-    if (!ledgerAgg) return [];
-    const b = buildLedgerProductBreakdown(ledgerAgg);
-    return (b.rows || []).map((r) => ({
+  function enrichLedgerRows(rows) {
+    const base = (rows || []).map((r) => ({
       ...r,
       roas: r.spend > 0 ? r.revenue / r.spend : null,
       cpa: r.conversions > 0 ? r.spend / r.conversions : null,
       aovCalc: r.conversions > 0 ? r.revenue / r.conversions : r.aov,
       spendShare: 0,
     }));
-  }, [ledgerAgg]);
+    const spend = base.reduce((sum,r)=>sum+Number(r.spend||0),0);
+    base.forEach((r)=>{ r.spendShare = spend > 0 ? (Number(r.spend||0)/spend)*100 : 0; });
+    return base;
+  }
 
-  const ledgerTotalSpend = ledgerRows.reduce((sum, r) => sum + Number(r.spend || 0), 0);
-  ledgerRows.forEach((r) => { r.spendShare = ledgerTotalSpend > 0 ? (r.spend / ledgerTotalSpend) * 100 : 0; });
+  const ledgerRows = useMemo(() => enrichLedgerRows(ledgerBreakdown.rows), [ledgerBreakdown]);
+  const previousLedgerRows = useMemo(() => enrichLedgerRows(previousBreakdown.rows), [previousBreakdown]);
+
+  function performanceTotals(rows) {
+    const revenue = (rows || []).reduce((sum,r)=>sum+Number(r.revenue||0),0);
+    const spend = (rows || []).reduce((sum,r)=>sum+Number(r.spend||0),0);
+    const profit = (rows || []).reduce((sum,r)=>sum+Number(r.profit||0),0);
+    const conversions = (rows || []).reduce((sum,r)=>sum+Number(r.conversions||0),0);
+    return { revenue, spend, profit, conversions, roas:spend > 0 ? revenue/spend : null };
+  }
+
+  const perf = useMemo(() => performanceTotals(ledgerRows), [ledgerRows]);
+  const prevPerf = useMemo(() => performanceTotals(previousLedgerRows), [previousLedgerRows]);
+  const revenueDelta = previousLedgerRows.length ? metricPctDelta(perf.revenue, prevPerf.revenue) : null;
+  const spendDelta = previousLedgerRows.length ? metricPctDelta(perf.spend, prevPerf.spend) : null;
+  const profitDelta = previousLedgerRows.length ? metricPctDelta(perf.profit, prevPerf.profit) : null;
+  const conversionDelta = previousLedgerRows.length ? metricPctDelta(perf.conversions, prevPerf.conversions) : null;
+  const roasDelta = previousLedgerRows.length ? metricPctDelta(perf.roas, prevPerf.roas) : null;
+
   const ledgerJudgments = useMemo(() => generateRuleJudgments(ledgerRows, roasTarget || 3), [ledgerRows, roasTarget]);
-  const ledgerSorted = useMemo(() => ledgerRows.slice().sort((a,b) => {
-    if ((b.spend > 0) !== (a.spend > 0)) return b.spend > 0 ? 1 : -1;
-    if (b.spend !== a.spend) return b.spend - a.spend;
+  const seriesRows = useMemo(() => ledgerRows.slice().sort((a,b) => {
+    if ((a.spend > 0) !== (b.spend > 0)) return a.spend > 0 ? -1 : 1;
+    if (a.spend > 0 && b.spend > 0) return (b.roas || 0) - (a.roas || 0);
     return b.revenue - a.revenue;
   }), [ledgerRows]);
+  const maxSeriesRoas = Math.max(1, ...seriesRows.filter((r)=>r.roas !== null).map((r)=>Number(r.roas||0)));
 
-  const ledgerConversions = ledgerRows.reduce((sum, r) => sum + Number(r.conversions || 0), 0);
-  const ledgerRevenue = ledgerAgg && ledgerAgg.overall ? Number(ledgerAgg.overall.revenue || 0) : merged.grandTotalRevenue;
-  const ledgerSpend = ledgerAgg && ledgerAgg.overall ? Number(ledgerAgg.overall.adSpend || 0) : merged.grandTotalSpend;
-  const ledgerProfit = ledgerAgg && ledgerAgg.overall ? Number(ledgerAgg.overall.profit || 0) : (ledgerRevenue - ledgerSpend);
-  const ledgerRoas = ledgerSpend > 0 ? ledgerRevenue / ledgerSpend : null;
+  const seriesChunks = useMemo(() => {
+    if (seriesRows.length <= 14) return [seriesRows];
+    const out = [];
+    for (let i=0;i<seriesRows.length;i+=12) out.push(seriesRows.slice(i,i+12));
+    return out;
+  }, [seriesRows]);
 
-  const roasBarRows = ledgerRows.filter((r) => r.spend > 0 && r.roas !== null).sort((a,b) => b.roas - a.roas).slice(0,5);
-  const maxRoas = Math.max(1, ...roasBarRows.map((r) => Number(r.roas || 0)));
+  const metaMetrics = computeDeliveryMetrics(safeRecord);
 
-  const planning = useMemo(
-    () => generateRulePlanning(metaBreakdown.rows, metaBreakdown.totalRevenue, metaBreakdown.totalSpend, roasTarget || 3, currencyCode),
-    [metaBreakdown, roasTarget, currencyCode]
-  );
+  const channelRows = useMemo(() => {
+    const onePage = {
+      code:"一頁式系列合計",
+      revenue:perf.revenue,
+      spend:perf.spend,
+      profit:perf.profit,
+      conversions:perf.conversions,
+      roas:perf.roas,
+      type:"一頁式",
+    };
+    const officialSet = new Set((ledgerBreakdown.officialSiteRows || []).map((x)=>x.code));
+    const others = [...(ledgerBreakdown.officialSiteRows || []), ...(ledgerBreakdown.externalChannelRows || [])]
+      .map((r)=>({
+        ...r,
+        roas:r.spend > 0 ? r.revenue/r.spend : null,
+        type:officialSet.has(r.code) ? "官網/自有通路" : "外部通路",
+      }))
+      .filter((r)=>Number(r.revenue||0)!==0 || Number(r.spend||0)!==0 || Number(r.profit||0)!==0);
+    return [onePage, ...others].sort((a,b)=>Number(b.revenue||0)-Number(a.revenue||0));
+  }, [ledgerBreakdown, perf]);
 
   const campaignRows = useMemo(() => {
     const map = {};
     ads.forEach((ad) => {
       const key = ad.campaign || "(未分類活動)";
-      if (!map[key]) map[key] = { name:key, spend:0, revenue:0, conversions:0, count:0, postId:ad.postId || "", adId:(ad.adIds && ad.adIds[0]) || ad.adId || "" };
+      if (!map[key]) map[key] = { name:key, spend:0, revenue:0, conversions:0, postId:ad.postId || "", adId:(ad.adIds && ad.adIds[0]) || ad.adId || "" };
       map[key].spend += Number(ad.spend || 0);
       map[key].revenue += Number(ad.revenue || 0);
       map[key].conversions += Number(ad.conversions || 0);
-      map[key].count += 1;
       if (!map[key].postId && ad.postId) map[key].postId = ad.postId;
       if (!map[key].adId && ad.adIds && ad.adIds[0]) map[key].adId = ad.adIds[0];
     });
-    return Object.values(map).map((r) => ({ ...r, roas:r.spend > 0 ? r.revenue / r.spend : null })).sort((a,b) => b.revenue - a.revenue);
+    return Object.values(map)
+      .filter((r)=>r.spend>0 || r.revenue>0)
+      .map((r)=>({ ...r, roas:r.spend > 0 ? r.revenue/r.spend : null }))
+      .sort((a,b)=>b.spend-a.spend);
   }, [ads]);
 
-  const topCampaigns = campaignRows.slice(0,5);
-  const riskCampaigns = campaignRows.filter((r) => r.spend > 0 && (r.revenue <= 0 || (r.roas !== null && r.roas < (roasTarget || 3) * .75))).sort((a,b) => b.spend - a.spend).slice(0,5);
+  const campaignChunks = useMemo(() => {
+    if (campaignRows.length <= 12) return [campaignRows];
+    const out=[]; for(let i=0;i<campaignRows.length;i+=12) out.push(campaignRows.slice(i,i+12)); return out;
+  }, [campaignRows]);
 
-  const newAds = useMemo(() => ads.filter((ad) => ad.startDate && monthKey && String(ad.startDate).slice(0,7) === monthKey), [ads, monthKey]);
-  const newAdRows = useMemo(() => newAds.slice().sort((a,b) => Number(b.revenue || 0) - Number(a.revenue || 0)).slice(0,6), [newAds]);
+  const newAds = useMemo(() => ads.filter((ad)=>ad.startDate && monthKey && String(ad.startDate).slice(0,7)===monthKey), [ads,monthKey]);
+  const newAdsSorted = useMemo(() => newAds.slice().sort((a,b)=>Number(b.spend||0)-Number(a.spend||0)), [newAds]);
 
   const sponsor = useMemo(() => {
     if (sponsorStats) return sponsorStats;
-    const rows = ads.filter((ad) => String(ad.name || "").includes("業配") || String(ad.campaign || "").includes("業配"));
-    const spend = rows.reduce((sum, ad) => sum + Number(ad.spend || 0), 0);
-    const revenue = rows.reduce((sum, ad) => sum + Number(ad.revenue || 0), 0);
-    const conversions = rows.reduce((sum, ad) => sum + Number(ad.conversions || 0), 0);
-    return { spend, revenue, conversions, roas:spend > 0 ? revenue / spend : null, cpa:conversions > 0 ? spend / conversions : null, ads:rows };
-  }, [sponsorStats, ads]);
+    const rows = ads.filter((ad)=>String(ad.name||"").includes("業配") || String(ad.campaign||"").includes("業配"));
+    const spend=rows.reduce((sum,ad)=>sum+Number(ad.spend||0),0);
+    const revenue=rows.reduce((sum,ad)=>sum+Number(ad.revenue||0),0);
+    const conversions=rows.reduce((sum,ad)=>sum+Number(ad.conversions||0),0);
+    return { spend,revenue,conversions,roas:spend>0?revenue/spend:null,ads:rows };
+  }, [sponsorStats,ads]);
 
-  const sponsorTop = useMemo(() => {
-    const rows = sponsor && Array.isArray(sponsor.ads) ? sponsor.ads : [];
-    return rows.map((ad) => ({ ...ad, roasCalc:Number(ad.spend || 0) > 0 ? Number(ad.revenue || 0) / Number(ad.spend || 0) : null }))
-      .sort((a,b) => Number(b.revenue || 0) - Number(a.revenue || 0)).slice(0,6);
+  const sponsorAds = useMemo(() => {
+    const rows=sponsor && Array.isArray(sponsor.ads)?sponsor.ads:[];
+    return rows.map((ad)=>({...ad,roasCalc:Number(ad.spend||0)>0?Number(ad.revenue||0)/Number(ad.spend||0):null}))
+      .sort((a,b)=>Number(b.spend||0)-Number(a.spend||0));
   }, [sponsor]);
 
-  const channelRows = useMemo(() => {
-    const rows = [];
-    if (ledgerAgg && ledgerAgg.byCode) {
-      Object.entries(ledgerAgg.byCode).forEach(([code,v]) => {
-        if (!isChannelCode(code)) return;
-        rows.push({ code, revenue:Number(v.revenue || 0), spend:Number(v.spend || 0) });
-      });
-    }
-    rows.push({ code:"META", revenue:Number(safeRecord.revenue || 0), spend:Number(safeRecord.spend || 0) });
-    const dedup = {};
-    rows.forEach((r) => {
-      if (!dedup[r.code]) dedup[r.code] = { ...r };
-      else { dedup[r.code].revenue += r.revenue; dedup[r.code].spend += r.spend; }
-    });
-    return Object.values(dedup).map((r) => ({ ...r, roas:r.spend > 0 ? r.revenue / r.spend : null })).sort((a,b) => b.revenue - a.revenue).slice(0,8);
-  }, [ledgerAgg, safeRecord.revenue, safeRecord.spend]);
-
-  const historyRows = useMemo(() => (history || []).filter((r) => r && r.monthKey).slice(-6), [history]);
-
-  function metricCard(label, value, delta, inverse) {
-    return (
-      <div className="mal-presentation-card">
-        <div className="mal-presentation-card-label">{label}</div>
-        <div className="mal-presentation-card-value">{value}</div>
-        <PresentationDelta value={delta} inverse={inverse} />
-      </div>
-    );
-  }
-
-  function statusClass(status) {
-    if (status === "green") return "green";
-    if (status === "red") return "red";
-    return "yellow";
-  }
-
-  function renderPlanItem(item, i) {
-    return (
-      <div className="mal-presentation-plan-card" key={item.id || i}>
-        <div className="mal-presentation-plan-index">{String(i + 1).padStart(2,"0")}</div>
-        <div>
-          <div className="mal-presentation-plan-title">{item.title || item.name || "未命名項目"}</div>
-          <div className="mal-presentation-plan-desc"><PresentationLinkify text={item.description || item.content || ""} /></div>
-          {item.link && /^https?:\/\//.test(String(item.link).trim()) ? <a className="mal-presentation-link-chip" href={String(item.link).trim()} target="_blank" rel="noopener noreferrer">↗ 開啟連結</a> : null}
-        </div>
-      </div>
-    );
-  }
-
+  const planning = useMemo(
+    () => generateRulePlanning(ledgerRows, perf.revenue, perf.spend, roasTarget || 3, currencyCode),
+    [ledgerRows, perf.revenue, perf.spend, roasTarget, currencyCode]
+  );
   const actionItems = currentPlan.actionItems && currentPlan.actionItems.length ? currentPlan.actionItems : (planning.actionItems || []);
   const materialIssues = currentPlan.materialIssues && currentPlan.materialIssues.length ? currentPlan.materialIssues : (planning.materialIssues || []);
   const projectItems = currentPlan.projects || [];
-  const nextHasContent = !!((nextPlan.actionItems && nextPlan.actionItems.length) || (nextPlan.projects && nextPlan.projects.length) || (nextPlan.materialIssues && nextPlan.materialIssues.length));
+  const nextHasContent = !!((nextPlan.actionItems&&nextPlan.actionItems.length)||(nextPlan.projects&&nextPlan.projects.length)||(nextPlan.materialIssues&&nextPlan.materialIssues.length));
   const nextActionItems = nextHasContent ? (nextPlan.actionItems || []) : actionItems;
   const nextProjects = nextHasContent ? (nextPlan.projects || []) : projectItems;
 
-  const seriesChunks = [];
-  for (let i=0; i<ledgerSorted.length; i+=6) seriesChunks.push(ledgerSorted.slice(i,i+6));
+  const planItems = useMemo(() => {
+    const items=[];
+    materialIssues.forEach((m)=>items.push({type:"素材調整",title:m.title||"未命名項目",description:m.content||"",status:m.status||"yellow"}));
+    projectItems.forEach((p)=>items.push({type:"專案進度",title:p.name||"未命名專案",description:p.description||"",status:p.status||"green",meta:[p.owner?"負責人："+p.owner:"",p.dueDate?"期限："+p.dueDate:"",p.progress?"進度："+p.progress:""].filter(Boolean).join("｜"),link:p.link||""}));
+    actionItems.forEach((a)=>items.push({type:"後續操作",title:a.title||"未命名方向",description:a.description||"",status:"green",link:a.link||""}));
+    return items;
+  }, [materialIssues, projectItems, actionItems]);
 
-  const slides = [];
+  function packByWeight(items,maxWeight) {
+    const pages=[]; let page=[]; let weight=0;
+    (items||[]).forEach((item)=>{
+      const raw=(item.title||"")+" "+(item.description||"")+" "+(item.meta||"");
+      const itemWeight=Math.max(1,Math.ceil(raw.length/95));
+      if(page.length && weight+itemWeight>maxWeight){ pages.push(page); page=[]; weight=0; }
+      page.push(item); weight+=itemWeight;
+    });
+    if(page.length) pages.push(page);
+    return pages.length?pages:[[]];
+  }
+  const planChunks=useMemo(()=>packByWeight(planItems,9),[planItems]);
 
-  slides.push({
-    key:"cover",
-    node:(
-      <div className="mal-presentation-slide mal-presentation-slide-cover">
-        <div>
-          <div className="mal-presentation-kicker">Monthly Brand Performance Report</div>
-          <div className="mal-presentation-title">{brandName || "品牌"}<br />{monthKey ? monthLabel(monthKey) : ""} 月報簡報</div>
-          <div className="mal-presentation-subtitle">營運成效、投放判讀、專案進度與下月行動</div>
-        </div>
-        <div className="mal-presentation-cover-metrics">
-          <div className="mal-presentation-cover-metric"><strong>{fmtMoney(ledgerRevenue,currencyCode)}</strong><span>整體營收</span></div>
-          <div className="mal-presentation-cover-metric"><strong>{fmtMoney(ledgerSpend,currencyCode)}</strong><span>總廣告費</span></div>
-          <div className="mal-presentation-cover-metric"><strong>{ledgerRoas !== null ? ledgerRoas.toFixed(2)+"x" : "—"}</strong><span>整體 ROAS</span></div>
-        </div>
+  const historyRows = useMemo(() => (history || []).filter((r)=>r&&r.monthKey).slice(-6), [history]);
+
+  function metricCard(label,value,delta,inverse){
+    return <div className="mal-presentation-card"><div className="mal-presentation-card-label">{label}</div><div className="mal-presentation-card-value">{value}</div><PresentationDelta value={delta} inverse={inverse}/></div>;
+  }
+
+  function displaySeriesName(code){ return productNames && productNames[code] ? code+"("+productNames[code]+")" : code; }
+
+  function renderSeriesTable(chunk){
+    return (
+      <div className="mal-presentation-table-wrap">
+        <table className="mal-presentation-table mal-presentation-series-table-v3">
+          <thead><tr><th>系列</th><th>業績</th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>CPA</th><th>成交</th><th>帳面利潤</th><th>客單價</th><th>判斷</th></tr></thead>
+          <tbody>{chunk.map((r)=>{
+            const j=ledgerJudgments[r.code]||{icon:"⚪",label:"無資料"};
+            const meterCls=r.roas===null?"":r.roas>=(roasTarget||3)?"":r.roas>=(roasTarget||3)*.75?"warn":"bad";
+            return <tr key={r.code}>
+              <td><strong>{displaySeriesName(r.code)}</strong></td>
+              <td className="num">{fmtMoney(r.revenue,currencyCode)}</td>
+              <td className="num">{fmtMoney(r.spend,currencyCode)}</td>
+              <td><div className="mal-presentation-roas-meter"><div className="mal-presentation-roas-meter-track"><div className={"mal-presentation-roas-meter-fill "+meterCls} style={{width:r.roas!==null?Math.max(3,(r.roas/maxSeriesRoas)*100)+"%":"0%"}}/></div><span className="mal-presentation-roas-meter-value">{r.roas!==null?r.roas.toFixed(2)+"x":"—"}</span></div></td>
+              <td className="num">{r.spendShare.toFixed(0)+"%"}</td>
+              <td className="num">{r.cpa!==null?fmtMoney(r.cpa,currencyCode):"—"}</td>
+              <td className="num">{fmtInt(r.conversions||0)}</td>
+              <td className="num">{fmtMoney(r.profit||0,currencyCode)}</td>
+              <td className="num">{r.aovCalc?fmtMoney(r.aovCalc,currencyCode):"—"}</td>
+              <td className="mal-presentation-judgment">{j.icon} {j.label}</td>
+            </tr>;
+          })}</tbody>
+        </table>
       </div>
-    )
-  });
+    );
+  }
+
+  function renderCampaignTable(chunk){
+    return (
+      <div className="mal-presentation-table-wrap">
+        <table className="mal-presentation-table compact">
+          <thead><tr><th>Campaign</th><th>花費</th><th>Meta 營收</th><th>轉單</th><th>ROAS</th></tr></thead>
+          <tbody>{chunk.length?chunk.map((r)=>{
+            const url=presentationAdUrl(accountId,r);
+            return <tr key={r.name}>
+              <td>{url?<a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{r.name} ↗</a>:r.name}</td>
+              <td className="num">{fmtMoney(r.spend,currencyCode)}</td>
+              <td className="num">{fmtMoney(r.revenue,currencyCode)}</td>
+              <td className="num">{fmtInt(r.conversions||0)}</td>
+              <td className="num">{r.roas!==null?r.roas.toFixed(2)+"x":"—"}</td>
+            </tr>;
+          }):<tr><td colSpan="5">本月沒有 Campaign 資料</td></tr>}</tbody>
+        </table>
+      </div>
+    );
+  }
+
+  const slides=[];
 
   slides.push({
     key:"summary",
     node:(
       <div className="mal-presentation-slide">
-        <PresentationSectionHead title="Executive Summary｜本月摘要" subtitle="老闆先看這頁，就能知道本月結果、問題與下一步。" />
-        <div className="mal-presentation-grid" style={{marginBottom:18}}>
-          {metricCard("整體營收",fmtMoney(ledgerRevenue,currencyCode),revenueDelta)}
-          {metricCard("整體廣告費",fmtMoney(ledgerSpend,currencyCode),spendDelta,true)}
-          {metricCard("Meta ROAS",metaMetrics && metaMetrics.roas !== null ? metaMetrics.roas.toFixed(2)+"x":"—",metaRoasDelta)}
-          {metricCard("Meta 轉單",fmtInt(metaMetrics ? metaMetrics.conversions : 0),conversionDelta)}
+        <PresentationSectionHead title={(brandName||"品牌")+"｜"+(monthKey?monthLabel(monthKey):"")+" 月報"} subtitle="Executive Summary｜先看結果、問題與下月優先順序。" />
+        <div className="mal-presentation-kpi-5" style={{marginBottom:16}}>
+          {metricCard("營業額",fmtMoney(perf.revenue,currencyCode),revenueDelta)}
+          {metricCard("總花費",fmtMoney(perf.spend,currencyCode),spendDelta,true)}
+          {metricCard("帳面利潤",fmtMoney(perf.profit,currencyCode),profitDelta)}
+          {metricCard("成交筆數",fmtInt(perf.conversions),conversionDelta)}
+          {metricCard("整體 ROAS",perf.roas!==null?perf.roas.toFixed(2)+"x":"—",roasDelta)}
         </div>
         <div className="mal-presentation-grid mal-presentation-grid-3" style={{flex:1}}>
-          <div className="mal-presentation-panel"><h3>本月亮點</h3><ul>
-            <li>{revenueDelta !== null ? "整體營收較上期 " + (revenueDelta >= 0 ? "成長 " : "下降 ") + Math.abs(revenueDelta).toFixed(1) + "%" : "目前尚無完整上期營收可比較"}</li>
-            <li>{ledgerRoas !== null ? "整體 ROAS " + ledgerRoas.toFixed(2) + "x，" + (ledgerRoas >= (roasTarget || 3) ? "已達目標" : "仍低於目標") : "目前無法計算整體 ROAS"}</li>
-            <li>{roasBarRows.length ? "目前效率最高系列：" + roasBarRows[0].code + "，ROAS " + roasBarRows[0].roas.toFixed(2) + "x" : "尚無足夠投放系列資料"}</li>
+          <div className="mal-presentation-panel"><h3>本月結果</h3><ul>
+            <li>{perf.roas!==null?"整體 ROAS "+perf.roas.toFixed(2)+"x，"+(perf.roas>=(roasTarget||3)?"已達目標 "+Number(roasTarget||3).toFixed(1)+"x。":"低於目標 "+Number(roasTarget||3).toFixed(1)+"x。"):"目前無法計算整體 ROAS。"}</li>
+            <li>{seriesRows.filter((r)=>r.roas!==null).length?"效率最高系列："+displaySeriesName(seriesRows.filter((r)=>r.roas!==null)[0].code)+"。":"目前沒有可比較的系列投放資料。"}</li>
+            <li>{monthlyBudget&&monthlyBudget>0?"本月預算使用 "+((perf.spend/monthlyBudget)*100).toFixed(0)+"%。":"本月尚未設定月預算。"}</li>
           </ul></div>
           <div className="mal-presentation-panel"><h3>需要留意</h3><ul>
-            {materialIssues.length ? materialIssues.slice(0,3).map((x,i)=><li key={i}>{x.title}</li>) : <li>目前未偵測到重大風險項目</li>}
+            {materialIssues.length?materialIssues.slice(0,3).map((x,i)=><li key={i}>{x.title}</li>):<li>目前沒有已登記的重大風險項目。</li>}
           </ul></div>
-          <div className="mal-presentation-panel"><h3>下一步</h3><ul>
-            {nextActionItems.length ? nextActionItems.slice(0,3).map((x,i)=><li key={i}>{x.title}</li>) : <li>尚未建立下月操作方向</li>}
+          <div className="mal-presentation-panel"><h3>下月優先</h3><ul>
+            {nextActionItems.length?nextActionItems.slice(0,3).map((x,i)=><li key={i}>{x.title}</li>):<li>尚未建立下月操作方向。</li>}
           </ul></div>
         </div>
       </div>
@@ -4128,108 +4222,97 @@ function MonthlyPresentation({
   });
 
   slides.push({
-    key:"performance",
+    key:"operations-channels",
     node:(
       <div className="mal-presentation-slide">
-        <PresentationSectionHead title={"投放成效｜" + (monthKey ? monthLabel(monthKey) : "")} subtitle="完整沿用月報的帳面營收、花費、成交與系列判斷，不另外重算一套。" />
-        <div className="mal-presentation-grid" style={{marginBottom:20}}>
-          {metricCard("營業額",fmtMoney(ledgerRevenue,currencyCode),null)}
-          {metricCard("總花費",fmtMoney(ledgerSpend,currencyCode),null,true)}
-          {metricCard("帳面利潤",fmtMoney(ledgerProfit,currencyCode),null)}
-          {metricCard("成交筆數",fmtInt(ledgerConversions),null)}
-        </div>
-        <div className="mal-presentation-performance-layout">
-          <div className="mal-presentation-panel" style={{minHeight:0}}>
-            <h3>整體效率</h3>
-            <div className="mal-presentation-card-value" style={{fontSize:"50px",marginTop:"4px"}}>{ledgerRoas !== null ? ledgerRoas.toFixed(2)+"x":"—"}</div>
-            <div className="mal-presentation-note">ROAS 目標 {Number(roasTarget || 3).toFixed(1)}x</div>
-            <div style={{marginTop:18,fontSize:18,lineHeight:1.65}}>
-              {ledgerRoas !== null && ledgerRoas >= (roasTarget || 3)
-                ? "整體效率達標。優先把預算放在已證明有效、且仍有放量空間的系列。"
-                : "整體效率尚未達標。先收斂高花費低 ROAS 系列，再談擴量。"}
-            </div>
+        <PresentationSectionHead title="營運與通路成效" subtitle="把一頁式投放、官網與其他通路放在同一張月度經營視角。" />
+        <div className="mal-presentation-channel-layout">
+          <div className="mal-presentation-table-wrap">
+            <table className="mal-presentation-table compact">
+              <thead><tr><th>來源</th><th>類型</th><th>營收</th><th>花費</th><th>帳面利潤</th><th>ROAS</th></tr></thead>
+              <tbody>{channelRows.map((r)=><tr key={r.code}><td><strong>{r.code}</strong></td><td>{r.type||"通路"}</td><td className="num">{fmtMoney(r.revenue||0,currencyCode)}</td><td className="num">{Number(r.spend||0)>0?fmtMoney(r.spend,currencyCode):"—"}</td><td className="num">{r.profit!==null&&r.profit!==undefined?fmtMoney(r.profit,currencyCode):"—"}</td><td className="num">{r.roas!==null&&r.roas!==undefined?r.roas.toFixed(2)+"x":"—"}</td></tr>)}</tbody>
+            </table>
           </div>
-          <div className="mal-presentation-roas-bars">
-            {roasBarRows.length ? roasBarRows.map((r) => {
-              const cls = r.roas >= 5 ? "" : r.roas >= 3 ? "mid" : "low";
-              return <div className="mal-presentation-roas-row" key={r.code}>
-                <div className="mal-presentation-roas-code">{r.code}</div>
-                <div className="mal-presentation-roas-track"><div className={"mal-presentation-roas-fill " + cls} style={{width:Math.max(4,(r.roas/maxRoas)*100)+"%"}} /></div>
-                <div className="mal-presentation-roas-value">{r.roas.toFixed(1)}x</div>
-              </div>;
-            }) : <div className="mal-presentation-panel">目前沒有可比較的系列投放資料。</div>}
+          <div className="mal-presentation-compact-card">
+            <h3>Meta 平台回報</h3>
+            <div className="mal-presentation-mini-stats">
+              <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">Meta 花費</div><div className="mal-presentation-mini-stat-value">{fmtMoney(metaMetrics?metaMetrics.spend:0,currencyCode)}</div></div>
+              <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">Meta ROAS</div><div className="mal-presentation-mini-stat-value">{metaMetrics&&metaMetrics.roas!==null?metaMetrics.roas.toFixed(2)+"x":"—"}</div></div>
+              <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">Meta 轉單</div><div className="mal-presentation-mini-stat-value">{fmtInt(metaMetrics?metaMetrics.conversions:0)}</div></div>
+              <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">Meta CPA</div><div className="mal-presentation-mini-stat-value">{metaMetrics&&metaMetrics.cpa!==null?fmtMoney(metaMetrics.cpa,currencyCode):"—"}</div></div>
+            </div>
+            <p className="mal-presentation-section-note" style={{marginTop:14}}>Meta 為平台回報口徑；左側為後台實際營運/通路資料，避免把兩種口徑混成同一個 KPI。</p>
           </div>
         </div>
       </div>
     )
   });
 
-  seriesChunks.forEach((chunk,chunkIndex) => {
-    const chunkSpend = chunk.reduce((sum,r)=>sum+Number(r.spend||0),0);
-    const chunkRevenue = chunk.reduce((sum,r)=>sum+Number(r.revenue||0),0);
-    const chunkRoas = chunkSpend > 0 ? chunkRevenue / chunkSpend : null;
-    const best = chunk.filter((r)=>r.roas !== null).slice().sort((a,b)=>b.roas-a.roas)[0] || null;
-    const highestSpend = chunk.slice().sort((a,b)=>Number(b.spend||0)-Number(a.spend||0))[0] || null;
-    const weak = chunk.filter((r)=>r.spend>0 && (r.roas===null || r.roas < (roasTarget||3))).sort((a,b)=>Number(b.spend||0)-Number(a.spend||0))[0] || null;
-    const noSpend = chunk.filter((r)=>Number(r.spend||0)<=0).length;
-    const chunkShare = ledgerSpend > 0 ? (chunkSpend / ledgerSpend) * 100 : 0;
-
+  seriesChunks.forEach((chunk,idx)=>{
     slides.push({
-      key:"series-"+chunkIndex,
+      key:"performance-"+idx,
       node:(
         <div className="mal-presentation-slide">
           <PresentationSectionHead
-            title={"投放成效｜系列明細" + (seriesChunks.length > 1 ? " " + (chunkIndex + 1) + "/" + seriesChunks.length : "")}
-            subtitle="系列資料＋本頁重點判讀，版面以老闆閱讀距離為優先。"
+            title={"投放成效"+(seriesChunks.length>1?" "+(idx+1)+"/"+seriesChunks.length:"")}
+            subtitle={idx===0?"完整呈現系列業績、花費、ROAS、成交、利潤與判斷；只有系列真的太多才續頁。":"投放成效續頁｜沿用同一月份與同一資料口徑。"}
           />
-          <div className="mal-presentation-table-wrap">
-            <table className="mal-presentation-table mal-presentation-series-table">
-              <thead><tr><th>系列</th><th>營業額</th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>CPA</th><th>成交</th><th>帳面利潤</th><th>客單價</th><th>判斷</th></tr></thead>
-              <tbody>
-                {chunk.map((r) => {
-                  const j = ledgerJudgments[r.code] || {icon:"⚪",label:"無資料"};
-                  return <tr key={r.code}>
-                    <td><strong>{r.code}</strong></td>
-                    <td className="num">{fmtMoney(r.revenue,currencyCode)}</td>
-                    <td className="num">{fmtMoney(r.spend,currencyCode)}</td>
-                    <td className="num">{r.roas !== null ? r.roas.toFixed(2)+"x":"—"}</td>
-                    <td className="num">{r.spendShare.toFixed(0)+"%"}</td>
-                    <td className="num">{r.cpa !== null ? fmtMoney(r.cpa,currencyCode):"—"}</td>
-                    <td className="num">{fmtInt(r.conversions || 0)}</td>
-                    <td className="num">{fmtMoney(r.profit || 0,currencyCode)}</td>
-                    <td className="num">{r.aovCalc ? fmtMoney(r.aovCalc,currencyCode):"—"}</td>
-                    <td className="mal-presentation-judgment">{j.icon} {j.label}</td>
-                  </tr>;
-                })}
-              </tbody>
-            </table>
-          </div>
+          {idx===0?<div className="mal-presentation-marketing-kpis">
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">系列數</div><div className="mal-presentation-mini-stat-value">{seriesRows.length}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">整體 ROAS</div><div className="mal-presentation-mini-stat-value">{perf.roas!==null?perf.roas.toFixed(2)+"x":"—"}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">達標系列</div><div className="mal-presentation-mini-stat-value">{seriesRows.filter((r)=>r.roas!==null&&r.roas>=(roasTarget||3)).length}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">無投放系列</div><div className="mal-presentation-mini-stat-value">{seriesRows.filter((r)=>!(r.spend>0)).length}</div></div>
+          </div>:null}
+          {renderSeriesTable(chunk)}
+        </div>
+      )
+    });
+  });
 
-          <div className="mal-presentation-series-summary">
-            <div className="mal-presentation-series-summary-card">
-              <div className="mal-presentation-series-summary-label">本頁系列花費</div>
-              <div className="mal-presentation-series-summary-value">{fmtMoney(chunkSpend,currencyCode)}</div>
-              <div className="mal-presentation-series-summary-text">佔整體廣告費 {chunkShare.toFixed(0)}%｜本頁 ROAS {chunkRoas !== null ? chunkRoas.toFixed(2)+"x" : "—"}</div>
-            </div>
-            <div className="mal-presentation-series-summary-card">
-              <div className="mal-presentation-series-summary-label">效率最高</div>
-              <div className="mal-presentation-series-summary-value">{best ? best.code : "—"}</div>
-              <div className="mal-presentation-series-summary-text">{best && best.roas !== null ? "ROAS "+best.roas.toFixed(2)+"x" : "目前無可比較投放資料"}{best ? "｜營業額 "+fmtMoney(best.revenue,currencyCode) : ""}</div>
-            </div>
-            <div className="mal-presentation-series-summary-card">
-              <div className="mal-presentation-series-summary-label">優先檢查</div>
-              <div className="mal-presentation-series-summary-value">{weak ? weak.code : "無"}</div>
-              <div className="mal-presentation-series-summary-text">{weak ? "花費 "+fmtMoney(weak.spend,currencyCode)+"｜ROAS "+(weak.roas!==null?weak.roas.toFixed(2)+"x":"—") : "本頁有投放的系列皆達標或無明顯異常"}</div>
-            </div>
-          </div>
+  campaignChunks.forEach((chunk,idx)=>{
+    const topNew=newAdsSorted[0]||null;
+    const topSponsor=sponsorAds[0]||null;
+    slides.push({
+      key:"marketing-"+idx,
+      node:(
+        <div className="mal-presentation-slide">
+          <PresentationSectionHead
+            title={"行銷活動與廣告表現"+(campaignChunks.length>1?" "+(idx+1)+"/"+campaignChunks.length:"")}
+            subtitle={idx===0?"Campaign、本月新投放與業配放在同一章節，不再拆成三四張零碎頁面。":"Campaign 明細續頁。"}
+          />
+          {idx===0?<div className="mal-presentation-marketing-kpis">
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">Campaign 數</div><div className="mal-presentation-mini-stat-value">{campaignRows.length}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">本月新投放</div><div className="mal-presentation-mini-stat-value">{newAds.length}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配支出</div><div className="mal-presentation-mini-stat-value">{fmtMoney(sponsor?sponsor.spend:0,currencyCode)}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配 ROAS</div><div className="mal-presentation-mini-stat-value">{sponsor&&sponsor.roas!==null?Number(sponsor.roas).toFixed(2)+"x":"—"}</div></div>
+          </div>:null}
+          {renderCampaignTable(chunk)}
+          {idx===0?<div className="mal-presentation-callout-row">
+            <div className="mal-presentation-callout"><strong>本月新投放</strong>{topNew?<>花費最高的新投放：{presentationAdUrl(accountId,topNew)?<a className="mal-presentation-ad-link" href={presentationAdUrl(accountId,topNew)} target="_blank" rel="noopener noreferrer">{topNew.name||"廣告"} ↗</a>:(topNew.name||"廣告")}，花費 {fmtMoney(topNew.spend||0,currencyCode)}。</>:"本月沒有新投放資料。"}</div>
+            <div className="mal-presentation-callout"><strong>業配</strong>{topSponsor?<>主要業配：{presentationAdUrl(accountId,topSponsor)?<a className="mal-presentation-ad-link" href={presentationAdUrl(accountId,topSponsor)} target="_blank" rel="noopener noreferrer">{topSponsor.name||topSponsor.campaign||"業配廣告"} ↗</a>:(topSponsor.name||topSponsor.campaign||"業配廣告")}，花費 {fmtMoney(topSponsor.spend||0,currencyCode)}。</>:"本月沒有業配投放資料。"}</div>
+          </div>:null}
+        </div>
+      )
+    });
+  });
 
-          <div className="mal-presentation-series-callout">
-            <div className="mal-presentation-series-callout-title">本頁重點</div>
-            <ul>
-              <li>{highestSpend ? "花費最集中在 "+highestSpend.code+"，佔整體 "+highestSpend.spendShare.toFixed(0)+"%，需搭配 ROAS 一起看是否值得持續吃預算。" : "本頁沒有投放花費。"}</li>
-              <li>{best ? best.code+" 是本頁效率最高系列，ROAS "+best.roas.toFixed(2)+"x"+(best.conversions>=10 ? "，已有較足樣本。" : "，但樣本仍需持續累積。") : "本頁暫無足夠資料判斷效率最佳系列。"}</li>
-              <li>{weak ? weak.code+" 為本頁優先檢查系列，建議先看素材疲勞、受眾與頁面轉換，再決定是否降量。" : noSpend>0 ? "本頁有 "+noSpend+" 個系列尚無投放資料，先不與有投放系列直接比較。" : "本頁沒有明顯低效系列，可維持觀察。"}</li>
-            </ul>
+  planChunks.forEach((chunk,idx)=>{
+    slides.push({
+      key:"monthly-plan-"+idx,
+      node:(
+        <div className="mal-presentation-slide">
+          <PresentationSectionHead
+            title={"月報告"+(planChunks.length>1?" "+(idx+1)+"/"+planChunks.length:"")}
+            subtitle="素材調整方向、專案進度、後續操作方向使用原月報內容；文字中的網址可直接點開。"
+          />
+          <div className="mal-presentation-plan-grid">
+            {chunk.length?chunk.map((item,i)=><div className="mal-presentation-plan-card-v3" key={item.type+"-"+idx+"-"+i}>
+              <span className="mal-presentation-plan-type">{item.type}</span>
+              <h3>{item.title}</h3>
+              {item.meta?<div className="mal-presentation-project-meta"><span>{item.meta}</span></div>:null}
+              <p><PresentationLinkify text={item.description}/></p>
+              {item.link&&/^https?:\/\//.test(String(item.link).trim())?<a className="mal-presentation-link-chip" href={String(item.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往連結</a>:null}
+            </div>):<div className="mal-presentation-panel">目前這個月份尚未建立月報告內容。</div>}
           </div>
         </div>
       )
@@ -4237,180 +4320,29 @@ function MonthlyPresentation({
   });
 
   slides.push({
-    key:"channels",
+    key:"next-history",
     node:(
       <div className="mal-presentation-slide">
-        <PresentationSectionHead title="平台 / 通路表現" subtitle="同一月份的通路營收與投放效率。" />
-        <div className="mal-presentation-table-wrap" style={{flex:1}}>
-          <table className="mal-presentation-table">
-            <thead><tr><th>平台 / 通路</th><th>營收</th><th>花費</th><th>ROAS</th></tr></thead>
-            <tbody>{channelRows.length ? channelRows.map((r)=><tr key={r.code}><td><strong>{r.code}</strong></td><td className="num">{fmtMoney(r.revenue,currencyCode)}</td><td className="num">{fmtMoney(r.spend,currencyCode)}</td><td className="num">{r.roas !== null ? r.roas.toFixed(2)+"x":"—"}</td></tr>) : <tr><td colSpan="4">目前沒有通路資料</td></tr>}</tbody>
-          </table>
-        </div>
-      </div>
-    )
-  });
-
-  slides.push({
-    key:"meta",
-    node:(
-      <div className="mal-presentation-slide">
-        <PresentationSectionHead title="Meta 廣告成效" subtitle="廣告名稱可直接點開。優先開前台貼文，沒有前台貼文時進 Ads Manager。" />
-        <div className="mal-presentation-grid" style={{marginBottom:18}}>
-          {metricCard("廣告費",fmtMoney(metaMetrics ? metaMetrics.spend : 0,currencyCode),spendDelta,true)}
-          {metricCard("Meta 營收",fmtMoney(metaMetrics ? metaMetrics.revenue : 0,currencyCode),prevMetaMetrics ? metricPctDelta(metaMetrics.revenue,prevMetaMetrics.revenue):null)}
-          {metricCard("ROAS",metaMetrics && metaMetrics.roas !== null ? metaMetrics.roas.toFixed(2)+"x":"—",metaRoasDelta)}
-          {metricCard("CTR",metaMetrics && metaMetrics.ctr !== null ? metaMetrics.ctr.toFixed(2)+"%":"—",prevMetaMetrics && prevMetaMetrics.ctr !== null ? metricPctDelta(metaMetrics.ctr,prevMetaMetrics.ctr):null)}
-        </div>
-        <div className="mal-presentation-split">
+        <PresentationSectionHead title={(nextMonthKey?monthLabel(nextMonthKey):"下月")+"｜下月重點與近月趨勢"} subtitle={nextHasContent?"已讀取下個月份月報資料。":"下個月份尚未建立資料，先沿用本月後續操作方向作為執行清單。"} />
+        <div className="mal-presentation-history-grid">
+          <div className="mal-presentation-compact-card">
+            <h3>下月優先事項</h3>
+            <div className="mal-presentation-action-stack">
+              {(nextActionItems||[]).slice(0,4).map((a,i)=><div className="mal-presentation-action-item" key={i}><strong>{String(i+1).padStart(2,"0")+"｜"+(a.title||"未命名方向")}</strong><div><PresentationLinkify text={a.description||""}/></div></div>)}
+              {!nextActionItems.length?<div className="mal-presentation-action-item"><strong>尚未建立</strong><div>請在月報告的後續操作方向新增下月工作。</div></div>:null}
+              {(nextProjects||[]).slice(0,2).map((p,i)=><div className="mal-presentation-action-item" key={"p"+i}><strong>{"專案｜"+(p.name||"未命名專案")}</strong><div>{[p.progress,p.dueDate].filter(Boolean).join("｜")}</div>{p.link&&/^https?:\/\//.test(String(p.link).trim())?<a className="mal-presentation-link-chip" href={String(p.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往</a>:null}</div>)}
+            </div>
+          </div>
           <div className="mal-presentation-table-wrap">
             <table className="mal-presentation-table">
-              <thead><tr><th>Top Campaign</th><th>營收</th><th>花費</th><th>ROAS</th></tr></thead>
-              <tbody>{topCampaigns.map((r) => {
-                const url=presentationAdUrl(accountId,r);
-                return <tr key={r.name}><td>{url ? <a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{r.name} ↗</a> : r.name}</td><td className="num">{fmtMoney(r.revenue,currencyCode)}</td><td className="num">{fmtMoney(r.spend,currencyCode)}</td><td className="num">{r.roas !== null ? r.roas.toFixed(2)+"x":"—"}</td></tr>;
+              <thead><tr><th>月份</th><th>Meta 廣告費</th><th>Meta 轉單</th><th>Meta 營收</th><th>CPA</th><th>ROAS</th></tr></thead>
+              <tbody>{historyRows.slice().reverse().map((r)=>{
+                const cpa=Number(r.conversions||0)>0?Number(r.spend||0)/Number(r.conversions||0):null;
+                const roas=Number(r.spend||0)>0?Number(r.revenue||0)/Number(r.spend||0):null;
+                return <tr key={r.monthKey}><td><strong>{monthLabel(r.monthKey)}</strong></td><td className="num">{fmtMoney(r.spend||0,currencyCode)}</td><td className="num">{fmtInt(r.conversions||0)}</td><td className="num">{fmtMoney(r.revenue||0,currencyCode)}</td><td className="num">{cpa!==null?fmtMoney(cpa,currencyCode):"—"}</td><td className="num">{roas!==null?roas.toFixed(2)+"x":"—"}</td></tr>;
               })}</tbody>
             </table>
           </div>
-          <div className="mal-presentation-table-wrap">
-            <table className="mal-presentation-table">
-              <thead><tr><th>優先檢查</th><th>花費</th><th>營收</th><th>ROAS</th></tr></thead>
-              <tbody>{riskCampaigns.length ? riskCampaigns.map((r) => {
-                const url=presentationAdUrl(accountId,r);
-                return <tr key={r.name}><td>{url ? <a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{r.name} ↗</a> : r.name}</td><td className="num">{fmtMoney(r.spend,currencyCode)}</td><td className="num">{fmtMoney(r.revenue,currencyCode)}</td><td className="num">{r.roas !== null ? r.roas.toFixed(2)+"x":"—"}</td></tr>;
-              }) : <tr><td colSpan="4">目前沒有明顯低效活動</td></tr>}</tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    )
-  });
-
-  slides.push({
-    key:"new",
-    node:(
-      <div className="mal-presentation-slide">
-        <PresentationSectionHead title="本月新投放" subtitle="直接點廣告名稱查看前台或管理位置。" />
-        <div className="mal-presentation-grid" style={{marginBottom:18}}>
-          {metricCard("新投放廣告",fmtInt(newAds.length),null)}
-          {metricCard("達標廣告",fmtInt(newAds.filter((r)=>Number(r.spend||0)>0 && Number(r.revenue||0)/Number(r.spend||1)>=(roasTarget||3)).length),null)}
-          {metricCard("需觀察",fmtInt(newAds.filter((r)=>Number(r.conversions||0)<10).length),null)}
-          {metricCard("有前台連結",fmtInt(newAds.filter((r)=>!!r.postId).length),null)}
-        </div>
-        <div className="mal-presentation-table-wrap" style={{flex:1}}>
-          <table className="mal-presentation-table">
-            <thead><tr><th>廣告</th><th>營收</th><th>花費</th><th>轉單</th><th>ROAS</th></tr></thead>
-            <tbody>{newAdRows.length ? newAdRows.map((r,i) => {
-              const url=presentationAdUrl(accountId,r);
-              const roas=Number(r.spend||0)>0 ? Number(r.revenue||0)/Number(r.spend||0) : null;
-              return <tr key={r.adId || r.name || i}><td>{url ? <a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{r.name || "廣告"} ↗</a> : (r.name || "廣告")}</td><td className="num">{fmtMoney(r.revenue||0,currencyCode)}</td><td className="num">{fmtMoney(r.spend||0,currencyCode)}</td><td className="num">{fmtInt(r.conversions||0)}</td><td className="num">{roas!==null?roas.toFixed(2)+"x":"—"}</td></tr>;
-            }) : <tr><td colSpan="5">本月沒有新投放資料</td></tr>}</tbody>
-          </table>
-        </div>
-      </div>
-    )
-  });
-
-  slides.push({
-    key:"sponsor",
-    node:(
-      <div className="mal-presentation-slide">
-        <PresentationSectionHead title="業配成效" subtitle="業配廣告名稱可直接點擊查看。" />
-        <div className="mal-presentation-grid" style={{marginBottom:18}}>
-          {metricCard("業配支出",fmtMoney(sponsor ? sponsor.spend : 0,currencyCode),null)}
-          {metricCard("業配營收",fmtMoney(sponsor ? sponsor.revenue : 0,currencyCode),null)}
-          {metricCard("業配 ROAS",sponsor && sponsor.roas !== null ? Number(sponsor.roas).toFixed(2)+"x":"—",null)}
-          {metricCard("業配轉單",fmtInt(sponsor ? sponsor.conversions : 0),null)}
-        </div>
-        <div className="mal-presentation-table-wrap" style={{flex:1}}>
-          <table className="mal-presentation-table">
-            <thead><tr><th>業配廣告</th><th>營收</th><th>花費</th><th>ROAS</th></tr></thead>
-            <tbody>{sponsorTop.length ? sponsorTop.map((r,i)=>{
-              const url=presentationAdUrl(accountId,r);
-              return <tr key={r.adId || r.name || i}><td>{url ? <a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{r.name || r.campaign || "業配廣告"} ↗</a> : (r.name || r.campaign || "業配廣告")}</td><td className="num">{fmtMoney(r.revenue||0,currencyCode)}</td><td className="num">{fmtMoney(r.spend||0,currencyCode)}</td><td className="num">{r.roasCalc!==null?r.roasCalc.toFixed(2)+"x":"—"}</td></tr>;
-            }) : <tr><td colSpan="4">本月沒有找到業配投放資料</td></tr>}</tbody>
-          </table>
-        </div>
-      </div>
-    )
-  });
-
-  slides.push({
-    key:"materials",
-    node:(
-      <div className="mal-presentation-slide">
-        <PresentationSectionHead title="素材調整方向" subtitle="直接讀取月報告裡已經編輯好的內容，不再另外生成一套。" />
-        <div className="mal-presentation-grid mal-presentation-grid-2" style={{alignContent:"start"}}>
-          {materialIssues.length ? materialIssues.slice(0,6).map((m,i)=>
-            <div className="mal-presentation-plan-card" key={m.id || i}>
-              <span className={"mal-presentation-status-dot "+statusClass(m.status)} />
-              <div>
-                <div className="mal-presentation-plan-title">{m.title || "未命名項目"}</div>
-                <div className="mal-presentation-plan-desc"><PresentationLinkify text={m.content || ""} /></div>
-              </div>
-            </div>
-          ) : <div className="mal-presentation-panel">目前月報告尚未填寫素材調整方向。</div>}
-        </div>
-      </div>
-    )
-  });
-
-  slides.push({
-    key:"projects",
-    node:(
-      <div className="mal-presentation-slide">
-        <PresentationSectionHead title="專案進度" subtitle="專案裡有 Google Docs、官網或其他網址時，直接點開。" />
-        <div className="mal-presentation-grid mal-presentation-grid-2" style={{alignContent:"start"}}>
-          {projectItems.length ? projectItems.slice(0,6).map((p,i)=>
-            <div className="mal-presentation-plan-card" key={p.id || i}>
-              <span className={"mal-presentation-status-dot "+statusClass(p.status)} />
-              <div>
-                <div className="mal-presentation-plan-title">{p.name || "未命名專案"}</div>
-                <div className="mal-presentation-project-meta">
-                  {p.owner ? <span>負責人：{p.owner}</span> : null}
-                  {p.dueDate ? <span>期限：{p.dueDate}</span> : null}
-                  {p.progress ? <span>進度：{p.progress}</span> : null}
-                </div>
-                {p.description ? <div className="mal-presentation-plan-desc"><PresentationLinkify text={p.description} /></div> : null}
-                {p.link && /^https?:\/\//.test(String(p.link).trim()) ? <a className="mal-presentation-link-chip" href={String(p.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往專案連結</a> : null}
-              </div>
-            </div>
-          ) : <div className="mal-presentation-panel">目前月報告尚未填寫專案進度。</div>}
-        </div>
-      </div>
-    )
-  });
-
-  slides.push({
-    key:"next",
-    node:(
-      <div className="mal-presentation-slide">
-        <PresentationSectionHead title={(nextMonthKey ? monthLabel(nextMonthKey) : "下月")+"｜下月行動計畫"} subtitle={nextHasContent ? "已讀取下個月份月報資料。" : "下個月份尚未建立資料，先沿用本月『後續操作方向 / 專案進度』作為下月執行清單。"} />
-        <div className="mal-presentation-grid mal-presentation-grid-2" style={{alignContent:"start",marginBottom:18}}>
-          {nextActionItems.length ? nextActionItems.slice(0,4).map((x,i)=>renderPlanItem(x,i)) : <div className="mal-presentation-panel">尚未建立下月操作方向。</div>}
-        </div>
-        {nextProjects.length ? <div className="mal-presentation-panel" style={{minHeight:0}}>
-          <h3>下月專案 / 持續追蹤</h3>
-          <ul>{nextProjects.slice(0,4).map((p,i)=><li key={p.id || i}><strong>{p.name || "未命名專案"}</strong>{p.progress ? "｜"+p.progress : ""}{p.dueDate ? "｜"+p.dueDate : ""}{p.link && /^https?:\/\//.test(String(p.link).trim()) ? <a className="mal-presentation-link-chip" href={String(p.link).trim()} target="_blank" rel="noopener noreferrer">↗ 前往</a> : null}</li>)}</ul>
-        </div> : null}
-      </div>
-    )
-  });
-
-  slides.push({
-    key:"trend",
-    node:(
-      <div className="mal-presentation-slide">
-        <PresentationSectionHead title="近月趨勢" subtitle="最近六個月的 Meta 廣告費、營收與 ROAS。" />
-        <div className="mal-presentation-table-wrap" style={{flex:1}}>
-          <table className="mal-presentation-table">
-            <thead><tr><th>月份</th><th>廣告費</th><th>Meta 營收</th><th>轉單</th><th>CPA</th><th>ROAS</th></tr></thead>
-            <tbody>{historyRows.slice().reverse().map((r)=>{
-              const cpa=Number(r.conversions||0)>0?Number(r.spend||0)/Number(r.conversions||0):null;
-              const roas=Number(r.spend||0)>0?Number(r.revenue||0)/Number(r.spend||0):null;
-              return <tr key={r.monthKey}><td><strong>{monthLabel(r.monthKey)}</strong></td><td className="num">{fmtMoney(r.spend||0,currencyCode)}</td><td className="num">{fmtMoney(r.revenue||0,currencyCode)}</td><td className="num">{fmtInt(r.conversions||0)}</td><td className="num">{cpa!==null?fmtMoney(cpa,currencyCode):"—"}</td><td className="num">{roas!==null?roas.toFixed(2)+"x":"—"}</td></tr>;
-            })}</tbody>
-          </table>
         </div>
       </div>
     )
@@ -4444,19 +4376,19 @@ function MonthlyPresentation({
     <div className="mal-presentation-wrap">
       <div className="mal-presentation-toolbar">
         <div>
-          <div className="mal-presentation-toolbar-title">🎞️ {brandName || "品牌"}｜{monthKey ? monthLabel(monthKey) : ""} 高階月報簡報</div>
-          <div className="mal-presentation-toolbar-sub">大字體、高資訊密度、可直接點廣告與報表連結。</div>
+          <div className="mal-presentation-toolbar-title">🎞️ {brandName||"品牌"}｜{monthKey?monthLabel(monthKey):""} 月報簡報</div>
+          <div className="mal-presentation-toolbar-sub">同一月份用一條故事線報告；只有資料真的超過版面容量才產生續頁。</div>
         </div>
         <div className="mal-presentation-toolbar-actions">
-          <button className="mal-btn" onClick={()=>setSlideIndex(0)}>回封面</button>
+          <button className="mal-btn" onClick={()=>setSlideIndex(0)}>回第一頁</button>
           <button className="mal-btn mal-btn-primary" onClick={toggleFullscreen}>全螢幕播放</button>
         </div>
       </div>
       <div className="mal-presentation-stage" ref={stageRef}>
-        {slides[slideIndex].node}
+        {slides[slideIndex] ? slides[slideIndex].node : null}
         <div className="mal-presentation-controls">
           <button onClick={()=>setSlideIndex((v)=>Math.max(0,v-1))} disabled={slideIndex===0} aria-label="上一頁">‹</button>
-          <div className="mal-presentation-dot-row">{slides.map((slide,i)=><button key={slide.key} className={"mal-presentation-dot "+(i===slideIndex?"active":"")} onClick={()=>setSlideIndex(i)} aria-label={"第 "+(i+1)+" 頁"} />)}</div>
+          <div className="mal-presentation-dot-row">{slides.map((slide,i)=><button key={slide.key} className={"mal-presentation-dot "+(i===slideIndex?"active":"")} onClick={()=>setSlideIndex(i)} aria-label={"第 "+(i+1)+" 頁"}/>)}</div>
           <span>{String(slideIndex+1).padStart(2,"0")} / {String(slides.length).padStart(2,"0")}</span>
           <button onClick={()=>setSlideIndex((v)=>Math.min(slides.length-1,v+1))} disabled={slideIndex===slides.length-1} aria-label="下一頁">›</button>
         </div>
