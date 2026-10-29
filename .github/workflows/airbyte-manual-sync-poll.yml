@@ -1,8 +1,16 @@
 name: Airbyte Manual Sync Poll
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/airbyte-manual-sync-poll.yml"
+      - ".github/workflows/airbyte-meta-sync.yml"
+      - "functions/api/airbyte/sync.js"
+      - "tools/airbyte_meta_sync.py"
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "2-57/5 * * * *"
   workflow_dispatch:
 
 permissions:
