@@ -862,6 +862,14 @@
 
 
   
+
+  /* TOP 3 固定三格：中央品牌報表 */
+  .mal-top3-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mal-top3-placeholder { border-style: dashed; background: rgba(251,247,240,.72); }
+  .mal-top3-placeholder .mal-card-value { color: var(--ink-soft); font-weight: 500; }
+  @media (max-width: 860px) { .mal-top3-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .mal-top3-cards { grid-template-columns: 1fr; } }
+
 </style>
 </head>
 <body>
@@ -5877,20 +5885,31 @@ async function toggleRememberToken(checked) {
   const launchFilteredAds = adLaunchFilter === "month" ? monthStartedAds : spendFilteredAds;
   const visibleAds = filterAdsByStatus(launchFilteredAds, adStatusFilter, adSearchKeyword);
   const hiddenAdCount = focusData && focusData.ads ? focusData.ads.length - spendFilteredAds.length : 0;
+  // 本月主投品項排名：統計選取月份內「實際有花費」的全部廣告，不看開始投放日期，也不套 $500 門檻。
+  // 這份邏輯是品牌總報表的唯一排名定義；獨立品牌報表只讀中央排名結果，不再自行重算。
+  const monthRankedAds = focusData && focusData.ads
+    ? focusData.ads.filter((ad) => (Number(ad.spend) || 0) > 0)
+    : [];
   const monthLaunchProductTop3 = (() => {
     const byCode = {};
-    monthStartedAds.forEach((ad) => {
-      const code = parseProductCode(ad.campaign);
-      if (!code || NON_PRODUCT_CODE_PATTERN.test(code) || isChannelCode(code)) return;
+    monthRankedAds.forEach((ad) => {
+      const campaignName = String(ad.campaign || "").trim();
+      const inlineMatch = campaignName.match(/[【\[]([^】\]]+)[】\]]/);
+      const code = parseProductCode(campaignName) || (inlineMatch ? inlineMatch[1].trim().toUpperCase() : null);
+      if (!code || NON_PRODUCT_CODE_PATTERN.test(code) || isChannelCode(code) || isLegacyAdOnlyCode(code)) return;
       if (!byCode[code]) byCode[code] = { code, spend: 0, conversions: 0, revenue: 0, adCount: 0 };
       byCode[code].spend += Number(ad.spend) || 0;
       byCode[code].conversions += Number(ad.conversions) || 0;
       byCode[code].revenue += Number(ad.revenue) || 0;
       byCode[code].adCount += Number(ad.adCount) || 1;
     });
-    return Object.values(byCode).sort((a, b) => b.spend - a.spend).slice(0, 3);
+    return Object.values(byCode)
+      .filter((item) => item.spend > 0)
+      .sort((a, b) => b.spend - a.spend)
+      .slice(0, 3);
   })();
   const monthStartedSpend = monthStartedAds.reduce((sum, ad) => sum + (Number(ad.spend) || 0), 0);
+  const monthRankedSpend = monthRankedAds.reduce((sum, ad) => sum + (Number(ad.spend) || 0), 0);
 
   // ---------- 每日營收報表:直接呈現後台每日收益表(ledgerByMonth)裡「每一天 x 每個產品代號」的明細,不用另外彙總 ----------
   // 選單月份/選單日,優先順序是:①使用者自己手動點過的(dailyMonth/focusDay,只要那筆資料還在就沿用,尊重手動導覽)
@@ -6435,36 +6454,43 @@ const shopeRealDailyMap = useMemo(() => {
               <div className="mal-chart-box" style={{ marginBottom: 18 }}>
                 <div className="mal-ad-header-row" style={{ marginBottom: 12 }}>
                   <div>
-                    <StaticSectionTitle className="mal-section-title" style={{ marginBottom: 4 }}>本月新投放摘要</StaticSectionTitle>
+                    <StaticSectionTitle className="mal-section-title" style={{ marginBottom: 4 }}>本月投放摘要</StaticSectionTitle>
                     <div style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
-                      只計算 {focusMonth} 才開始投放的廣告；共 {monthStartedAds.length} 支，花費 {fmtMoney(monthStartedSpend, focusData.currency)}。
+                      統計 {focusMonth} 當月份所有實際有花費的廣告；共 {monthRankedAds.length} 支，總花費 {fmtMoney(monthRankedSpend, focusData.currency)}。
                     </div>
                   </div>
                 </div>
-                <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", fontWeight: 600, marginBottom: 8 }}>本月主投品項 TOP 3（依廣告費）</div>
-                {monthLaunchProductTop3.length > 0 ? (
-                  <div className="mal-cards" style={{ marginBottom: 0 }}>
-                    {monthLaunchProductTop3.map((item, idx) => {
-                      const displayName = (productNames[activeBrandId] || {})[item.code];
-                      const share = monthStartedSpend > 0 ? item.spend / monthStartedSpend * 100 : 0;
-                      const cpa = item.conversions > 0 ? item.spend / item.conversions : null;
+                <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", fontWeight: 600, marginBottom: 8 }}>本月主投品項 TOP 3（依本月廣告費）</div>
+                <div className="mal-cards mal-top3-cards" style={{ marginBottom: 0 }}>
+                  {Array.from({ length: 3 }).map((_, idx) => {
+                    const item = monthLaunchProductTop3[idx];
+                    if (!item) {
                       return (
-                        <div className="mal-card" key={item.code}>
+                        <div className="mal-card mal-top3-placeholder" key={`placeholder-${idx + 1}`}>
                           <div className="mal-card-label">#{idx + 1} 主投品項</div>
-                          <div className="mal-card-value" style={{ fontSize: 24 }}>{item.code}{displayName ? ` · ${displayName}` : ""}</div>
-                          <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", marginTop: 6 }}>
-                            廣告費 {fmtMoney(item.spend, focusData.currency)} · 佔新投放 {share.toFixed(1)}%
-                          </div>
-                          <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 3 }}>
-                            {item.adCount} 支廣告 · {fmtInt(item.conversions)} 轉單 · CPA {cpa !== null ? fmtMoney(cpa, focusData.currency) : "—"}
-                          </div>
+                          <div className="mal-card-value" style={{ fontSize: 22 }}>無產品</div>
+                          <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 6 }}>本月沒有第 {idx + 1} 名有花費品項</div>
                         </div>
                       );
-                    })}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>目前沒有可辨識的本月新投放品項代號。</div>
-                )}
+                    }
+                    const displayName = (productNames[activeBrandId] || {})[item.code];
+                    const share = monthRankedSpend > 0 ? item.spend / monthRankedSpend * 100 : 0;
+                    const cpa = item.conversions > 0 ? item.spend / item.conversions : null;
+                    const roas = item.spend > 0 ? item.revenue / item.spend : null;
+                    return (
+                      <div className="mal-card" key={item.code}>
+                        <div className="mal-card-label">#{idx + 1} 主投品項</div>
+                        <div className="mal-card-value" style={{ fontSize: 24 }}>{item.code}{displayName ? ` · ${displayName}` : ""}</div>
+                        <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", marginTop: 6 }}>
+                          廣告費 {fmtMoney(item.spend, focusData.currency)} · 佔本月投放 {share.toFixed(1)}%
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 3 }}>
+                          {item.adCount} 支廣告 · {fmtInt(item.conversions)} 轉單 · CPA {cpa !== null ? fmtMoney(cpa, focusData.currency) : "—"} · ROAS {roas !== null ? `${roas.toFixed(2)}x` : "—"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
