@@ -3789,6 +3789,9 @@ function MetaAdsLedger() {
   const [adStatusFilter, setAdStatusFilter] = useState("all"); // "all" | "active" | "inactive" —— 篩選要看投放中還是已停止的廣告
   const [adLaunchFilter, setAdLaunchFilter] = useState("all"); // month view: "all" | "month" —— 只看該月份才開始投放的廣告
   const [adSearchKeyword, setAdSearchKeyword] = useState(""); // 依廣告名稱/行銷活動/UTM 關鍵字搜尋,空字串表示不篩選
+  // 月度 TOP3 統一由中央 API 計算；品牌總報表與各獨立品牌頁都只讀同一份結果。
+  const [centralTopProductsByMonth, setCentralTopProductsByMonth] = useState({});
+  const [centralTopProductsLoading, setCentralTopProductsLoading] = useState(false);
   const [showApiPanel, setShowApiPanel] = useState(false);
   // 全域節流用:記錄「最後一次真正打到 Meta Graph API」的時間戳。
   // 不管是月報表、批次、自動同步或縮圖抓取,只要是打 Meta 的請求都共用同一個時間戳,
@@ -3953,6 +3956,30 @@ function MetaAdsLedger() {
   useEffect(() => {
     let cancelled = false;
     loadAll(activeBrandId, () => cancelled);
+    return () => { cancelled = true; };
+  }, [activeBrandId]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeBrandId) {
+      setCentralTopProductsByMonth({});
+      return () => { cancelled = true; };
+    }
+    setCentralTopProductsLoading(true);
+    fetch(`/api/public/monthly-top-products?brand=${encodeURIComponent(activeBrandId)}`, { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`monthly top products failed: ${res.status}`);
+        return await res.json();
+      })
+      .then((json) => {
+        if (cancelled) return;
+        setCentralTopProductsByMonth(json && json.ok && json.months ? json.months : {});
+      })
+      .catch(() => {
+        if (!cancelled) setCentralTopProductsByMonth({});
+      })
+      .finally(() => {
+        if (!cancelled) setCentralTopProductsLoading(false);
+      });
     return () => { cancelled = true; };
   }, [activeBrandId]);
   useEffect(() => {
@@ -5885,30 +5912,13 @@ async function toggleRememberToken(checked) {
   const launchFilteredAds = adLaunchFilter === "month" ? monthStartedAds : spendFilteredAds;
   const visibleAds = filterAdsByStatus(launchFilteredAds, adStatusFilter, adSearchKeyword);
   const hiddenAdCount = focusData && focusData.ads ? focusData.ads.length - spendFilteredAds.length : 0;
-  // 本月主投品項排名：統計選取月份內「實際有花費」的全部廣告，不看開始投放日期，也不套 $500 門檻。
-  // 這份邏輯是品牌總報表的唯一排名定義；獨立品牌報表只讀中央排名結果，不再自行重算。
-  const monthRankedAds = focusData && focusData.ads
-    ? focusData.ads.filter((ad) => (Number(ad.spend) || 0) > 0)
-    : [];
-  const monthLaunchProductTop3 = (() => {
-    const byCode = {};
-    monthRankedAds.forEach((ad) => {
-      const campaignName = String(ad.campaign || "").trim();
-      const inlineMatch = campaignName.match(/[【\[]([^】\]]+)[】\]]/);
-      const code = parseProductCode(campaignName) || (inlineMatch ? inlineMatch[1].trim().toUpperCase() : null);
-      if (!code || NON_PRODUCT_CODE_PATTERN.test(code) || isChannelCode(code) || isLegacyAdOnlyCode(code)) return;
-      if (!byCode[code]) byCode[code] = { code, spend: 0, conversions: 0, revenue: 0, adCount: 0 };
-      byCode[code].spend += Number(ad.spend) || 0;
-      byCode[code].conversions += Number(ad.conversions) || 0;
-      byCode[code].revenue += Number(ad.revenue) || 0;
-      byCode[code].adCount += Number(ad.adCount) || 1;
-    });
-    return Object.values(byCode)
-      .filter((item) => item.spend > 0)
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, 3);
-  })();
-  const monthRankedSpend = monthRankedAds.reduce((sum, ad) => sum + (Number(ad.spend) || 0), 0);
+  // TOP 3 不在前端重算，直接讀中央 API 的月份排名，避免品牌總報表與獨立報表邏輯分岔。
+  const centralTopProductsMonth = focusMonth ? centralTopProductsByMonth[focusMonth] : null;
+  const monthLaunchProductTop3 = centralTopProductsMonth && Array.isArray(centralTopProductsMonth.top3)
+    ? centralTopProductsMonth.top3
+    : [null, null, null];
+  const monthRankedSpend = centralTopProductsMonth ? Number(centralTopProductsMonth.totalAdSpend) || 0 : 0;
+  const monthRankedAdCount = centralTopProductsMonth ? Number(centralTopProductsMonth.spendingAdCount) || 0 : 0;
 
   // ---------- 每日營收報表:直接呈現後台每日收益表(ledgerByMonth)裡「每一天 x 每個產品代號」的明細,不用另外彙總 ----------
   // 選單月份/選單日,優先順序是:①使用者自己手動點過的(dailyMonth/focusDay,只要那筆資料還在就沿用,尊重手動導覽)
@@ -6455,7 +6465,7 @@ const shopeRealDailyMap = useMemo(() => {
                   <div>
                     <StaticSectionTitle className="mal-section-title" style={{ marginBottom: 4 }}>本月投放摘要</StaticSectionTitle>
                     <div style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
-                      統計 {focusMonth} 當月份所有實際有花費的廣告；共 {monthRankedAds.length} 支，總花費 {fmtMoney(monthRankedSpend, focusData.currency)}。
+                      統計 {focusMonth} 當月份所有實際有花費的廣告；共 {monthRankedAdCount} 支，總花費 {fmtMoney(monthRankedSpend, focusData.currency)}。{centralTopProductsLoading ? " 排名更新中…" : ""}
                     </div>
                   </div>
                 </div>
@@ -6473,18 +6483,15 @@ const shopeRealDailyMap = useMemo(() => {
                       );
                     }
                     const displayName = (productNames[activeBrandId] || {})[item.code];
-                    const share = monthRankedSpend > 0 ? item.spend / monthRankedSpend * 100 : 0;
-                    const cpa = item.conversions > 0 ? item.spend / item.conversions : null;
-                    const roas = item.spend > 0 ? item.revenue / item.spend : null;
                     return (
                       <div className="mal-card" key={item.code}>
                         <div className="mal-card-label">#{idx + 1} 主投品項</div>
                         <div className="mal-card-value" style={{ fontSize: 24 }}>{item.code}{displayName ? ` · ${displayName}` : ""}</div>
                         <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", marginTop: 6 }}>
-                          廣告費 {fmtMoney(item.spend, focusData.currency)} · 佔本月投放 {share.toFixed(1)}%
+                          廣告費 {fmtMoney(item.spend, focusData.currency)} · 佔本月投放 {Number(item.spendShare || 0).toFixed(1)}%
                         </div>
                         <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 3 }}>
-                          {item.adCount} 支廣告 · {fmtInt(item.conversions)} 轉單 · CPA {cpa !== null ? fmtMoney(cpa, focusData.currency) : "—"} · ROAS {roas !== null ? `${roas.toFixed(2)}x` : "—"}
+                          {item.adCount} 支廣告 · {fmtInt(item.conversions)} 轉單 · CPA {item.cpa !== null ? fmtMoney(item.cpa, focusData.currency) : "—"} · ROAS {item.roas !== null ? `${Number(item.roas).toFixed(2)}x` : "—"}
                         </div>
                       </div>
                     );
