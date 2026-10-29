@@ -285,6 +285,10 @@ def day_baseline_key(account_id: str, day: date) -> str:
     return f"airbyte-day-baseline:{account_id}::{day.isoformat()}"
 
 
+def attribution_reconcile_key(account_id: str, day: date) -> str:
+    return f"airbyte-attribution-reconcile:{account_id}::{day.isoformat()}"
+
+
 def month_report_key(account_id: str, mk: str) -> str:
     return f"metaads-month:{account_id}::{mk}"
 
@@ -732,6 +736,274 @@ def build_report_record(
 NUMERIC_AD_FIELDS = ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks", "landingPageViews")
 
 
+def _raw_map(record: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    if not isinstance(record, dict):
+        return out
+    for row in record.get("rawAds") or []:
+        if isinstance(row, dict) and row.get("adId"):
+            out[str(row["adId"])] = dict(row)
+    return out
+
+
+def _group_views(raw_ads: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    sponsor: dict[str, dict[str, Any]] = {}
+
+    for ad in raw_ads:
+        key = (
+            ("utm:" + str(ad.get("utm")) if ad.get("utm") else "ad:" + str(ad.get("adId") or ""))
+            + "::campaign:" + str(ad.get("campaign") or "")
+            + "::adset:" + str(ad.get("adSet") or "")
+            + "::" + ("on" if ad.get("active") else "off")
+        )
+        g = grouped.setdefault(key, {
+            "utm": ad.get("utm") or "",
+            "names": set(), "image": "", "postId": "",
+            "spend": 0.0, "conversions": 0.0, "revenue": 0.0,
+            "impressions": 0.0, "clicks": 0.0, "linkClicks": 0.0, "reach": 0.0,
+            "active": bool(ad.get("active")), "campaigns": set(), "adSets": set(),
+            "adSetIds": set(), "adIds": set(), "startDate": None, "postPublishDate": None,
+        })
+        g["names"].add(ad.get("name") or "(未命名廣告)")
+        for field in ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks"):
+            g[field] += as_float(ad.get(field))
+        g["reach"] += as_float(ad.get("reach"))
+        g["campaigns"].add(ad.get("campaign") or "(未分類活動)")
+        g["adSets"].add(ad.get("adSet") or "(未分類廣告組合)")
+        if ad.get("adSetId"):
+            g["adSetIds"].add(str(ad.get("adSetId")))
+        if ad.get("adId"):
+            g["adIds"].add(str(ad.get("adId")))
+        if not g["image"] and ad.get("image"):
+            g["image"] = ad["image"]
+        if not g["postId"] and ad.get("postId"):
+            g["postId"] = ad["postId"]
+        for field in ("startDate", "postPublishDate"):
+            value = ad.get(field)
+            if value and (not g[field] or value < g[field]):
+                g[field] = value
+
+        campaign_name = str(ad.get("campaign") or "")
+        ad_name = str(ad.get("name") or "")
+        if "業配" in campaign_name or "業配" in ad_name:
+            sponsor[str(ad.get("adId") or key)] = {
+                "name": ad_name or "(未命名廣告)",
+                "adId": str(ad.get("adId") or ""),
+                "campaign": campaign_name or "(未分類活動)",
+                "spend": as_float(ad.get("spend")),
+                "conversions": as_float(ad.get("conversions")),
+                "revenue": as_float(ad.get("revenue")),
+            }
+
+    ads: list[dict[str, Any]] = []
+    for g in grouped.values():
+        names = sorted(g.pop("names"))
+        campaigns = sorted(g.pop("campaigns"))
+        adsets = sorted(g.pop("adSets"))
+        ad_ids = sorted(g.pop("adIds"))
+        adset_ids = sorted(g.pop("adSetIds"))
+        ads.append({
+            **g,
+            "name": names[0] if len(names) == 1 else (f"{names[0]} 等 {len(names)} 支廣告" if names else "未命名廣告"),
+            "rawNames": names,
+            "campaign": campaigns[0] if len(campaigns) == 1 else (f"{campaigns[0]} 等 {len(campaigns)} 個活動" if campaigns else "(未分類活動)"),
+            "adSet": adsets[0] if len(adsets) == 1 else (f"{adsets[0]} 等 {len(adsets)} 個廣告組合" if adsets else "(未分類廣告組合)"),
+            "adIds": ad_ids,
+            "adSetIds": adset_ids,
+            "adCount": len(ad_ids) or len(names) or 1,
+        })
+    ads.sort(key=lambda row: as_float(row.get("spend")), reverse=True)
+    return ads, sorted(sponsor.values(), key=lambda row: row["spend"], reverse=True)
+
+
+def apply_day_delta_to_month(
+    month_record: dict[str, Any],
+    old_day: dict[str, Any],
+    new_day: dict[str, Any],
+) -> dict[str, Any]:
+    """Replace one completed day's cached contribution without re-reading the whole month."""
+    month = dict(month_record or {})
+    raw = _raw_map(month)
+
+    for row in old_day.get("rawAds") or []:
+        if not isinstance(row, dict) or not row.get("adId"):
+            continue
+        ad_id = str(row["adId"])
+        target = raw.get(ad_id)
+        if not target:
+            continue
+        for field in NUMERIC_AD_FIELDS:
+            target[field] = as_float(target.get(field)) - as_float(row.get(field))
+
+    for row in new_day.get("rawAds") or []:
+        if not isinstance(row, dict) or not row.get("adId"):
+            continue
+        ad_id = str(row["adId"])
+        target = raw.setdefault(ad_id, {})
+        for field in NUMERIC_AD_FIELDS:
+            target[field] = as_float(target.get(field)) + as_float(row.get(field))
+        for field, value in row.items():
+            if field not in NUMERIC_AD_FIELDS and value not in (None, ""):
+                target[field] = value
+
+    raw_ads = [
+        row for row in raw.values()
+        if as_float(row.get("spend")) > 0.005
+        or as_float(row.get("revenue")) > 0.005
+        or as_float(row.get("conversions")) > 0.005
+    ]
+    raw_ads.sort(key=lambda row: as_float(row.get("spend")), reverse=True)
+    ads, sponsor_ads = _group_views(raw_ads)
+
+    for field in ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks"):
+        value = (
+            as_float(month.get(field))
+            - as_float(old_day.get(field))
+            + as_float(new_day.get(field))
+        )
+        month[field] = 0.0 if abs(value) < 0.000001 else value
+
+    month["rawAds"] = raw_ads
+    month["ads"] = ads
+    month["sponsorAds"] = sponsor_ads
+    return month
+
+
+async def reconcile_recent_attribution_airbyte(
+    connector: FacebookMarketingConnector,
+    base_url: str,
+    brand: dict[str, str],
+    local_today: date,
+    currency: str,
+    metadata: dict[str, Any],
+    reconcile_days: int,
+) -> None:
+    """Re-read yesterday and prior completed days through Airbyte to catch delayed attribution."""
+    if reconcile_days <= 0:
+        return
+
+    account_id = brand["id"]
+    marker_key = attribution_reconcile_key(account_id, local_today)
+    previous = kv_get(base_url, marker_key)
+    if isinstance(previous, dict) and previous.get("status") == "done":
+        print(f"[{brand['name']}] attribution reconciliation already done for {local_today}")
+        return
+
+    days = [
+        local_today - timedelta(days=offset)
+        for offset in range(reconcile_days, 0, -1)
+    ]
+    reconciled: list[str] = []
+    skipped: list[dict[str, str]] = []
+
+    for day in days:
+        mk = month_key(day)
+        cache = kv_get(base_url, cache_key(account_id, mk))
+        if not isinstance(cache, dict) or not isinstance(cache.get("days"), dict):
+            skipped.append({"day": day.isoformat(), "reason": "missing_cache"})
+            print(f"[{brand['name']}] reconcile skip {day}: no daily cache")
+            continue
+        if day.isoformat() not in cache["days"]:
+            skipped.append({"day": day.isoformat(), "reason": "missing_day_cache"})
+            print(f"[{brand['name']}] reconcile skip {day}: day not present in cache")
+            continue
+
+        month_key_value = month_report_key(account_id, mk)
+        month_record = kv_get(base_url, month_key_value)
+        if not isinstance(month_record, dict):
+            skipped.append({"day": day.isoformat(), "reason": "missing_month_record"})
+            print(f"[{brand['name']}] reconcile skip {day}: no month record")
+            continue
+
+        old_rows = cache["days"].get(day.isoformat()) or []
+        old_rows = [row for row in old_rows if isinstance(row, dict)]
+
+        # Delayed purchase attribution must include campaigns that may be paused today,
+        # so this completed-day read intentionally has NO current ACTIVE-campaign filter.
+        fresh_rows = await fetch_daily_insights(
+            connector,
+            account_id,
+            day,
+            day,
+            active_campaign_ids=None,
+        )
+
+        legacy = legacy_ad_meta(month_record)
+        old_day_record = build_report_record(
+            old_rows,
+            {str(row.get("ad_id")): as_float(row.get("reach")) for row in old_rows if row.get("ad_id")},
+            metadata,
+            legacy,
+            account_id,
+            currency,
+            day,
+            day,
+            relax_threshold=True,
+            include_all_ads=True,
+        )
+        new_day_record = build_report_record(
+            fresh_rows,
+            {str(row.get("ad_id")): as_float(row.get("reach")) for row in fresh_rows if row.get("ad_id")},
+            metadata,
+            legacy,
+            account_id,
+            currency,
+            day,
+            day,
+            relax_threshold=True,
+            include_all_ads=True,
+        )
+
+        month_record = apply_day_delta_to_month(month_record, old_day_record, new_day_record)
+        month_record["source"] = "airbyte"
+        month_record["syncEngine"] = "airbyte"
+        month_record["attributionReconciledAt"] = datetime.now(timezone.utc).isoformat()
+        month_record["attributionReconciledDays"] = sorted(set(
+            [*(month_record.get("attributionReconciledDays") or []), day.isoformat()]
+        ))
+        kv_put(base_url, month_key_value, month_record)
+
+        # If today's frozen baseline already exists (for example a retry later in the day),
+        # apply the same correction there so the next today-only run cannot overwrite it.
+        if mk == month_key(local_today):
+            baseline_key = day_baseline_key(account_id, local_today)
+            baseline = kv_get(base_url, baseline_key)
+            if isinstance(baseline, dict):
+                baseline = apply_day_delta_to_month(baseline, old_day_record, new_day_record)
+                baseline["attributionReconciledAt"] = month_record["attributionReconciledAt"]
+                baseline["attributionReconciledDays"] = month_record["attributionReconciledDays"]
+                kv_put(base_url, baseline_key, baseline)
+
+        cache["days"][day.isoformat()] = fresh_rows
+        cache["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        cache["lastAttributionReconcileAt"] = cache["updatedAt"]
+        kv_put(base_url, cache_key(account_id, mk), cache)
+
+        spend_delta = as_float(new_day_record.get("spend")) - as_float(old_day_record.get("spend"))
+        conversion_delta = as_float(new_day_record.get("conversions")) - as_float(old_day_record.get("conversions"))
+        revenue_delta = as_float(new_day_record.get("revenue")) - as_float(old_day_record.get("revenue"))
+        print(
+            f"[{brand['name']}] AIRBYTE RECONCILE {day}: "
+            f"spend_delta={spend_delta:.2f}, conversions_delta={conversion_delta:.2f}, "
+            f"revenue_delta={revenue_delta:.2f}"
+        )
+        reconciled.append(day.isoformat())
+
+    marker = {
+        "accountId": account_id,
+        "brand": brand.get("name") or account_id,
+        "localDay": local_today.isoformat(),
+        "engine": "airbyte",
+        "requestedDays": [day.isoformat() for day in days],
+        "reconciledDays": reconciled,
+        "skippedDays": skipped,
+        "status": "done" if not skipped else "partial",
+        "syncedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    kv_put(base_url, marker_key, marker)
+
+
 def merge_month_with_today(
     baseline: dict[str, Any] | None,
     today_record: dict[str, Any],
@@ -875,6 +1147,7 @@ async def sync_brand(
     metadata_max_age_hours: int,
     force_backfill_days: int,
     engine: str,
+    reconcile_days: int,
 ) -> None:
     account_id = brand["id"]
     if engine == "sdk":
@@ -932,6 +1205,29 @@ async def sync_brand(
         kv_put(base_url, month_report_key(account_id, month_key(local_today)), record)
         print(f"[{brand['name']}] backfill done: active campaigns={len(active_campaign_ids)}, spend={record['spend']:.2f}")
         return
+
+    # Before freezing today's baseline, reconcile yesterday + the prior completed day.
+    # This uses Airbyte only and intentionally includes campaigns that are paused today.
+    if engine == "airbyte" and reconcile_days > 0:
+        if connector is None:
+            raise RuntimeError("Airbyte connector is required for attribution reconciliation.")
+        reconcile_metadata = old_meta if isinstance(old_meta, dict) else {
+            "campaigns": {}, "adsets": {}, "ads": {}, "creatives": {}
+        }
+        reconcile_metadata = dict(reconcile_metadata)
+        reconcile_metadata["campaigns"] = {
+            **(reconcile_metadata.get("campaigns") or {}),
+            **active_campaigns,
+        }
+        await reconcile_recent_attribution_airbyte(
+            connector,
+            base_url,
+            brand,
+            local_today,
+            currency,
+            reconcile_metadata,
+            reconcile_days,
+        )
 
     # Normal scheduled mode: yesterday already exists, so only read TODAY.
     # Freeze the month record at the start of this day. Every later run today rebuilds from
@@ -1051,6 +1347,7 @@ async def amain(args: argparse.Namespace) -> int:
                 metadata_max_age_hours=args.metadata_max_age_hours,
                 force_backfill_days=args.backfill_days,
                 engine=args.engine,
+                reconcile_days=args.reconcile_days,
             )
         except Exception as exc:
             errors.append((brand, exc))
@@ -1070,6 +1367,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lookback-days", type=int, default=1, help="Compatibility option. Scheduled sync reads today only; use --backfill-days for history.")
     parser.add_argument("--metadata-max-age-hours", type=int, default=24)
     parser.add_argument("--backfill-days", type=int, default=0, help="Manual override for current-month Airbyte backfill window.")
+    parser.add_argument(
+        "--reconcile-days",
+        type=int,
+        default=2,
+        help="Completed days to re-read through Airbyte for delayed attribution. Scheduled default: yesterday + day before.",
+    )
     parser.add_argument(
         "--engine",
         choices=("airbyte", "sdk"),
