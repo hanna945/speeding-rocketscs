@@ -19,9 +19,17 @@ on:
         required: false
         default: ""
       backfill_days:
-        description: "Optional current-month backfill window. 0 uses incremental cache/lookback."
+        description: "Optional current-month Airbyte backfill window. 0 keeps today-only mode."
         required: false
         default: "0"
+      engine:
+        description: "Sync engine. Keep airbyte normally; use sdk only for emergency manual fallback."
+        required: false
+        default: "airbyte"
+        type: choice
+        options:
+          - airbyte
+          - sdk
 
 permissions:
   contents: read
@@ -64,9 +72,13 @@ jobs:
             echo "Airbyte sync is installed but dormant. Add META_SYSTEM_USER_TOKEN to activate it."
           fi
 
-      - name: Install Meta Business SDK and Airbyte backfill SDK
+      - name: Install Airbyte Facebook Marketing SDK
         if: steps.configured.outputs.ready == 'true'
-        run: python -m pip install --upgrade facebook-business airbyte-agent-sdk
+        run: python -m pip install --upgrade airbyte-agent-sdk
+
+      - name: Install Meta Business SDK only for emergency fallback
+        if: steps.configured.outputs.ready == 'true' && github.event_name == 'workflow_dispatch' && github.event.inputs.engine == 'sdk'
+        run: python -m pip install --upgrade facebook-business
 
       - name: Sync Meta through Airbyte into existing report KV
         if: steps.configured.outputs.ready == 'true'
@@ -74,4 +86,9 @@ jobs:
           META_SYSTEM_USER_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
           REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
         run: |
-          python tools/airbyte_meta_sync.py             --lookback-days 1             --metadata-max-age-hours 24             --brand-id "${{ github.event.inputs.brand_id || '' }}"             --backfill-days "${{ github.event.inputs.backfill_days || '0' }}"
+          python tools/airbyte_meta_sync.py \
+            --lookback-days 1 \
+            --metadata-max-age-hours 24 \
+            --brand-id "${{ github.event.inputs.brand_id || '' }}" \
+            --backfill-days "${{ github.event.inputs.backfill_days || '0' }}" \
+            --engine "${{ github.event.inputs.engine || 'airbyte' }}"
