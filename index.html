@@ -1414,6 +1414,36 @@
     .mal-sponsor-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
   }
 
+
+  /* Monthly presentation v7: ad delivery status */
+  .mal-ad-status-badge {
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    padding:4px 8px;
+    border-radius:999px;
+    font-size:11.5px;
+    font-weight:800;
+    line-height:1;
+    white-space:nowrap;
+    border:1px solid transparent;
+  }
+  .mal-ad-status-badge::before {
+    content:"";
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:currentColor;
+    opacity:.8;
+  }
+  .mal-ad-status-active { color:#5c7b64; background:#e9f2e9; border-color:#d4e4d6; }
+  .mal-ad-status-paused { color:#8d6a32; background:#f7edd8; border-color:#ead9b8; }
+  .mal-ad-status-closed { color:#756b62; background:#eee9e3; border-color:#ddd4ca; }
+  .mal-ad-status-deleted { color:#9a554b; background:#f5dfda; border-color:#e9c8c1; }
+  .mal-ad-status-issue { color:#975548; background:#f4ddd7; border-color:#e7c2ba; }
+  .mal-ad-status-review { color:#776f92; background:#ece9f4; border-color:#d8d2e7; }
+  .mal-ad-status-unknown { color:#84786c; background:#f1ece6; border-color:#e2d8cd; }
+
 </style>
 </head>
 <body>
@@ -4267,6 +4297,36 @@ function PresentationSectionHead({ title, subtitle }) {
 }
 
 
+
+function presentationAdStatusMeta(ad) {
+  const raw = String((ad && ad.effectiveStatus) || "").toUpperCase();
+  if (raw === "ACTIVE") return { label:"投放中", cls:"mal-ad-status-active" };
+  if (raw === "PAUSED" || raw === "CAMPAIGN_PAUSED" || raw === "ADSET_PAUSED") return { label:"已暫停", cls:"mal-ad-status-paused" };
+  if (raw === "DELETED") return { label:"已刪除", cls:"mal-ad-status-deleted" };
+  if (raw === "ARCHIVED") return { label:"已關閉", cls:"mal-ad-status-closed" };
+  if (raw === "DISAPPROVED" || raw === "WITH_ISSUES") return { label:"投放受限", cls:"mal-ad-status-issue" };
+  if (raw === "PENDING_REVIEW" || raw === "PREAPPROVED" || raw === "IN_PROCESS" || raw === "PENDING_BILLING_INFO") return { label:"審核中", cls:"mal-ad-status-review" };
+  if (ad && ad.active === true) return { label:"投放中", cls:"mal-ad-status-active" };
+  if (ad && ad.active === false) return { label:"已停止", cls:"mal-ad-status-closed" };
+  return { label:"狀態未知", cls:"mal-ad-status-unknown" };
+}
+
+function presentationCampaignStatusMeta(statuses) {
+  const list = Array.from(new Set((statuses || []).filter(Boolean).map((x)=>String(x).toUpperCase())));
+  if (!list.length) return { label:"狀態未知", cls:"mal-ad-status-unknown" };
+  if (list.length === 1) return presentationAdStatusMeta({ effectiveStatus:list[0] });
+  if (list.includes("ACTIVE")) return { label:"部分投放中", cls:"mal-ad-status-active" };
+  if (list.every((x)=>x==="PAUSED"||x==="CAMPAIGN_PAUSED"||x==="ADSET_PAUSED")) return { label:"已暫停", cls:"mal-ad-status-paused" };
+  if (list.every((x)=>x==="DELETED")) return { label:"已刪除", cls:"mal-ad-status-deleted" };
+  if (list.every((x)=>x==="ARCHIVED")) return { label:"已關閉", cls:"mal-ad-status-closed" };
+  return { label:"多狀態", cls:"mal-ad-status-unknown" };
+}
+
+function PresentationAdStatusBadge({ ad, statuses }) {
+  const meta = statuses ? presentationCampaignStatusMeta(statuses) : presentationAdStatusMeta(ad);
+  return <span className={"mal-ad-status-badge "+meta.cls}>{meta.label}</span>;
+}
+
 function MonthlyPresentation({
   currentRecord,
   previousRecord,
@@ -4414,16 +4474,18 @@ function MonthlyPresentation({
         conversions:0,
         postId:ad.postId || "",
         adId:(ad.adIds && ad.adIds[0]) || ad.adId || "",
+        statuses:new Set(),
       };
       map[key].spend += Number(ad.spend || 0);
       map[key].revenue += Number(ad.revenue || 0);
       map[key].conversions += Number(ad.conversions || 0);
+      map[key].statuses.add(ad.effectiveStatus || (ad.active ? "ACTIVE" : "UNKNOWN"));
       if (!map[key].postId && ad.postId) map[key].postId = ad.postId;
       if (!map[key].adId && ad.adIds && ad.adIds[0]) map[key].adId = ad.adIds[0];
     });
     const rows = Object.values(map)
       .filter((r)=>r.spend>0 || r.revenue>0)
-      .map((r)=>({ ...r, roas:r.spend > 0 ? r.revenue/r.spend : null }));
+      .map((r)=>({ ...r, statuses:Array.from(r.statuses || []), roas:r.spend > 0 ? r.revenue/r.spend : null }));
     const totalSpend = rows.reduce((sum,r)=>sum+Number(r.spend||0),0);
     return rows.map((r)=>({
       ...r,
@@ -4615,6 +4677,7 @@ function MonthlyPresentation({
               <div className="mal-campaign-rank-metric">{r.roas!==null?r.roas.toFixed(2)+"x":"—"}</div>
             </div>
             <div className="mal-campaign-rank-meta">
+              <PresentationAdStatusBadge statuses={r.statuses} />
               <span>花費 {fmtMoney(r.spend||0,currencyCode)}</span>
               <span>轉單 {fmtInt(r.conversions||0)}</span>
               <span>花費佔比 {Number(r.spendShare||0).toFixed(0)}%</span>
@@ -4767,11 +4830,12 @@ function MonthlyPresentation({
         />
         <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(campaignAnalysis.highestSpend.length)}>
           <table className="mal-presentation-table">
-            <thead><tr><th>Campaign</th><th>花費</th><th>花費佔比</th><th>ROAS</th><th>轉單</th><th>判斷</th><th>分析</th></tr></thead>
+            <thead><tr><th>Campaign</th><th>狀態</th><th>花費</th><th>花費佔比</th><th>ROAS</th><th>轉單</th><th>判斷</th><th>分析</th></tr></thead>
             <tbody>{campaignAnalysis.highestSpend.length ? campaignAnalysis.highestSpend.map((r)=>{
               const url=presentationAdUrl(accountId,r);
               return <tr key={r.name}>
                 <td>{url?<a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{r.name} ↗</a>:r.name}</td>
+                <td><PresentationAdStatusBadge statuses={r.statuses} /></td>
                 <td className="num">{fmtMoney(r.spend,currencyCode)}</td>
                 <td className="num">{Number(r.spendShare||0).toFixed(1)}%</td>
                 <td className="num">{r.roas!==null?r.roas.toFixed(2)+"x":"—"}</td>
@@ -4779,7 +4843,7 @@ function MonthlyPresentation({
                 <td><span className={"mal-campaign-spend-verdict "+r.decision.tone}>{r.decision.verdict}</span></td>
                 <td className="mal-campaign-analysis-text">{r.decision.text}</td>
               </tr>;
-            }) : <tr><td colSpan="7">本月沒有一般 Campaign 投放資料。</td></tr>}</tbody>
+            }) : <tr><td colSpan="8">本月沒有一般 Campaign 投放資料。</td></tr>}</tbody>
           </table>
         </div>
       </div>
@@ -4803,13 +4867,14 @@ function MonthlyPresentation({
           </div>:null}
           <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(chunk.length)}>
             <table className="mal-presentation-table">
-              <thead><tr><th>業配廣告</th><th>花費</th><th>營收</th><th>轉單</th><th>ROAS</th><th>判斷</th></tr></thead>
+              <thead><tr><th>業配廣告</th><th>狀態</th><th>花費</th><th>營收</th><th>轉單</th><th>ROAS</th><th>判斷</th></tr></thead>
               <tbody>{chunk.map((ad,i)=>{
                 const url=presentationAdUrl(accountId,ad);
                 const roas=Number(ad.spend||0)>0?Number(ad.revenue||0)/Number(ad.spend||0):null;
                 const j=sponsorDecision(ad);
                 return <tr key={ad.adId||ad.name||i}>
                   <td>{url?<a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{ad.name||ad.campaign||"業配廣告"} ↗</a>:(ad.name||ad.campaign||"業配廣告")}</td>
+                  <td><PresentationAdStatusBadge ad={ad} /></td>
                   <td className="num">{fmtMoney(ad.spend||0,currencyCode)}</td>
                   <td className="num">{fmtMoney(ad.revenue||0,currencyCode)}</td>
                   <td className="num">{fmtInt(ad.conversions||0)}</td>
@@ -6118,7 +6183,12 @@ function MetaAdsLedger() {
     // 只查「這段期間真的有花費紀錄」的廣告 ID,不要掃整個帳號的歷史廣告,避免觸發 Meta 帳號層級的頻率限制。
     // 非relax模式(月報表)時,只對「花費有機會達標」的廣告抓細節,高流量帳號常常有大量低花費、
     // 之後反正會被篩掉的廣告,不用每支都白跑一次查詢,減少總請求數。
-    const detailTargetRows = relaxThreshold ? rows : rows.filter((r) => (parseFloat(r.spend) || 0) >= MIN_FETCH_SPEND);
+    const detailTargetRows = relaxThreshold ? rows : rows.filter((r) => {
+      const spend = parseFloat(r.spend) || 0;
+      const adName = r.ad_name || "";
+      const campaignName = r.campaign_name || "";
+      return spend >= MIN_FETCH_SPEND || adName.includes("業配") || campaignName.includes("業配");
+    });
     const periodAdIds = [...new Set(detailTargetRows.map((r) => r.ad_id).filter(Boolean))];
     let thumbMap = {};
     let utmMap = {};
@@ -6220,6 +6290,8 @@ function MetaAdsLedger() {
         adId: row.ad_id || "",
         campaign: row.campaign_name || campaignMap[row.ad_id] || "(未分類活動)",
         postId: storyIdMap[row.ad_id] || "",
+        effectiveStatus: statusMap[row.ad_id] || "UNKNOWN",
+        active: statusMap[row.ad_id] === "ACTIVE",
         spend: parseFloat(row.spend) || 0,
         conversions: pickPurchaseValue(row.actions),
         revenue: pickPurchaseValue(row.action_values),
@@ -6248,14 +6320,15 @@ function MetaAdsLedger() {
 
       const adName = row.ad_name || "(未命名廣告)";
       const utm = utmMap[row.ad_id] || "";
-      const isActive = statusMap[row.ad_id] === "ACTIVE";
+      const effectiveStatus = statusMap[row.ad_id] || "UNKNOWN";
+      const isActive = effectiveStatus === "ACTIVE";
       // 跟shopline-proxy後端同一個bug、同一套修法:UTM相同但行銷活動不同的廣告,不該被合併成一筆,
-      // 分組key加上行銷活動名稱,兩個都相同才合併。
+      // 分組key加上行銷活動名稱與精確狀態,避免暫停/刪除/封存被混成同一筆「已停止」。
       const campaignName = campaignMap[row.ad_id] || "(未分類活動)";
       const adSetName = adSetMap[row.ad_id] || "(未分類廣告組合)";
-      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::adset:" + adSetName + "::" + (isActive ? "on" : "off");
+      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::adset:" + adSetName + "::status:" + effectiveStatus;
       if (!grouped[groupKey]) {
-        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, active: isActive, campaigns: new Set(), adSets: new Set(), adSetIds: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
+        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0, active: isActive, effectiveStatus, campaigns: new Set(), adSets: new Set(), adSetIds: new Set(), adIds: new Set(), startDate: null, postPublishDate: null };
       }
       const g = grouped[groupKey];
       g.names.add(adName);
@@ -6291,6 +6364,7 @@ function MetaAdsLedger() {
       postId: storyIdMap[row.ad_id] || "",
       utm: utmMap[row.ad_id] || "",
       image: thumbMap[row.ad_id] || "",
+      effectiveStatus: statusMap[row.ad_id] || "UNKNOWN",
       active: statusMap[row.ad_id] === "ACTIVE",
       startDate: startDateMap[row.ad_id] || null,
       postPublishDate: adPostPublishMap[row.ad_id] || null,
@@ -6334,7 +6408,7 @@ function MetaAdsLedger() {
         return {
           name, utm: g.utm, image: g.image, postId: g.postId, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
           impressions: g.impressions, clicks: g.clicks, linkClicks: g.linkClicks, reach: g.reach,
-          adCount, rawNames: nameList, active: g.active, campaign, adSet, adSetIds: [...g.adSetIds], adIds: [...g.adIds], startDate: g.startDate,
+          adCount, rawNames: nameList, active: g.active, effectiveStatus: g.effectiveStatus || (g.active ? "ACTIVE" : "UNKNOWN"), campaign, adSet, adSetIds: [...g.adSetIds], adIds: [...g.adIds], startDate: g.startDate,
           postPublishDate: g.postPublishDate,
         };
       })
