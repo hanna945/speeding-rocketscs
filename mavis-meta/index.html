@@ -2067,7 +2067,7 @@ function CrossCampaignCreativePanel({ currentRecord, cpaTarget = null, cpcTarget
 
   const available = ["cpa", "cpc", "cpm", "other"].filter((type) => counts[type] > 0);
   const [strategyType, setStrategyType] = useState("cpa");
-  const [sectionCollapsed, setSectionCollapsed] = useState(true);
+  const [sectionCollapsed, setSectionCollapsed] = useState(false);
   useEffect(() => {
     if (!available.includes(strategyType)) setStrategyType(available[0] || "cpa");
   }, [currentRecord, cpaTarget, cpcTarget, counts.cpa, counts.cpc, counts.cpm, counts.other]);
@@ -3195,7 +3195,7 @@ function DonutChart({ data, size = 176, thickness = 30 }) {
 // ---------- main app ----------
 
 function CollapsibleSectionTitle({ children, className = "", style, ...props }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -5083,9 +5083,8 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
   function PerformanceBreakdown({ ads, currencyCode, accountId }) {
     const { qualifyingAds, buckets } = groupAdsByPerformance(ads);
     const brandPageId = derivePageIdFromAds(ads);
-    // 預設先把每一組收起來(不然「成效好」動輒上百支廣告,頁面會很長),
-    // 點卡片跳過去的時候,才把該組展開,同時捲動過去。
-    const [collapsed, setCollapsed] = useState({ good: true, normal: true, poor: true, learning: true });
+    // 預設展開所有成效分類；仍可點各分類標題手動收合。
+    const [collapsed, setCollapsed] = useState({ good: false, normal: false, poor: false, learning: false });
 
     useEffect(() => {
       function handleExpandAll() {
@@ -5775,6 +5774,10 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
     return { spend, conversions, revenue, cpa: conversions > 0 ? spend / conversions : null, roas: spend > 0 && revenue > 0 ? revenue / spend : null };
   }, [sponsorMonthlyStats]);
   const sponsorMonthsWithData = sponsorMonthlyStats.filter((m) => m.ads.length > 0);
+  const currentCalendarMonth = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
 
   const sortedVisibleAds = useMemo(() => sortAdsByMode(visibleAds, adSortMode), [visibleAds, adSortMode]);
 
@@ -6405,7 +6408,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
 
             <CollapsibleSectionTitle className="mal-section-title">逐月業配廣告明細</CollapsibleSectionTitle>
             {sponsorMonthsWithData.map((m) => (
-              <details key={m.monthKey} className="mal-sponsor-month">
+              <details key={m.monthKey} className="mal-sponsor-month" defaultOpen={m.monthKey === currentCalendarMonth}>
                 <summary className="mal-sponsor-month-summary">
                   <span className="mal-sponsor-month-title">{m.month}</span>
                   <span className="mal-section-count">
