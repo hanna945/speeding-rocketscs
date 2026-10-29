@@ -413,6 +413,61 @@ async def refresh_metadata(
     }
 
 
+async def refresh_delivery_status_metadata(
+    connector: FacebookMarketingConnector,
+    account_id: str,
+    old_meta: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Refresh only delivery-state metadata for campaigns/adsets/ads.
+
+    This is intentionally lighter than refresh_metadata(): no creative enumeration.
+    Existing creative/link metadata is preserved so normal 6-hour syncs stay inexpensive
+    while paused/archived/deleted ad states remain current.
+    """
+    old_meta = old_meta if isinstance(old_meta, dict) else {}
+
+    campaigns = await paged(
+        connector.campaigns.list,
+        account_id=account_id,
+        fields="id,name,objective,effective_status,status,start_time,created_time",
+        limit=500,
+    )
+    adsets = await paged(
+        connector.ad_sets.list,
+        account_id=account_id,
+        fields="id,name,campaign_id,effective_status,status,start_time,created_time,optimization_goal,learning_stage_info",
+        limit=500,
+    )
+    ads = await paged(
+        connector.ads.list,
+        account_id=account_id,
+        fields="id,name,adset_id,campaign_id,effective_status,status,created_time,creative",
+        limit=500,
+    )
+
+    def merge_rows(old_rows: Any, fresh_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        current = old_rows if isinstance(old_rows, dict) else {}
+        out = {str(key): dict(value) for key, value in current.items() if isinstance(value, dict)}
+        for row in fresh_rows:
+            row_id = str(row.get("id") or "")
+            if not row_id:
+                continue
+            out[row_id] = {**out.get(row_id, {}), **row}
+        return out
+
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        **old_meta,
+        "syncedAt": now,
+        "statusSyncedAt": now,
+        "syncMode": "airbyte_delivery_status_refresh",
+        "campaigns": merge_rows(old_meta.get("campaigns"), campaigns),
+        "adsets": merge_rows(old_meta.get("adsets"), adsets),
+        "ads": merge_rows(old_meta.get("ads"), ads),
+        "creatives": old_meta.get("creatives") if isinstance(old_meta.get("creatives"), dict) else {},
+    }
+
+
 def _load_meta_sdk():
     """Lazy-load Meta Business SDK only for the explicit emergency fallback path."""
     from facebook_business.api import FacebookAdsApi
@@ -726,6 +781,10 @@ def build_report_record(
         effective_status = str(ad_meta.get("effective_status") or legacy_meta.get("effectiveStatus") or "UNKNOWN")
         campaign_status = str(campaign_meta.get("effective_status") or legacy_meta.get("campaignEffectiveStatus") or "UNKNOWN")
         active = effective_status == "ACTIVE"
+        if ad_id in sponsor:
+            sponsor[ad_id]["effectiveStatus"] = effective_status
+            sponsor[ad_id]["active"] = active
+            sponsor[ad_id]["campaignEffectiveStatus"] = campaign_status
         if not include_all_ads and not (item["spend"] >= MIN_FETCH_SPEND or (relax_threshold and active)):
             continue
 
@@ -734,6 +793,7 @@ def build_report_record(
             "campaign": item.get("campaign") or campaign_meta.get("name") or "(未分類活動)",
             "adSet": item.get("adSet") or adset_meta.get("name") or "(未分類廣告組合)",
             "objective": campaign_meta.get("objective") or legacy_meta.get("objective") or "",
+            "effectiveStatus": effective_status,
             "campaignEffectiveStatus": campaign_status,
             "campaignActive": campaign_status == "ACTIVE",
             "optimizationGoal": adset_meta.get("optimization_goal") or legacy_meta.get("optimizationGoal") or "",
@@ -753,13 +813,14 @@ def build_report_record(
             ("utm:" + ad["utm"] if ad.get("utm") else "ad:" + ad["adId"])
             + "::campaign:" + str(ad.get("campaign") or "")
             + "::adset:" + str(ad.get("adSet") or "")
-            + "::" + ("on" if ad.get("active") else "off")
+            + "::status:" + str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN"))
         )
         g = grouped.setdefault(key, {
             "utm": ad.get("utm") or "",
             "names": set(), "image": "", "postId": "",
             "spend": 0.0, "conversions": 0.0, "revenue": 0.0,
             "impressions": 0, "clicks": 0, "linkClicks": 0, "reach": 0.0,
+            "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
             "active": bool(ad.get("active")), "campaigns": set(), "adSets": set(),
             "adSetIds": set(), "adIds": set(), "startDate": None, "postPublishDate": None,
         })
@@ -829,6 +890,49 @@ def build_report_record(
 NUMERIC_AD_FIELDS = ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks", "landingPageViews")
 
 
+def apply_delivery_status_to_record(
+    record: dict[str, Any] | None,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    out = dict(record or {})
+    ads_meta = metadata.get("ads") or {}
+    campaigns_meta = metadata.get("campaigns") or {}
+    raw_ads: list[dict[str, Any]] = []
+
+    for source in out.get("rawAds") or []:
+        if not isinstance(source, dict):
+            continue
+        row = dict(source)
+        ad_id = str(row.get("adId") or "")
+        campaign_id = str(row.get("campaignId") or "")
+        ad_meta = ads_meta.get(ad_id) or {}
+        campaign_meta = campaigns_meta.get(campaign_id) or {}
+
+        effective_status = str(
+            ad_meta.get("effective_status")
+            or row.get("effectiveStatus")
+            or ("ACTIVE" if row.get("active") else "UNKNOWN")
+        )
+        campaign_status = str(
+            campaign_meta.get("effective_status")
+            or row.get("campaignEffectiveStatus")
+            or "UNKNOWN"
+        )
+        row["effectiveStatus"] = effective_status
+        row["active"] = effective_status == "ACTIVE"
+        row["campaignEffectiveStatus"] = campaign_status
+        row["campaignActive"] = campaign_status == "ACTIVE"
+        raw_ads.append(row)
+
+    raw_ads.sort(key=lambda row: as_float(row.get("spend")), reverse=True)
+    ads, sponsor_ads = _group_views(raw_ads)
+    out["rawAds"] = raw_ads
+    out["ads"] = ads
+    out["sponsorAds"] = sponsor_ads
+    out["deliveryStatusSyncedAt"] = metadata.get("statusSyncedAt") or metadata.get("syncedAt")
+    return out
+
+
 def _raw_map(record: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     if not isinstance(record, dict):
@@ -848,13 +952,14 @@ def _group_views(raw_ads: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
             ("utm:" + str(ad.get("utm")) if ad.get("utm") else "ad:" + str(ad.get("adId") or ""))
             + "::campaign:" + str(ad.get("campaign") or "")
             + "::adset:" + str(ad.get("adSet") or "")
-            + "::" + ("on" if ad.get("active") else "off")
+            + "::status:" + str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN"))
         )
         g = grouped.setdefault(key, {
             "utm": ad.get("utm") or "",
             "names": set(), "image": "", "postId": "",
             "spend": 0.0, "conversions": 0.0, "revenue": 0.0,
             "impressions": 0.0, "clicks": 0.0, "linkClicks": 0.0, "reach": 0.0,
+            "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
             "active": bool(ad.get("active")), "campaigns": set(), "adSets": set(),
             "adSetIds": set(), "adIds": set(), "startDate": None, "postPublishDate": None,
         })
@@ -884,6 +989,9 @@ def _group_views(raw_ads: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
                 "name": ad_name or "(未命名廣告)",
                 "adId": str(ad.get("adId") or ""),
                 "campaign": campaign_name or "(未分類活動)",
+                "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
+                "active": bool(ad.get("active")),
+                "campaignEffectiveStatus": str(ad.get("campaignEffectiveStatus") or "UNKNOWN"),
                 "spend": as_float(ad.get("spend")),
                 "conversions": as_float(ad.get("conversions")),
                 "revenue": as_float(ad.get("revenue")),
@@ -1184,7 +1292,7 @@ def merge_month_with_today(
             target["reach"] = as_float(row.get("reach"))
         for field in (
             "name", "campaignId", "campaign", "adSetId", "adSet", "objective",
-            "campaignEffectiveStatus", "optimizationGoal", "creativeId", "postId",
+            "effectiveStatus", "campaignEffectiveStatus", "optimizationGoal", "creativeId", "postId",
             "utm", "image", "startDate", "postPublishDate"
         ):
             if row.get(field):
@@ -1202,13 +1310,14 @@ def merge_month_with_today(
             ("utm:" + str(ad.get("utm")) if ad.get("utm") else "ad:" + str(ad.get("adId") or ""))
             + "::campaign:" + str(ad.get("campaign") or "")
             + "::adset:" + str(ad.get("adSet") or "")
-            + "::" + ("on" if ad.get("active") else "off")
+            + "::status:" + str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN"))
         )
         g = grouped.setdefault(key, {
             "utm": ad.get("utm") or "",
             "names": set(), "image": "", "postId": "",
             "spend": 0.0, "conversions": 0.0, "revenue": 0.0,
             "impressions": 0, "clicks": 0, "linkClicks": 0, "reach": 0.0,
+            "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
             "active": bool(ad.get("active")), "campaigns": set(), "adSets": set(),
             "adSetIds": set(), "adIds": set(), "startDate": None, "postPublishDate": None,
         })
@@ -1238,6 +1347,9 @@ def merge_month_with_today(
                 "name": ad_name or "(未命名廣告)",
                 "adId": str(ad.get("adId") or ""),
                 "campaign": campaign_name or "(未分類活動)",
+                "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
+                "active": bool(ad.get("active")),
+                "campaignEffectiveStatus": str(ad.get("campaignEffectiveStatus") or "UNKNOWN"),
                 "spend": as_float(ad.get("spend")),
                 "conversions": as_float(ad.get("conversions")),
                 "revenue": as_float(ad.get("revenue")),
@@ -1323,6 +1435,25 @@ async def sync_brand(
     print(f"[{brand['name']}] active campaigns={len(active_campaign_ids)}")
 
     old_meta = kv_get(base_url, meta_key(account_id))
+    status_metadata = old_meta if isinstance(old_meta, dict) else {
+        "campaigns": {}, "adsets": {}, "ads": {}, "creatives": {}
+    }
+    if force_backfill_days <= 0 and engine == "airbyte":
+        if connector is None:
+            raise RuntimeError("Airbyte connector is required for delivery-status refresh.")
+        status_metadata = await refresh_delivery_status_metadata(connector, account_id, status_metadata)
+        status_metadata["campaigns"] = {
+            **(status_metadata.get("campaigns") or {}),
+            **active_campaigns,
+        }
+        kv_put(base_url, meta_key(account_id), status_metadata)
+    elif force_backfill_days <= 0:
+        status_metadata = dict(status_metadata)
+        status_metadata["campaigns"] = {
+            **(status_metadata.get("campaigns") or {}),
+            **active_campaigns,
+        }
+
     if force_backfill_days > 0:
         # Manual recovery mode: explicitly requested historical backfill.
         query_since = max(current_month_start, local_today - timedelta(days=force_backfill_days - 1))
@@ -1359,14 +1490,7 @@ async def sync_brand(
     if engine == "airbyte" and reconcile_days > 0:
         if connector is None:
             raise RuntimeError("Airbyte connector is required for attribution reconciliation.")
-        reconcile_metadata = old_meta if isinstance(old_meta, dict) else {
-            "campaigns": {}, "adsets": {}, "ads": {}, "creatives": {}
-        }
-        reconcile_metadata = dict(reconcile_metadata)
-        reconcile_metadata["campaigns"] = {
-            **(reconcile_metadata.get("campaigns") or {}),
-            **active_campaigns,
-        }
+        reconcile_metadata = dict(status_metadata)
         await reconcile_recent_attribution_airbyte(
             connector,
             base_url,
@@ -1387,6 +1511,7 @@ async def sync_brand(
     if not isinstance(baseline, dict):
         baseline = existing_month if isinstance(existing_month, dict) else {}
         kv_put(base_url, baseline_key, baseline)
+    baseline = apply_delivery_status_to_record(baseline, status_metadata)
 
     print(
         f"[{brand['name']}] TODAY ONLY {local_today}, engine={engine}, "
@@ -1413,12 +1538,15 @@ async def sync_brand(
     update_cache_rows(caches, account_id, local_today, local_today, today_rows)
     kv_put(base_url, cache_key(account_id, month_key(local_today)), caches[month_key(local_today)])
 
-    # Reuse yesterday's metadata. Normal daily sync does not enumerate every ad/adset/creative.
-    metadata = old_meta if isinstance(old_meta, dict) else {"adsets": {}, "ads": {}, "creatives": {}}
-    metadata = dict(metadata)
-    metadata["campaigns"] = active_campaigns
+    # Keep full delivery-state metadata (including paused/archived/deleted ads).
+    # ACTIVE campaigns are used only to limit today's Insights query, not to erase metadata.
+    metadata = dict(status_metadata)
+    metadata["campaigns"] = {
+        **(metadata.get("campaigns") or {}),
+        **active_campaigns,
+    }
     metadata["syncedAt"] = datetime.now(timezone.utc).isoformat()
-    metadata["syncMode"] = f"{engine}_active_campaign_status_only"
+    metadata["syncMode"] = f"{engine}_today_active_metrics_with_full_delivery_status"
     kv_put(base_url, meta_key(account_id), metadata)
 
     today_reach = {
