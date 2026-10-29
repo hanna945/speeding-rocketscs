@@ -1,0 +1,43 @@
+name: Mavis Babel Validate
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  statuses: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Babel
+        run: npm install --no-save @babel/core @babel/preset-env @babel/preset-react
+      - name: Validate Mavis inline JSX
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          node <<'NODE'
+          const fs=require('fs'), https=require('https');
+          const {transformSync}=require('@babel/core');
+          const html=fs.readFileSync('mavis-meta/index.html','utf8');
+          const m=html.match(/<script[^>]*type=["']text\/babel["'][^>]*>([\s\S]*?)<\/script>/i);
+          let state='success', desc='Babel OK';
+          try{
+            if(!m) throw new Error('text/babel script not found');
+            transformSync(m[1],{presets:['@babel/preset-env','@babel/preset-react'],filename:'mavis-inline.jsx'});
+          }catch(e){
+            state='failure';
+            const loc=e.loc?(' line '+e.loc.line+':'+e.loc.column):'';
+            desc=(e.reasonCode||'Babel error')+loc+' '+(e.message||e);
+          }
+          const body=JSON.stringify({state,context:'mavis-babel-validate',description:String(desc).replace(/\s+/g,' ').slice(0,135)});
+          const req=https.request({hostname:'api.github.com',path:'/repos/'+process.env.REPO+'/statuses/'+process.env.SHA,method:'POST',headers:{
+            Authorization:'Bearer '+process.env.GH_TOKEN,'User-Agent':'mavis-babel-validate','Accept':'application/vnd.github+json','Content-Type':'application/json','Content-Length':Buffer.byteLength(body)
+          }},res=>{res.resume();res.on('end',()=>process.exit(state==='success'?0:1));});
+          req.on('error',err=>{console.error(err);process.exit(2);});req.write(body);req.end();
+          NODE
