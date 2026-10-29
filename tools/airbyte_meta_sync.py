@@ -42,6 +42,7 @@ PURCHASE_ACTION_PRIORITY = [
 ]
 MIN_FETCH_SPEND = 500.0
 DEFAULT_BASE_URL = "https://speedingscs.pages.dev"
+# Manual validation trigger: run the production Airbyte sync for all configured accounts.
 
 
 def env_required(name: str) -> str:
