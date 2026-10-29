@@ -508,13 +508,7 @@
   .mal-threshold-row + .mal-threshold-row { border-left: 1px solid var(--rule-soft); }
 
   .mal-viewmode-switch { gap: 6px; padding: 6px; margin: 0 0 22px; border-bottom: 1px solid var(--rule); }
-  .mal-report-navigation { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-  .mal-report-navigation-group { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-  .mal-report-navigation-divider { width: 1px; height: 28px; background: var(--rule); margin: 0 4px; }
-  .mal-report-navigation-shortcuts { margin-left: auto; }
-  .mal-nav-jump-btn { color: var(--blue-deep); }
-  .mal-nav-jump-btn:hover { background: var(--paper); }
-  .mal-report-anchor { scroll-margin-top: 18px; }
+  .mal-report-navigation { display: flex; align-items: center; justify-content: flex-start; gap: 6px; flex-wrap: wrap; }
   .mal-viewmode-btn {
     flex: 0 0 auto; padding: 10px 15px; border: 0; border-radius: 10px; color: var(--ink-secondary);
   }
@@ -600,12 +594,13 @@
     .mal-card-value { font-size: 23px; }
     .mal-viewmode-switch { overflow-x: auto; flex-wrap: nowrap; }
     .mal-report-navigation { display: flex; flex-wrap: nowrap; justify-content: flex-start; }
-    .mal-report-navigation-group { flex-wrap: nowrap; flex: 0 0 auto; }
-    .mal-report-navigation-divider { flex: 0 0 1px; }
-    .mal-report-navigation-shortcuts { margin-left: 0; }
-    .mal-viewmode-btn { padding: 9px 12px; }
+          .mal-viewmode-btn { padding: 9px 12px; }
     .mal-section-title { font-size: 18px; margin-top: 30px; }
   }
+
+  .mal-page-heading { margin: 8px 0 18px; }
+  .mal-page-heading h2 { font-family: 'Noto Serif TC', serif; font-size: 25px; font-weight: 600; margin: 0 0 5px; }
+  .mal-page-heading p { margin: 0; font-size: 12.5px; color: var(--ink-soft); line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -5920,23 +5915,6 @@ function MetaAdsLedger() {
     return (couponQueryData.discountSummary || []).find((d) => String(d.code).toUpperCase() === target) || null;
   }, [couponFocusCode, couponQueryData]);
 
-  function jumpToMonthlySection(sectionId) {
-    const tryScroll = (attempt = 0) => {
-      const el = document.getElementById(sectionId);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        return;
-      }
-      if (attempt < 8) setTimeout(() => tryScroll(attempt + 1), 80);
-    };
-    if (viewMode !== "month") {
-      setViewMode("month");
-      setTimeout(() => tryScroll(0), 0);
-    } else {
-      tryScroll(0);
-    }
-  }
-
   // ---------- 密碼閘:還沒驗證通過就不顯示任何報表內容 ----------
   if (isUnlocked === null) {
     return null; // 還在檢查瀏覽器有沒有記住解鎖狀態,先不顯示任何畫面,避免閃一下
@@ -6032,16 +6010,6 @@ function MetaAdsLedger() {
               {b.name}
             </div>
           ))}
-          <button
-            className={`mal-btn mal-btn-primary mal-brand-adjust-btn ${viewMode === "adjust" ? "mal-brand-adjust-btn-active" : ""}`}
-            onClick={() => {
-              setAdjustmentPeriod(viewMode === "week" ? "week" : "month");
-              setViewMode("adjust");
-            }}
-            title="比較同一素材在不同 Campaign / 策略下的表現"
-          >
-            📣 廣告怎麼調
-          </button>
         </div>
       )}
 
@@ -6072,32 +6040,35 @@ function MetaAdsLedger() {
       {metaUpdateError && <div className="mal-error">⚠ {metaUpdateError}</div>}
 
       <div className="mal-viewmode-switch mal-report-navigation">
-        <div className="mal-report-navigation-group">
-          <button className={`mal-viewmode-btn ${viewMode === "week" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("week")}>
-            🗓 每週報表
+        <button className={`mal-viewmode-btn ${viewMode === "week" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("week")}>
+          🗓 每週報表
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("month")}>
+          📅 每月報表
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "daily" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("daily")}>
+          📆 每日報表
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
+          🎤 業配分析
+        </button>
+        <button
+          className={`mal-viewmode-btn ${viewMode === "adjust" ? "mal-viewmode-btn-active" : ""}`}
+          onClick={() => {
+            setAdjustmentPeriod(viewMode === "week" ? "week" : adjustmentPeriod);
+            setViewMode("adjust");
+          }}
+        >
+          📣 廣告怎麼調
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "ads" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("ads")}>
+          📊 廣告分析
+        </button>
+        {activeBrandId === OFFICIAL_SITE_BRAND_ID && (
+          <button className={`mal-viewmode-btn ${viewMode === "coupon" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("coupon")}>
+            🎟 折價券查詢
           </button>
-          <button className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("month")}>
-            📅 每月報表
-          </button>
-          <button className={`mal-viewmode-btn ${viewMode === "daily" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("daily")}>
-            📆 每日報表
-          </button>
-          <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
-            🎤 業配分析
-          </button>
-          {activeBrandId === OFFICIAL_SITE_BRAND_ID && (
-            <button className={`mal-viewmode-btn ${viewMode === "coupon" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("coupon")}>
-              🎟 折價券查詢
-            </button>
-          )}
-        </div>
-        <div className="mal-report-navigation-divider" aria-hidden="true"></div>
-        <div className="mal-report-navigation-group mal-report-navigation-shortcuts">
-          <button className="mal-viewmode-btn mal-nav-jump-btn" onClick={() => jumpToMonthlySection("report-decision")}>🧠 決策分析</button>
-          <button className="mal-viewmode-btn mal-nav-jump-btn" onClick={() => jumpToMonthlySection("report-performance")}>📊 投放成效</button>
-          <button className="mal-viewmode-btn mal-nav-jump-btn" onClick={() => jumpToMonthlySection("report-ads")}>🎯 廣告分析</button>
-          <button className="mal-viewmode-btn mal-nav-jump-btn" onClick={() => jumpToMonthlySection("report-reconciliation")}>🧾 業績核對</button>
-        </div>
+        )}
       </div>
 
       {viewMode === "adjust" && (
@@ -6200,6 +6171,130 @@ function MetaAdsLedger() {
         </div>
       )}
 
+      {viewMode === "ads" && (
+        loading ? <p style={{ color: "var(--ink-soft)" }}>載入帳本中…</p> : sortedKeys.length === 0 ? (
+          <div className="mal-empty">
+            <div style={{ fontSize: 30 }}>📊</div>
+            <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>還沒有廣告分析資料</h3>
+            <p>先更新月報 Meta 廣告資料，這裡就會出現 Intelligence、Ad Set、成效分類與廣告明細。</p>
+          </div>
+        ) : (
+          <>
+            <div className="mal-page-heading">
+              <h2>📊 廣告分析</h2>
+              <p>深入看 Meta Ads Intelligence、Ad Set、廣告成效分類與逐支廣告明細。</p>
+            </div>
+            <div className="mal-tabs">
+              {sortedKeys.map((mk) => (
+                <div key={mk} className={`mal-tab ${mk === focusMonth ? "mal-tab-active" : ""}`} onClick={() => setFocusMonth(mk)}>
+                  {monthLabel(mk)}
+                </div>
+              ))}
+            </div>
+
+            {focusData && (
+              <>
+                <SyncedAtNote iso={focusData.syncedAt} source={focusData.source} />
+
+                <MetaAdsOpenSourceSuite
+                  currentRecord={focusData}
+                  previousRecord={prevData}
+                  roasTarget={roasTargets[activeBrandId]}
+                  cpaTarget={cpaThresholds[activeBrandId]}
+                  periodType="month"
+                  periodLabel={monthLabel(focusMonth)}
+                />
+
+                <AdSetAnalysis ads={focusData.ads} currencyCode={focusData.currency} />
+                <PerformanceBreakdown
+                  ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
+                  currencyCode={focusData.currency}
+                  accountId={focusData.accountId}
+                />
+
+                {spendFilteredAds.length > 0 && (
+                  <StatusFilterButtons
+                    statusValue={adStatusFilter}
+                    onStatusChange={setAdStatusFilter}
+                    keyword={adSearchKeyword}
+                    onKeywordChange={setAdSearchKeyword}
+                    launchValue={adLaunchFilter}
+                    onLaunchChange={setAdLaunchFilter}
+                  />
+                )}
+
+                {spendFilteredAds.length > 0 && visibleAds.length === 0 && (
+                  <p style={{ color: "var(--ink-soft)", fontSize: 13, marginBottom: 20 }}>
+                    目前篩選條件下沒有符合的廣告，試試切換「全部投放 / 本月新投放」、投放狀態，或清空搜尋框。
+                  </p>
+                )}
+
+                {visibleAds.length > 0 && (
+                  <>
+                    <div className="mal-ad-header-row">
+                      <CollapsibleSectionTitle className="mal-section-title mal-section-title-flex">
+                        {monthLabel(focusMonth)} 廣告明細{adLaunchFilter === "month" ? " · 本月新投放" : ""}<span className="mal-section-count">({visibleAds.length} 支廣告{hiddenAdCount > 0 ? `,已隱藏 ${hiddenAdCount} 支花費低於 ${MIN_AD_SPEND} 的廣告` : ""})</span>
+                      </CollapsibleSectionTitle>
+                      <select className="mal-ad-sort-select" value={adSortMode} onChange={(e) => setAdSortMode(e.target.value)}>
+                        <option value="spend">排序:廣告費（高→低）</option>
+                        <option value="cpa">排序:CPA（好→壞）</option>
+                        <option value="roas">排序:ROAS（好→壞）</option>
+                        <option value="composite">排序:綜合成效（好→壞）</option>
+                        <option value="startDate">排序:投放時間（新→舊）</option>
+                        <option value="postPublishDate">排序:貼文發佈時間（新→舊）</option>
+                      </select>
+                    </div>
+                    <div className="mal-ad-list">
+                      {(showAllAds ? sortedVisibleAds : sortedVisibleAds.slice(0, 6)).map((ad, i) => {
+                        const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
+                        const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
+                        const resolvedImage = ad.image || "";
+                        const fbLibLink = fbPostLink(ad.postId);
+                        const fbLink = fbAdsManagerLink(focusData.accountId, ad.adIds);
+                        return (
+                          <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
+                            <AdThumb src={resolvedImage} alt={ad.name} />
+                            <div className="mal-ad-info">
+                              <div className="mal-ad-name" title={ad.name}>
+                                {ad.name}
+                                <ActiveBadge active={ad.active} />
+                                {cpaThresholds[activeBrandId] != null && adCpa !== null && adCpa > cpaThresholds[activeBrandId] && (
+                                  <span style={{ color: "var(--red)", fontWeight: 600, fontSize: 11 }}> ⚠ CPA過高</span>
+                                )}
+                              </div>
+                              {ad.utm ? (
+                                <div className="mal-ad-utm" title={ad.utm}>{ad.utm}{ad.adCount > 1 && <span className="mal-ad-count">· 合併 {ad.adCount} 支廣告</span>}</div>
+                              ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
+                              {ad.startDate && <span className="mal-ad-startdate">{fmtStartDate(ad.startDate)} 開始投放</span>}
+                              {ad.postPublishDate ? <span className="mal-ad-startdate">📅 {fmtStartDate(ad.postPublishDate)} 前台發佈</span> : <span className="mal-ad-startdate">📌 後台直接發佈</span>}
+                              {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
+                              {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
+                              {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(focusData.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(focusData.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
+                            </div>
+                            <div className="mal-ad-stats">
+                              <div><span>廣告費</span>{fmtMoney(ad.spend, focusData.currency)}</div>
+                              <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
+                              <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, focusData.currency) : "—"}</div>
+                              <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, focusData.currency) : "—"}</div>
+                              <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {visibleAds.length > 6 && (
+                      <button className="mal-btn mal-toggle-ads" onClick={() => setShowAllAds((v) => !v)}>
+                        {showAllAds ? "▲ 收合" : `▼ 顯示全部 ${visibleAds.length} 支廣告`}
+                      </button>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </>
+        )
+      )}
+
       {viewMode === "month" && (loading ? <p style={{ color: "var(--ink-soft)" }}>載入帳本中…</p> : sortedKeys.length === 0 ? (
         <div className="mal-empty">
           <div style={{ fontSize: 30 }}>📖</div>
@@ -6290,29 +6385,18 @@ function MetaAdsLedger() {
           )}
 
           {focusData && (
-            <div id="report-decision" className="mal-report-anchor">
-              <DecisionIntelligencePanel
-                currentRecord={focusData}
-                previousRecord={prevData}
-                roasTarget={roasTargets[activeBrandId]}
-                cpaTarget={cpaThresholds[activeBrandId]}
-                cpcTarget={cpcThresholds[activeBrandId]}
-                monthlyBudget={monthlyBudgets[activeBrandId]}
-                periodType="month"
-                periodLabel={monthLabel(focusMonth)}
-              />
-              <MetaAdsOpenSourceSuite
-                currentRecord={focusData}
-                previousRecord={prevData}
-                roasTarget={roasTargets[activeBrandId]}
-                cpaTarget={cpaThresholds[activeBrandId]}
-                periodType="month"
-                periodLabel={monthLabel(focusMonth)}
-              />
-            </div>
+            <DecisionIntelligencePanel
+              currentRecord={focusData}
+              previousRecord={prevData}
+              roasTarget={roasTargets[activeBrandId]}
+              cpaTarget={cpaThresholds[activeBrandId]}
+              cpcTarget={cpcThresholds[activeBrandId]}
+              monthlyBudget={monthlyBudgets[activeBrandId]}
+              periodType="month"
+              periodLabel={monthLabel(focusMonth)}
+            />
           )}
 
-          <div id="report-performance" className="mal-report-anchor">
           {focusData && (
             <AdPerformanceReport
               key={`${activeBrandId}::${focusMonth}`}
@@ -6335,128 +6419,44 @@ function MetaAdsLedger() {
           )}
 
           {focusData && <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />}
-          {focusData && <AdSetAnalysis ads={focusData.ads} currencyCode={focusData.currency} />}
-          {focusData && <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />}
-          </div>
 
-          <div id="report-ads" className="mal-report-anchor">
-          {focusData && spendFilteredAds.length > 0 && (
-            <>
-              <div className="mal-chart-box" style={{ marginBottom: 18 }}>
-                <div className="mal-ad-header-row" style={{ marginBottom: 12 }}>
-                  <div>
-                    <CollapsibleSectionTitle className="mal-section-title" style={{ marginBottom: 4 }}>本月新投放摘要</CollapsibleSectionTitle>
-                    <div style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
-                      只計算 {focusMonth} 才開始投放的廣告；上月以前已開始投放者不列入。共 {monthStartedAds.length} 支，花費 {fmtMoney(monthStartedSpend, focusData.currency)}。
-                    </div>
+          {focusData && (
+            <div className="mal-chart-box" style={{ marginBottom: 18 }}>
+              <div className="mal-ad-header-row" style={{ marginBottom: 12 }}>
+                <div>
+                  <CollapsibleSectionTitle className="mal-section-title" style={{ marginBottom: 4 }}>本月新投放摘要</CollapsibleSectionTitle>
+                  <div style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
+                    只計算 {focusMonth} 才開始投放的廣告；上月以前已開始投放者不列入。共 {monthStartedAds.length} 支，花費 {fmtMoney(monthStartedSpend, focusData.currency)}。
                   </div>
                 </div>
-                <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", fontWeight: 600, marginBottom: 8 }}>本月主投品項 TOP 3（依廣告費）</div>
-                {monthLaunchProductTop3.length > 0 ? (
-                  <div className="mal-cards" style={{ marginBottom: 0 }}>
-                    {monthLaunchProductTop3.map((item, idx) => {
-                      const displayName = (productNames[activeBrandId] || {})[item.code];
-                      const share = monthStartedSpend > 0 ? item.spend / monthStartedSpend * 100 : 0;
-                      const cpa = item.conversions > 0 ? item.spend / item.conversions : null;
-                      return (
-                        <div className="mal-card" key={item.code}>
-                          <div className="mal-card-label">#{idx + 1} 主投品項</div>
-                          <div className="mal-card-value" style={{ fontSize: 24 }}>{item.code}{displayName ? ` · ${displayName}` : ""}</div>
-                          <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", marginTop: 6 }}>
-                            廣告費 {fmtMoney(item.spend, focusData.currency)} · 佔新投放 {share.toFixed(1)}%
-                          </div>
-                          <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 3 }}>
-                            {item.adCount} 支廣告 · {fmtInt(item.conversions)} 轉單 · CPA {cpa !== null ? fmtMoney(cpa, focusData.currency) : "—"}
-                          </div>
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", fontWeight: 600, marginBottom: 8 }}>本月主投品項 TOP 3（依廣告費）</div>
+              {monthLaunchProductTop3.length > 0 ? (
+                <div className="mal-cards" style={{ marginBottom: 0 }}>
+                  {monthLaunchProductTop3.map((item, idx) => {
+                    const displayName = (productNames[activeBrandId] || {})[item.code];
+                    const share = monthStartedSpend > 0 ? item.spend / monthStartedSpend * 100 : 0;
+                    const cpa = item.conversions > 0 ? item.spend / item.conversions : null;
+                    return (
+                      <div className="mal-card" key={item.code}>
+                        <div className="mal-card-label">#{idx + 1} 主投品項</div>
+                        <div className="mal-card-value" style={{ fontSize: 24 }}>{item.code}{displayName ? ` · ${displayName}` : ""}</div>
+                        <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", marginTop: 6 }}>
+                          廣告費 {fmtMoney(item.spend, focusData.currency)} · 佔新投放 {share.toFixed(1)}%
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>目前沒有可辨識的本月新投放品項代號。</div>
-                )}
-              </div>
-              <StatusFilterButtons
-                statusValue={adStatusFilter}
-                onStatusChange={setAdStatusFilter}
-                keyword={adSearchKeyword}
-                onKeywordChange={setAdSearchKeyword}
-                launchValue={adLaunchFilter}
-                onLaunchChange={setAdLaunchFilter}
-              />
-            </>
-          )}
-          {focusData && spendFilteredAds.length > 0 && visibleAds.length === 0 && (
-            <p style={{ color: "var(--ink-soft)", fontSize: 13, marginBottom: 20 }}>
-              目前篩選條件下沒有符合的廣告，試試切換「全部投放 / 本月新投放」、投放狀態，或清空搜尋框。
-            </p>
-          )}
-
-          {focusData && visibleAds.length > 0 && (
-            <>
-              <div className="mal-ad-header-row">
-                <CollapsibleSectionTitle className="mal-section-title mal-section-title-flex">
-                  {monthLabel(focusMonth)} 廣告明細{adLaunchFilter === "month" ? " · 本月新投放" : ""}<span className="mal-section-count">({visibleAds.length} 支廣告{hiddenAdCount > 0 ? `,已隱藏 ${hiddenAdCount} 支花費低於 ${MIN_AD_SPEND} 的廣告` : ""})</span>
-                </CollapsibleSectionTitle>
-                <select className="mal-ad-sort-select" value={adSortMode} onChange={(e) => setAdSortMode(e.target.value)}>
-                  <option value="spend">排序:廣告費（高→低）</option>
-                  <option value="cpa">排序:CPA（好→壞）</option>
-                  <option value="roas">排序:ROAS（好→壞）</option>
-                  <option value="composite">排序:綜合成效（好→壞）</option>
-                  <option value="startDate">排序:投放時間（新→舊）</option>
-                  <option value="postPublishDate">排序:貼文發佈時間（新→舊）</option>
-                </select>
-              </div>
-              <div className="mal-ad-list">
-                {(showAllAds ? sortedVisibleAds : sortedVisibleAds.slice(0, 6)).map((ad, i) => {
-                  const adCpa = ad.conversions > 0 ? ad.spend / ad.conversions : null;
-                  const adRoas = ad.spend > 0 && ad.revenue > 0 ? ad.revenue / ad.spend : null;
-                  const names = ad.rawNames && ad.rawNames.length ? ad.rawNames : [ad.name];
-                  const resolvedImage = ad.image || "";
-                  const fbLibLink = fbPostLink(ad.postId);
-                  const fbLink = fbAdsManagerLink(focusData.accountId, ad.adIds);
-                  return (
-                    <div className={`mal-ad-row ${ad.active === false ? "mal-ad-row-inactive" : ""}`} key={ad.name + i}>
-                      <AdThumb src={resolvedImage} alt={ad.name} />
-                      <div className="mal-ad-info">
-                        <div className="mal-ad-name" title={ad.name}>
-                          {ad.name}
-                          <ActiveBadge active={ad.active} />
-                          {cpaThresholds[activeBrandId] != null && adCpa !== null && adCpa > cpaThresholds[activeBrandId] && (
-                            <span style={{ color: "var(--red)", fontWeight: 600, fontSize: 11 }}> ⚠ CPA過高</span>
-                          )}
+                        <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 3 }}>
+                          {item.adCount} 支廣告 · {fmtInt(item.conversions)} 轉單 · CPA {cpa !== null ? fmtMoney(cpa, focusData.currency) : "—"}
                         </div>
-                        {ad.utm ? (
-                          <div className="mal-ad-utm" title={ad.utm}>{ad.utm}{ad.adCount > 1 && <span className="mal-ad-count">· 合併 {ad.adCount} 支廣告</span>}</div>
-                        ) : <div className="mal-ad-utm mal-ad-utm-empty">未提供追蹤代碼</div>}
-                        {ad.startDate && <span className="mal-ad-startdate">{fmtStartDate(ad.startDate)} 開始投放</span>}
-                          {ad.postPublishDate ? <span className="mal-ad-startdate">📅 {fmtStartDate(ad.postPublishDate)} 前台發佈</span> : <span className="mal-ad-startdate">📌 後台直接發佈</span>}
-                        {fbLink && <a className="mal-ad-fblink" href={fbLink} target="_blank" rel="noopener noreferrer">↗ 前往廣告</a>}
-                        {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
-                        {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(focusData.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(focusData.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
                       </div>
-                      <div className="mal-ad-stats">
-                        <div><span>廣告費</span>{fmtMoney(ad.spend, focusData.currency)}</div>
-                        <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
-                        <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, focusData.currency) : "—"}</div>
-                        <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, focusData.currency) : "—"}</div>
-                        <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {visibleAds.length > 6 && (
-                <button className="mal-btn mal-toggle-ads" onClick={() => setShowAllAds((v) => !v)}>
-                  {showAllAds ? "▲ 收合" : `▼ 顯示全部 ${visibleAds.length} 支廣告`}
-                </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>目前沒有可辨識的本月新投放品項代號。</div>
               )}
-            </>
+            </div>
           )}
 
-          </div>
-
-          <div id="report-reconciliation" className="mal-report-anchor">
           {focusData && (
             activeBrandId === OFFICIAL_SITE_BRAND_ID ? (
               <>
@@ -6514,7 +6514,6 @@ function MetaAdsLedger() {
                 })}
               </tbody>
             </table>
-          </div>
           </div>
         </>
       ))}
