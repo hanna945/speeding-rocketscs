@@ -883,14 +883,14 @@
   .mal-presentation-toolbar-sub { color:#7c6b5d; font-size:14px; margin-top:4px; }
   .mal-presentation-toolbar-actions { display:flex; gap:8px; flex-wrap:wrap; }
   .mal-presentation-stage {
-    position:relative; width:100%; aspect-ratio:16 / 9; min-height:680px; overflow:hidden;
+    position:relative; width:100%; aspect-ratio:16 / 9; min-height:0; overflow:hidden;
     border:1px solid #ddd0bf; border-radius:24px; background:#f8f3eb;
     box-shadow:0 22px 58px rgba(77,58,40,.10);
   }
   .mal-presentation-stage:fullscreen { width:100vw; height:100vh; min-height:0; aspect-ratio:auto; border:0; border-radius:0; }
   .mal-presentation-slide {
-    position:absolute; inset:0; overflow:auto; display:flex; flex-direction:column;
-    padding:clamp(36px,3.6vw,64px) clamp(38px,4.2vw,74px) 92px;
+    position:absolute; inset:0; overflow:hidden; display:flex; flex-direction:column; min-height:0;
+    padding:clamp(30px,3vw,52px) clamp(34px,4vw,70px) 76px;
     color:#382f28;
     background:
       radial-gradient(circle at 88% 12%, rgba(170,125,86,.13), transparent 25%),
@@ -943,7 +943,7 @@
   .mal-presentation-panel li strong { color:#3e3027; }
   .mal-presentation-split { display:grid; grid-template-columns:1.08fr .92fr; gap:18px; flex:1; min-height:0; }
   .mal-presentation-table-wrap {
-    overflow:auto; border:1px solid rgba(137,113,90,.17); border-radius:18px; background:rgba(255,255,255,.76);
+    overflow:hidden; border:1px solid rgba(137,113,90,.17); border-radius:18px; background:rgba(255,255,255,.76);
   }
   .mal-presentation-table { width:100%; border-collapse:collapse; font-size:17px; }
   .mal-presentation-table th,.mal-presentation-table td { padding:15px 16px; border-bottom:1px solid rgba(137,113,90,.12); text-align:left; vertical-align:middle; }
@@ -1026,7 +1026,8 @@
   .mal-presentation-dot.active { background:#fff !important; transform:scale(1.28); }
   @media (max-width:980px) {
     .mal-presentation-stage { min-height:760px; aspect-ratio:auto; }
-    .mal-presentation-slide { padding:30px 26px 94px; }
+    .mal-presentation-slide { padding:30px 26px 94px; overflow:auto; }
+    .mal-presentation-table-wrap { overflow:auto; }
     .mal-presentation-grid,.mal-presentation-grid-3,.mal-presentation-grid-2,.mal-presentation-split,.mal-presentation-performance-layout { grid-template-columns:1fr 1fr; }
     .mal-presentation-card-value { font-size:34px; }
   }
@@ -4919,6 +4920,14 @@ function MonthlyPresentation({
 
   useEffect(()=>{ if(slideIndex>slides.length-1) setSlideIndex(Math.max(0,slides.length-1)); },[slideIndex,slides.length]);
 
+  useEffect(() => {
+    const slideEl = stageRef.current && stageRef.current.querySelector ? stageRef.current.querySelector(".mal-presentation-slide") : null;
+    if (slideEl) {
+      slideEl.scrollTop = 0;
+      slideEl.scrollLeft = 0;
+    }
+  }, [slideIndex]);
+
   async function toggleFullscreen(){
     try{
       if(!document.fullscreenElement&&stageRef.current&&stageRef.current.requestFullscreen) await stageRef.current.requestFullscreen();
@@ -4941,7 +4950,7 @@ function MonthlyPresentation({
         </div>
       </div>
       <div className="mal-presentation-stage" ref={stageRef}>
-        {slides[slideIndex] ? slides[slideIndex].node : null}
+        {slides[slideIndex] ? React.cloneElement(slides[slideIndex].node, { key: slides[slideIndex].key }) : null}
         <div className="mal-presentation-controls">
           <button onClick={()=>setSlideIndex((v)=>Math.max(0,v-1))} disabled={slideIndex===0} aria-label="上一頁">‹</button>
           <div className="mal-presentation-dot-row">{slides.map((slide,i)=><button key={slide.key} className={"mal-presentation-dot "+(i===slideIndex?"active":"")} onClick={()=>setSlideIndex(i)} aria-label={"第 "+(i+1)+" 頁"}/>)}</div>
