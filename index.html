@@ -7475,6 +7475,47 @@ async function toggleRememberToken(checked) {
 }
 
 // 手動同步統一走中央 Airbyte，不再由瀏覽器直接呼叫 Meta Graph API。
+  function airbyteProgressRows(statusJson, finalStatus) {
+    const brands = Array.isArray(statusJson && statusJson.brands) ? statusJson.brands : [];
+    if (!brands.length) return null;
+    const completed = Number.isFinite(Number(statusJson.completed))
+      ? Number(statusJson.completed)
+      : brands.filter((b) => b && b.status === "done").length;
+    const total = Number.isFinite(Number(statusJson.total)) ? Number(statusJson.total) : brands.length;
+    const currentName = statusJson.currentBrand && statusJson.currentBrand.name
+      ? statusJson.currentBrand.name
+      : "";
+    const summaryStatus = finalStatus || (statusJson.status === "completed" ? (statusJson.conclusion === "success" ? "done" : "error") : "running");
+    const summaryMessage = summaryStatus === "done"
+      ? "全部品牌同步完成"
+      : summaryStatus === "error"
+      ? (statusJson.message || "同步完成，但有品牌失敗")
+      : currentName
+      ? "目前：" + currentName + "｜已完成 " + completed + "/" + total
+      : "已完成 " + completed + "/" + total;
+
+    return [
+      {
+        id: "airbyte-summary",
+        name: "同步進度 " + completed + "/" + total,
+        status: summaryStatus,
+        message: summaryMessage,
+        summary: true,
+      },
+      ...brands.map((brand, index) => ({
+        id: "airbyte-brand-" + (brand.id || index),
+        name: brand.name || brand.id || ("品牌 " + (index + 1)),
+        status: brand.status || "waiting",
+        message: brand.message || (
+          brand.status === "done" ? "已完成"
+          : brand.status === "running" ? "同步中"
+          : brand.status === "error" ? "失敗"
+          : "等待中"
+        ),
+      })),
+    ];
+  }
+
   async function runCentralAirbyteSync() {
     setApiError(null);
     setApiNotice(null);
@@ -7516,18 +7557,19 @@ async function toggleRememberToken(checked) {
 
         found = true;
         if (statusJson.htmlUrl) setCentralSyncRunUrl(statusJson.htmlUrl);
+        const detailedRows = airbyteProgressRows(statusJson);
         if (statusJson.status !== "completed") {
-          setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "running", message: statusJson.status === "queued" ? "排隊中…" : "Airbyte 同步中…" }]);
+          setBatchProgress(detailedRows || [{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "running", message: statusJson.status === "queued" ? "排隊中…" : "Airbyte 同步中…" }]);
           continue;
         }
 
         if (statusJson.conclusion === "success") {
-          setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "done", message: "全部品牌同步完成" }]);
+          setBatchProgress(airbyteProgressRows(statusJson, "done") || [{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "done", message: "全部品牌同步完成" }]);
           setApiNotice("Airbyte 已完成全部品牌 Meta 更新，報表已重新載入最新資料。");
           await loadAll(activeBrandId);
         } else {
-          setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "error", message: "同步失敗：" + (statusJson.conclusion || "unknown") }]);
-          setApiError("Airbyte 同步失敗，可點 GitHub 執行紀錄查看原因。");
+          setBatchProgress(airbyteProgressRows(statusJson, "error") || [{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "error", message: "同步失敗：" + (statusJson.conclusion || "unknown") }]);
+          setApiError("Airbyte 同步完成，但有品牌失敗；請查看上方品牌狀態或 GitHub 執行紀錄。");
         }
         setApiLoading(false);
         return;
@@ -8752,17 +8794,31 @@ const shopeRealDailyMap = useMemo(() => {
             {batchProgress && (
               <div className="mal-field">
                 <label>同步狀態</label>
-                <div style={{ border:"1px solid var(--rule)", borderRadius:10, padding:"10px 12px" }}>
+                <div style={{ border:"1px solid var(--rule)", borderRadius:10, padding:"8px 12px", maxHeight:280, overflowY:"auto" }}>
                   {batchProgress.map((p) => (
-                    <div key={p.id} style={{ display:"flex", justifyContent:"space-between", gap:12, fontSize:12.5, padding:"4px 0" }}>
-                      <span>{p.name}</span>
+                    <div
+                      key={p.id}
+                      style={{
+                        display:"flex",
+                        justifyContent:"space-between",
+                        alignItems:"flex-start",
+                        gap:12,
+                        fontSize:p.summary ? 13 : 12.5,
+                        fontWeight:p.summary ? 700 : 400,
+                        padding:p.summary ? "7px 0 9px" : "6px 0",
+                        borderBottom:p.summary ? "1px solid var(--rule)" : "none",
+                      }}
+                    >
+                      <span style={{ minWidth:0 }}>{p.name}</span>
                       <span style={{
                         textAlign:"right",
+                        maxWidth:"62%",
                         color:p.status === "error" ? "var(--red)" : p.status === "done" ? "var(--green)" : "var(--ink-soft)",
                       }}>
+                        {p.status === "waiting" && "○ " + (p.message || "等待中")}
                         {p.status === "running" && "⏳ " + (p.message || "同步中…")}
-                        {p.status === "done" && "✓ " + p.message}
-                        {p.status === "error" && "✗ " + p.message}
+                        {p.status === "done" && "✓ " + (p.message || "已完成")}
+                        {p.status === "error" && "✗ " + (p.message || "失敗")}
                       </span>
                     </div>
                   ))}
