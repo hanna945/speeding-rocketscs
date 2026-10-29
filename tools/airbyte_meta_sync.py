@@ -28,6 +28,10 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
+from airbyte_agent_sdk.connectors.facebook_marketing import FacebookMarketingConnector
+from airbyte_agent_sdk.connectors.facebook_marketing.models import (
+    FacebookMarketingServiceAccountKeyAuthenticationAuthConfig,
+)
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 
@@ -283,10 +287,6 @@ def day_baseline_key(account_id: str, day: date) -> str:
     return f"airbyte-day-baseline:{account_id}::{day.isoformat()}"
 
 
-def reconcile_key(account_id: str, mk: str) -> str:
-    return f"airbyte-reconcile:{account_id}::{mk}"
-
-
 def month_report_key(account_id: str, mk: str) -> str:
     return f"metaads-month:{account_id}::{mk}"
 
@@ -397,111 +397,6 @@ def sdk_active_campaigns(account_id: str) -> dict[str, dict[str, Any]]:
     return out
 
 
-def sdk_fill_missing_creative_metadata(
-    account_id: str,
-    ad_ids: list[str],
-    metadata: dict[str, Any],
-) -> dict[str, Any]:
-    """Backfill ad/creative metadata only for ads whose thumbnail metadata is missing.
-
-    Normal scheduled sync intentionally avoids enumerating the entire account. This helper
-    uses Meta's server-side ID filtering, so a brand with 80 missing thumbnails takes only
-    a few batched edge requests instead of re-reading every historical ad.
-    """
-    wanted = list(dict.fromkeys(str(x) for x in ad_ids if x))
-    if not wanted:
-        return metadata
-
-    account = AdAccount("act_" + account_id.removeprefix("act_"))
-    out = dict(metadata or {})
-    ads_meta = dict(out.get("ads") or {})
-    adsets_meta = dict(out.get("adsets") or {})
-    creatives = dict(out.get("creatives") or {})
-
-    chunk_size = 50
-    creative_ids: list[str] = []
-    for i in range(0, len(wanted), chunk_size):
-        chunk = wanted[i:i + chunk_size]
-        cursor = account.get_ads(
-            fields=[
-                "id", "name", "adset_id", "campaign_id", "effective_status",
-                "created_time", "creative", "status", "url_tags",
-            ],
-            params={
-                "filtering": [{"field": "id", "operator": "IN", "value": chunk}],
-                "limit": 500,
-            },
-        )
-        for item in cursor:
-            row = _sdk_dict(item)
-            ad_id = str(row.get("id") or "")
-            if not ad_id:
-                continue
-            ads_meta[ad_id] = {**(ads_meta.get(ad_id) or {}), **row}
-            creative_obj = row.get("creative") if isinstance(row.get("creative"), dict) else {}
-            creative_id = str((creative_obj or {}).get("id") or "")
-            if creative_id:
-                creative_ids.append(creative_id)
-
-    adset_ids = list(dict.fromkeys(
-        str((ads_meta.get(ad_id) or {}).get("adset_id") or "")
-        for ad_id in wanted
-        if (ads_meta.get(ad_id) or {}).get("adset_id")
-    ))
-    for i in range(0, len(adset_ids), chunk_size):
-        chunk = adset_ids[i:i + chunk_size]
-        cursor = account.get_ad_sets(
-            fields=[
-                "id", "name", "campaign_id", "effective_status", "start_time",
-                "created_time", "optimization_goal", "learning_stage_info",
-            ],
-            params={
-                "filtering": [{"field": "id", "operator": "IN", "value": chunk}],
-                "limit": 500,
-            },
-        )
-        for item in cursor:
-            row = _sdk_dict(item)
-            adset_id = str(row.get("id") or "")
-            if adset_id:
-                adsets_meta[adset_id] = {**(adsets_meta.get(adset_id) or {}), **row}
-
-    creative_ids = list(dict.fromkeys(creative_ids))
-    for i in range(0, len(creative_ids), chunk_size):
-        chunk = creative_ids[i:i + chunk_size]
-        cursor = account.get_ad_creatives(
-            fields=[
-                "id", "name", "thumbnail_url", "image_url", "link_url",
-                "url_tags", "effective_object_story_id", "status",
-            ],
-            params={
-                "filtering": [{"field": "id", "operator": "IN", "value": chunk}],
-                "limit": 500,
-            },
-        )
-        for item in cursor:
-            row = _sdk_dict(item)
-            creative_id = str(row.get("id") or "")
-            if creative_id:
-                creatives[creative_id] = {**(creatives.get(creative_id) or {}), **row}
-
-    out["ads"] = ads_meta
-    out["adsets"] = adsets_meta
-    out["creatives"] = creatives
-    out["thumbnailBackfillAt"] = datetime.now(timezone.utc).isoformat()
-    return out
-
-
-def metadata_has_image(metadata: dict[str, Any], ad_id: str) -> bool:
-    ads_meta = metadata.get("ads") or {}
-    creatives = metadata.get("creatives") or {}
-    ad_meta = ads_meta.get(str(ad_id)) or {}
-    creative_obj = ad_meta.get("creative") if isinstance(ad_meta.get("creative"), dict) else {}
-    creative_id = str((creative_obj or {}).get("id") or "")
-    creative = creatives.get(creative_id) or {}
-    return bool(creative.get("thumbnail_url") or creative.get("image_url"))
-
-
 def sdk_today_active_insights(account_id: str, day: date) -> list[dict[str, Any]]:
     """Use Meta's official SDK and server-side Insights filtering for ACTIVE campaigns only."""
     account = AdAccount("act_" + account_id.removeprefix("act_"))
@@ -528,321 +423,6 @@ def sdk_today_active_insights(account_id: str, day: date) -> list[dict[str, Any]
         },
     )
     return [_sdk_dict(item) for item in cursor]
-
-
-def sdk_day_insights(account_id: str, day: date) -> list[dict[str, Any]]:
-    """Fetch one completed day at ad level without campaign-status filtering.
-
-    This is used only by the nightly attribution reconciliation, so campaigns that were
-    active yesterday but paused today are still corrected.
-    """
-    account = AdAccount("act_" + account_id.removeprefix("act_"))
-    cursor = account.get_insights(
-        fields=[
-            "account_id", "account_name", "campaign_id", "campaign_name",
-            "adset_id", "adset_name", "ad_id", "ad_name", "clicks",
-            "impressions", "reach", "spend", "date_start", "date_stop",
-            "actions", "action_values",
-        ],
-        params={
-            "level": "ad",
-            "time_range": {"since": day.isoformat(), "until": day.isoformat()},
-            "time_increment": 1,
-            "use_account_attribution_setting": True,
-            "limit": 500,
-        },
-    )
-    return [_sdk_dict(item) for item in cursor]
-
-
-def sdk_month_summary(account_id: str, since: date, until: date) -> dict[str, float]:
-    """Lightweight account-level truth check for report-vs-Meta reconciliation."""
-    account = AdAccount("act_" + account_id.removeprefix("act_"))
-    cursor = account.get_insights(
-        fields=["spend", "impressions", "clicks", "reach", "actions", "action_values"],
-        params={
-            "level": "account",
-            "time_range": {"since": since.isoformat(), "until": until.isoformat()},
-            "use_account_attribution_setting": True,
-            "limit": 20,
-        },
-    )
-    rows = [_sdk_dict(item) for item in cursor]
-    row = rows[0] if rows else {}
-    return {
-        "spend": as_float(row.get("spend")),
-        "conversions": pick_purchase(row.get("actions")),
-        "revenue": pick_purchase(row.get("action_values")),
-        "impressions": as_float(row.get("impressions")),
-        "clicks": as_float(row.get("clicks")),
-        "reach": as_float(row.get("reach")),
-    }
-
-
-def pct_diff(actual: float, expected: float) -> float:
-    if expected == 0:
-        return 0.0 if actual == 0 else 100.0
-    return abs(actual - expected) / abs(expected) * 100.0
-
-
-def _raw_map(record: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
-    out: dict[str, dict[str, Any]] = {}
-    if not isinstance(record, dict):
-        return out
-    for row in record.get("rawAds") or []:
-        if isinstance(row, dict) and row.get("adId"):
-            out[str(row["adId"])] = dict(row)
-    return out
-
-
-def _group_views(raw_ads: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    grouped: dict[str, dict[str, Any]] = {}
-    sponsor: dict[str, dict[str, Any]] = {}
-    for ad in raw_ads:
-        key = (
-            ("utm:" + str(ad.get("utm")) if ad.get("utm") else "ad:" + str(ad.get("adId") or ""))
-            + "::campaign:" + str(ad.get("campaign") or "")
-            + "::adset:" + str(ad.get("adSet") or "")
-            + "::" + ("on" if ad.get("active") else "off")
-        )
-        g = grouped.setdefault(key, {
-            "utm": ad.get("utm") or "",
-            "names": set(), "image": "", "postId": "",
-            "spend": 0.0, "conversions": 0.0, "revenue": 0.0,
-            "impressions": 0.0, "clicks": 0.0, "linkClicks": 0.0, "reach": 0.0,
-            "active": bool(ad.get("active")), "campaigns": set(), "adSets": set(),
-            "adSetIds": set(), "adIds": set(), "startDate": None, "postPublishDate": None,
-        })
-        g["names"].add(ad.get("name") or "(未命名廣告)")
-        for field in ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks"):
-            g[field] += as_float(ad.get(field))
-        g["reach"] += as_float(ad.get("reach"))
-        g["campaigns"].add(ad.get("campaign") or "(未分類活動)")
-        g["adSets"].add(ad.get("adSet") or "(未分類廣告組合)")
-        if ad.get("adSetId"):
-            g["adSetIds"].add(str(ad.get("adSetId")))
-        if ad.get("adId"):
-            g["adIds"].add(str(ad.get("adId")))
-        if not g["image"] and ad.get("image"):
-            g["image"] = ad["image"]
-        if not g["postId"] and ad.get("postId"):
-            g["postId"] = ad["postId"]
-        for field in ("startDate", "postPublishDate"):
-            value = ad.get(field)
-            if value and (not g[field] or value < g[field]):
-                g[field] = value
-
-        campaign_name = str(ad.get("campaign") or "")
-        ad_name = str(ad.get("name") or "")
-        if "業配" in campaign_name or "業配" in ad_name:
-            sponsor[str(ad.get("adId") or key)] = {
-                "name": ad_name or "(未命名廣告)",
-                "adId": str(ad.get("adId") or ""),
-                "campaign": campaign_name or "(未分類活動)",
-                "spend": as_float(ad.get("spend")),
-                "conversions": as_float(ad.get("conversions")),
-                "revenue": as_float(ad.get("revenue")),
-            }
-
-    ads: list[dict[str, Any]] = []
-    for g in grouped.values():
-        names = sorted(g.pop("names"))
-        campaigns = sorted(g.pop("campaigns"))
-        adsets = sorted(g.pop("adSets"))
-        ad_ids = sorted(g.pop("adIds"))
-        adset_ids = sorted(g.pop("adSetIds"))
-        ads.append({
-            **g,
-            "name": names[0] if len(names) == 1 else (f"{names[0]} 等 {len(names)} 支廣告" if names else "未命名廣告"),
-            "rawNames": names,
-            "campaign": campaigns[0] if len(campaigns) == 1 else (f"{campaigns[0]} 等 {len(campaigns)} 個活動" if campaigns else "(未分類活動)"),
-            "adSet": adsets[0] if len(adsets) == 1 else (f"{adsets[0]} 等 {len(adsets)} 個廣告組合" if adsets else "(未分類廣告組合)"),
-            "adIds": ad_ids,
-            "adSetIds": adset_ids,
-            "adCount": len(ad_ids) or len(names) or 1,
-        })
-    ads.sort(key=lambda row: as_float(row.get("spend")), reverse=True)
-    return ads, sorted(sponsor.values(), key=lambda row: row["spend"], reverse=True)
-
-
-def apply_day_delta_to_month(
-    month_record: dict[str, Any],
-    old_day: dict[str, Any],
-    new_day: dict[str, Any],
-) -> dict[str, Any]:
-    """Replace one day's contribution inside a month record without re-reading the month."""
-    month = dict(month_record or {})
-    raw = _raw_map(month)
-
-    for row in (old_day.get("rawAds") or []):
-        if not isinstance(row, dict) or not row.get("adId"):
-            continue
-        ad_id = str(row["adId"])
-        target = raw.get(ad_id)
-        if not target:
-            continue
-        for field in NUMERIC_AD_FIELDS:
-            target[field] = as_float(target.get(field)) - as_float(row.get(field))
-
-    for row in (new_day.get("rawAds") or []):
-        if not isinstance(row, dict) or not row.get("adId"):
-            continue
-        ad_id = str(row["adId"])
-        target = raw.setdefault(ad_id, {})
-        for field in NUMERIC_AD_FIELDS:
-            target[field] = as_float(target.get(field)) + as_float(row.get(field))
-        for field, value in row.items():
-            if field not in NUMERIC_AD_FIELDS and value not in (None, ""):
-                target[field] = value
-
-    raw_ads = [
-        row for row in raw.values()
-        if as_float(row.get("spend")) > 0.005
-        or as_float(row.get("revenue")) > 0.005
-        or as_float(row.get("conversions")) > 0.005
-    ]
-    raw_ads.sort(key=lambda row: as_float(row.get("spend")), reverse=True)
-    ads, sponsor_ads = _group_views(raw_ads)
-
-    for field in ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks"):
-        month[field] = (
-            as_float(month.get(field))
-            - as_float(old_day.get(field))
-            + as_float(new_day.get(field))
-        )
-    month["rawAds"] = raw_ads
-    month["ads"] = ads
-    month["sponsorAds"] = sponsor_ads
-    return month
-
-
-def end_of_month(day: date) -> date:
-    next_month = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
-    return next_month - timedelta(days=1)
-
-
-def reconcile_brand(base_url: str, brand: dict[str, str], reconcile_days: int) -> None:
-    account_id = brand["id"]
-    account = sdk_account_info(account_id)
-    offset = as_float(account.get("timezone_offset_hours_utc"))
-    local_today = (datetime.now(timezone.utc) + timedelta(hours=offset)).date()
-    currency = str(account.get("currency") or "TWD")
-    completed_days = [
-        local_today - timedelta(days=i)
-        for i in range(reconcile_days, 0, -1)
-    ]
-
-    old_meta = kv_get(base_url, meta_key(account_id))
-    metadata = old_meta if isinstance(old_meta, dict) else {"campaigns": {}, "adsets": {}, "ads": {}, "creatives": {}}
-    metadata = dict(metadata)
-
-    by_month: dict[str, list[date]] = defaultdict(list)
-    for day in completed_days:
-        by_month[month_key(day)].append(day)
-
-    for mk, days in by_month.items():
-        month_start = days[0].replace(day=1)
-        month_until = min(end_of_month(days[-1]), local_today - timedelta(days=1))
-        cache = kv_get(base_url, cache_key(account_id, mk))
-        if not isinstance(cache, dict):
-            cache = {"version": 3, "accountId": account_id, "month": mk, "days": {}}
-        if not isinstance(cache.get("days"), dict):
-            cache["days"] = {}
-
-        month_record = kv_get(base_url, month_report_key(account_id, mk))
-        if not isinstance(month_record, dict):
-            print(f"[{brand['name']}] reconcile skip {mk}: no month record")
-            continue
-
-        for day in days:
-            old_rows = (cache.get("days") or {}).get(day.isoformat(), [])
-            old_rows = old_rows if isinstance(old_rows, list) else []
-            fresh_rows = sdk_day_insights(account_id, day)
-
-            involved_ad_ids = {
-                str(row.get("ad_id"))
-                for row in [*old_rows, *fresh_rows]
-                if isinstance(row, dict) and row.get("ad_id")
-            }
-            missing_ids = [
-                ad_id for ad_id in involved_ad_ids
-                if not metadata_has_image(metadata, ad_id)
-            ]
-            if missing_ids:
-                metadata = sdk_fill_missing_creative_metadata(account_id, missing_ids, metadata)
-
-            legacy = legacy_ad_meta(month_record)
-            old_day_record = build_report_record(
-                old_rows,
-                {str(r.get("ad_id")): as_float(r.get("reach")) for r in old_rows if r.get("ad_id")},
-                metadata,
-                legacy,
-                account_id,
-                currency,
-                day,
-                day,
-                relax_threshold=True,
-                include_all_ads=True,
-            )
-            new_day_record = build_report_record(
-                fresh_rows,
-                {str(r.get("ad_id")): as_float(r.get("reach")) for r in fresh_rows if r.get("ad_id")},
-                metadata,
-                legacy,
-                account_id,
-                currency,
-                day,
-                day,
-                relax_threshold=True,
-                include_all_ads=True,
-            )
-            month_record = apply_day_delta_to_month(month_record, old_day_record, new_day_record)
-            cache["days"][day.isoformat()] = fresh_rows
-
-        cache["updatedAt"] = datetime.now(timezone.utc).isoformat()
-        kv_put(base_url, cache_key(account_id, mk), cache)
-
-        truth = sdk_month_summary(account_id, month_start, month_until)
-        month_record["reach"] = truth["reach"]
-        month_record["currency"] = currency
-        month_record["accountId"] = account_id
-        month_record["syncedAt"] = datetime.now(timezone.utc).isoformat()
-        month_record["source"] = "airbyte"
-        month_record["syncMode"] = f"nightly_reconcile_{reconcile_days}d"
-        month_record["effectiveUntil"] = month_until.isoformat()
-        kv_put(base_url, month_report_key(account_id, mk), month_record)
-
-        diff = {
-            "spendPct": pct_diff(as_float(month_record.get("spend")), truth["spend"]),
-            "conversionsPct": pct_diff(as_float(month_record.get("conversions")), truth["conversions"]),
-            "revenuePct": pct_diff(as_float(month_record.get("revenue")), truth["revenue"]),
-        }
-        status = "ok" if max(diff.values()) <= 2.0 else "review"
-        audit = {
-            "accountId": account_id,
-            "brand": brand.get("name") or account_id,
-            "month": mk,
-            "checkedAt": datetime.now(timezone.utc).isoformat(),
-            "reconciledDays": [d.isoformat() for d in days],
-            "report": {
-                "spend": as_float(month_record.get("spend")),
-                "conversions": as_float(month_record.get("conversions")),
-                "revenue": as_float(month_record.get("revenue")),
-                "reach": as_float(month_record.get("reach")),
-            },
-            "meta": truth,
-            "diffPct": diff,
-            "status": status,
-        }
-        kv_put(base_url, reconcile_key(account_id, mk), audit)
-        print(
-            f"[{brand['name']}] RECONCILE {mk} status={status} "
-            f"spendΔ={diff['spendPct']:.2f}% convΔ={diff['conversionsPct']:.2f}% "
-            f"revenueΔ={diff['revenuePct']:.2f}%"
-        )
-
-    metadata["reconciledAt"] = datetime.now(timezone.utc).isoformat()
-    kv_put(base_url, meta_key(account_id), metadata)
 
 
 async def fetch_active_campaigns(
@@ -1025,12 +605,7 @@ def build_report_record(
         creative_id = str((creative_obj or {}).get("id") or legacy_meta.get("creativeId") or "")
         creative = creatives.get(creative_id) or {}
         image = creative.get("thumbnail_url") or creative.get("image_url") or legacy_meta.get("image") or ""
-        utm = (
-            legacy_meta.get("utm")
-            or str(ad_meta.get("url_tags") or creative.get("url_tags") or "").strip()
-            or extract_utm_from_url(str(creative.get("link_url") or ""))
-        )
-        post_id = creative.get("effective_object_story_id") or legacy_meta.get("postId") or ""
+        utm = legacy_meta.get("utm") or extract_utm_from_url(str(creative.get("link_url") or ""))
         effective_status = str(ad_meta.get("effective_status") or legacy_meta.get("effectiveStatus") or "UNKNOWN")
         campaign_status = str(campaign_meta.get("effective_status") or legacy_meta.get("campaignEffectiveStatus") or "UNKNOWN")
         active = effective_status == "ACTIVE"
@@ -1046,7 +621,7 @@ def build_report_record(
             "campaignActive": campaign_status == "ACTIVE",
             "optimizationGoal": adset_meta.get("optimization_goal") or legacy_meta.get("optimizationGoal") or "",
             "creativeId": creative_id,
-            "postId": post_id,
+            "postId": legacy_meta.get("postId") or "",
             "utm": utm,
             "image": image,
             "active": active,
@@ -1350,29 +925,10 @@ async def sync_brand(
     update_cache_rows(caches, account_id, local_today, local_today, today_rows)
     kv_put(base_url, cache_key(account_id, month_key(local_today)), caches[month_key(local_today)])
 
-    # Reuse yesterday's metadata. Normal daily sync still avoids enumerating the whole account.
-    # However, if the current-month baseline contains ads whose image field is empty, refill
-    # metadata only for those exact ad IDs. This prevents the daily active-campaign merge from
-    # carrying an empty thumbnail forward forever.
+    # Reuse yesterday's metadata. Normal daily sync does not enumerate every ad/adset/creative.
     metadata = old_meta if isinstance(old_meta, dict) else {"adsets": {}, "ads": {}, "creatives": {}}
     metadata = dict(metadata)
     metadata["campaigns"] = active_campaigns
-
-    legacy = legacy_ad_meta(baseline)
-    candidate_ad_ids = {
-        str(row.get("ad_id"))
-        for row in today_rows
-        if isinstance(row, dict) and row.get("ad_id")
-    }
-    missing_image_ad_ids = [
-        ad_id
-        for ad_id in candidate_ad_ids
-        if not (legacy.get(ad_id) or {}).get("image") and not metadata_has_image(metadata, ad_id)
-    ]
-    if missing_image_ad_ids:
-        print(f"[{brand['name']}] thumbnail backfill ads={len(missing_image_ad_ids)}")
-        metadata = sdk_fill_missing_creative_metadata(account_id, missing_image_ad_ids, metadata)
-
     metadata["syncedAt"] = datetime.now(timezone.utc).isoformat()
     metadata["syncMode"] = "active_campaign_status_only"
     kv_put(base_url, meta_key(account_id), metadata)
@@ -1419,12 +975,8 @@ async def amain(args: argparse.Namespace) -> int:
 
     FacebookAdsApi.init(access_token=token)
 
-    connector = None
+    connector: FacebookMarketingConnector | None = None
     if args.backfill_days > 0:
-        from airbyte_agent_sdk.connectors.facebook_marketing import FacebookMarketingConnector
-        from airbyte_agent_sdk.connectors.facebook_marketing.models import (
-            FacebookMarketingServiceAccountKeyAuthenticationAuthConfig,
-        )
         connector = FacebookMarketingConnector(
             auth_config=FacebookMarketingServiceAccountKeyAuthenticationAuthConfig(account_key=token)
         )
@@ -1441,15 +993,12 @@ async def amain(args: argparse.Namespace) -> int:
     for index, brand in enumerate(brands, start=1):
         print(f"({index}/{len(brands)}) {brand['name']} [{brand['id']}]")
         try:
-            if args.reconcile_days > 0:
-                reconcile_brand(base_url, brand, args.reconcile_days)
-            else:
-                await sync_brand(
-                    connector, base_url, brand,
-                    lookback_days=args.lookback_days,
-                    metadata_max_age_hours=args.metadata_max_age_hours,
-                    force_backfill_days=args.backfill_days,
-                )
+            await sync_brand(
+                connector, base_url, brand,
+                lookback_days=args.lookback_days,
+                metadata_max_age_hours=args.metadata_max_age_hours,
+                force_backfill_days=args.backfill_days,
+            )
         except Exception as exc:
             errors.append((brand, exc))
             print(f"ERROR [{brand['name']}]: {exc}", file=sys.stderr)
@@ -1467,8 +1016,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lookback-days", type=int, default=1, help="Compatibility option. Scheduled sync reads today only; use --backfill-days for history.")
     parser.add_argument("--metadata-max-age-hours", type=int, default=24)
-    parser.add_argument("--backfill-days", type=int, default=0, help="Manual Airbyte backfill window.")
-    parser.add_argument("--reconcile-days", type=int, default=0, help="Nightly completed-day Meta attribution reconciliation window.")
+    parser.add_argument("--backfill-days", type=int, default=0, help="Manual override for current-month backfill window.")
     parser.add_argument("--brand-id", default="", help="Optional single account ID for manual debugging.")
     parser.add_argument("--brand-gap-seconds", type=float, default=3.0)
     return parser.parse_args()
