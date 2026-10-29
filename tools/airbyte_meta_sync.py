@@ -175,6 +175,53 @@ def http_json(url: str, method: str = "GET", body: bytes | None = None) -> Any:
         raise RuntimeError(f"HTTP {exc.code} for {url}: {raw[:500]}") from exc
 
 
+def post_json(url: str, payload: Any) -> Any:
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=raw,
+        headers={
+            "Authorization": "Bearer " + github_oidc_token(),
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "speedingscs-airbyte-sync/2.1",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as response:
+            body = response.read().decode("utf-8")
+            return json.loads(body) if body else None
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} for {url}: {body[:500]}") from exc
+
+
+def report_manual_progress(
+    base_url: str,
+    request_id: str,
+    brands: list[dict[str, Any]],
+    completed: int,
+    current_brand: dict[str, str] | None = None,
+    message: str = "",
+) -> None:
+    if not request_id:
+        return
+    payload = {
+        "action": "progress",
+        "requestId": request_id,
+        "brands": brands,
+        "completed": completed,
+        "total": len(brands),
+        "currentBrand": current_brand,
+        "message": message,
+    }
+    try:
+        post_json(base_url.rstrip("/") + "/api/airbyte/sync", payload)
+    except Exception as exc:
+        print(f"WARNING unable to report manual sync progress: {exc}", file=sys.stderr)
+
+
 def kv_url(base_url: str, key: str) -> str:
     return base_url.rstrip("/") + "/api/airbyte/kv/item/" + urllib.parse.quote(key, safe="")
 
@@ -1438,9 +1485,33 @@ async def amain(args: argparse.Namespace) -> int:
         f"Central sync roster: {len(brands)} unique brand(s), "
         f"engine={args.engine}, auth=github_actions_oidc"
     )
+    progress_rows = [
+        {"id": brand["id"], "name": brand["name"], "status": "waiting", "message": ""}
+        for brand in brands
+    ]
+    completed_count = 0
+    report_manual_progress(
+        base_url,
+        args.request_id,
+        progress_rows,
+        completed_count,
+        current_brand=None,
+        message=f"準備同步 {len(brands)} 個品牌",
+    )
+
     errors = []
     for index, brand in enumerate(brands, start=1):
         print(f"({index}/{len(brands)}) {brand['name']} [{brand['id']}]")
+        progress_rows[index - 1]["status"] = "running"
+        progress_rows[index - 1]["message"] = "同步中"
+        report_manual_progress(
+            base_url,
+            args.request_id,
+            progress_rows,
+            completed_count,
+            current_brand={"id": brand["id"], "name": brand["name"]},
+            message=f"正在同步 {brand['name']} ({index}/{len(brands)})",
+        )
         try:
             await sync_brand(
                 connector, base_url, brand,
@@ -1450,9 +1521,28 @@ async def amain(args: argparse.Namespace) -> int:
                 engine=args.engine,
                 reconcile_days=args.reconcile_days,
             )
+            progress_rows[index - 1]["status"] = "done"
+            progress_rows[index - 1]["message"] = "已完成"
+            completed_count += 1
         except Exception as exc:
             errors.append((brand, exc))
+            progress_rows[index - 1]["status"] = "error"
+            progress_rows[index - 1]["message"] = str(exc)[:260]
             print(f"ERROR [{brand['name']}]: {exc}", file=sys.stderr)
+
+        next_brand = brands[index] if index < len(brands) else None
+        report_manual_progress(
+            base_url,
+            args.request_id,
+            progress_rows,
+            completed_count,
+            current_brand=({"id": next_brand["id"], "name": next_brand["name"]} if next_brand else None),
+            message=(
+                f"已完成 {completed_count}/{len(brands)} 個品牌"
+                if next_brand is None
+                else f"已完成 {completed_count}/{len(brands)}，下一個 {next_brand['name']}"
+            ),
+        )
         if index < len(brands):
             await asyncio.sleep(args.brand_gap_seconds)
 
@@ -1481,6 +1571,7 @@ def parse_args() -> argparse.Namespace:
         help="Sync engine. Scheduled runs use airbyte; sdk is emergency manual fallback only.",
     )
     parser.add_argument("--brand-id", default="", help="Optional single account ID for manual debugging.")
+    parser.add_argument("--request-id", default="", help="Optional manual sync request ID for brand-level UI progress reporting.")
     parser.add_argument("--brand-gap-seconds", type=float, default=3.0)
     return parser.parse_args()
 

@@ -78,6 +78,36 @@ export async function onRequestPost({ request, env }) {
       return json({ ok: true, ...status });
     }
 
+    if (action === "progress") {
+      const rawBrands = Array.isArray(body.brands) ? body.brands : [];
+      const brands = rawBrands.slice(0, 100).map((item) => ({
+        id: String(item && item.id || "").slice(0, 64),
+        name: String(item && item.name || "").slice(0, 120),
+        status: ["waiting", "running", "done", "error"].includes(String(item && item.status || ""))
+          ? String(item.status)
+          : "waiting",
+        message: String(item && item.message || "").slice(0, 300),
+      }));
+      const completed = Number.isFinite(Number(body.completed)) ? Number(body.completed) : brands.filter((b) => b.status === "done").length;
+      const total = Number.isFinite(Number(body.total)) ? Number(body.total) : brands.length;
+      const currentBrand = body.currentBrand && typeof body.currentBrand === "object"
+        ? {
+            id: String(body.currentBrand.id || "").slice(0, 64),
+            name: String(body.currentBrand.name || "").slice(0, 120),
+          }
+        : null;
+      const status = await writeStatus(env, requestId, {
+        status: "running",
+        conclusion: null,
+        brands,
+        completed,
+        total,
+        currentBrand,
+        message: String(body.message || "").slice(0, 300) || (currentBrand ? "正在同步 " + currentBrand.name : "Airbyte 同步中"),
+      });
+      return json({ ok: true, ...status });
+    }
+
     if (action === "complete") {
       const conclusion = String(body.conclusion || "failure");
       const status = await writeStatus(env, requestId, {
