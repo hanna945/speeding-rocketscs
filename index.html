@@ -1187,10 +1187,6 @@ function fmtStartDate(isoString) {
   const day = parseInt(match[3], 10);
   return `${month}/${day}`;
 }
-// utcOffsetHours 是廣告帳號自己的時區(相對 UTC 的小時數,例如台北是 8)。
-// Meta 後台顯示的「上週」是照廣告帳號本身設定的時區去算的,不是瀏覽器所在的時區——
-// 如果沒有帶入帳號時區,就照舊用瀏覽器當下的時區(維持原本行為,通常也不會有問題)。
-// weeksAgo:要抓「往前第幾個完整週」,1 = 上週(預設,跟原本行為一樣),2 = 上上週,以此類推,用來支援「自動回溯抓取過去幾週」。
 const LEGACY_DEFAULT_BRAND_IDS = [
   "2157995930925784",
   "436280797192761",
@@ -1744,8 +1740,8 @@ function parseLedgerWorkbook(workbook, year) {
   return result;
 }
 
-// 把後台每日資料彙總成指定期間(週或月,用 since ~ until 這種 ISO 日期字串)的總計,依產品代號分組。
-// ledgerByMonth: { [monthKey]: monthObject },會自動跨月份撈資料,所以週報表算到跨月份的那一週也沒問題。
+// 把後台每日資料彙總成指定日期區間(since ~ until)的總計,依產品代號分組。
+// ledgerByMonth: { [monthKey]: monthObject },會自動跨月份撈資料。
 function aggregateLedgerRange(ledgerByMonth, sinceISO, untilISO) {
   const matchedDays = [];
   Object.values(ledgerByMonth || {}).forEach((mo) => {
@@ -2121,7 +2117,7 @@ function colorForIndex(i) {
   return `hsl(${hue.toFixed(0)}, 38%, 42%)`;
 }
 
-// ROAS 效率分級,四級跟參考範例(行銷週報 PDF)的圖例一致。
+// ROAS 效率分級,四級沿用既有報表圖例。
 const ROAS_TIERS = [
   { min: 5, label: "優秀", color: "#8A8D74" },
   { min: 3, label: "穩健", color: "#73624F" },
@@ -2157,7 +2153,7 @@ function HorizontalBarChart({ data, formatValue }) {
 // 規則式自動摘要——不是真的 AI(Claude)生成的文字,是根據數字用固定規則組句子,
 // 風格模仿範例報表的 🏆/⚠️/📌 條列重點,但本質是統計規則,不是語言模型理解數據後寫出來的。
 // 如果之後要換成真的 Claude 生成的分析,需要後台設定 Anthropic API 金鑰,現在還沒有。
-// 固定產出「剛好4條」,順序、角色固定(對齊參考的週報格式,也對齊 AI 版prompt的結構),
+// 固定產出「剛好4條」,順序、角色固定(對齊目前報表與 AI 版 prompt 的結構),
 // 不是原本那種依條件增減的做法——AI 失敗時退回這版,畫面看起來的結構要跟AI版一致,不會忽長忽短。
 function generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget) {
   if (!rows.length) return [];
@@ -3285,7 +3281,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         // 狀態標籤分成兩個維度:
         // 1) ROAS 對目標判斷「超標/優於目標/未達標」
         // 2) 月報若有設定月預算，總花費超過預算時另外同時亮起「超出預算」。
-        // 週報不套月預算，避免拿月額度直接跟 7 天花費比較。
+        // 目前品牌報表只使用月報，因此月預算直接對照目前月份花費。
         const ratio = overallRoas !== null && roasTarget > 0 ? overallRoas / roasTarget : null;
         const performanceStatus = ratio === null ? null : ratio >= 1.5 ? "超標" : ratio >= 1 ? "優於目標" : "未達標";
         const budgetExceeded = monthlyBudget != null && monthlyBudget > 0 && totalSpend > monthlyBudget;
@@ -4541,8 +4537,8 @@ function MetaAdsLedger() {
 
   // 所有打 Meta Graph API 的地方都要改叫這個,不要直接用 fetch()。
   // 它會確保「這一次要打的請求」跟「上一次真正打出去的請求」之間至少間隔 MIN_API_GAP_MS,
-  // 不管上一次請求是來自周報表、月報表、批次、自動同步、或縮圖抓取,全部共用同一個計時器,
-  // 所以就算使用者用兩個不同按鈕(先抓上週、再抓月報表)手動連續觸發,也一樣會被這裡擋下來排隊等待。
+  // 不管上一次請求是來自月報表、批次、備援同步或縮圖抓取,全部共用同一個計時器,
+  // 所以就算使用者連續手動觸發抓取，也一樣會被這裡擋下來排隊等待。
   async function throttledFetch(url, context) {
     const now = Date.now();
     const wait = lastApiCallRef.current + MIN_API_GAP_MS - now;
@@ -4591,22 +4587,6 @@ function MetaAdsLedger() {
     }
   }
 
-  // 查廣告帳號自己的時區(跟 UTC 差幾小時),讓「上週一~週日」的日期範圍照這個帳號自己的時區去算,
-  // 而不是照瀏覽器所在的時區——不然帳號時區跟瀏覽器不同的話,算出來的週報表區間會跟 Meta 後台的「上週」對不起來,
-  // 花費、轉單數、CPA、ROAS 就會整批兜不起來(尤其是靠近週一/週日交界的那幾筆資料)。
-  // 抓不到時區也不讓它卡住整個流程,直接退回用瀏覽器時區。
-  async function fetchAccountUtcOffset(token, accountId) {
-    try {
-      const json = await fetchGraphApi(
-        `https://graph.facebook.com/v19.0/act_${accountId}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(token)}`,
-        "讀取帳號時區"
-      );
-      return typeof json.timezone_offset_hours_utc === "number" ? json.timezone_offset_hours_utc : null;
-    } catch {
-      return null;
-    }
-  }
-
   function apiErrorHint(e) {
     const msg = (e && e.message) || "";
     if (e && (e.code === 1 || e.code === 2)) {
@@ -4630,7 +4610,7 @@ function MetaAdsLedger() {
     return { y, m, d };
   }
   // 高量帳號(例如 H&J)整月直接做 level=ad Insights 容易讓 Meta 查詢過重。
-  // 改成最多 4 天一段，再把「可加總」指標依 ad_id 合併。週報最多 2 段、31 天月份最多 8 段，
+  // 改成最多 4 天一段，再把「可加總」指標依 ad_id 合併；31 天月份最多 8 段，
   // 仍遠低於每小時呼叫上限，也比整月單次查詢穩定。Reach 不能跨區間相加，下面會另外用
   // 一次輕量的 full-range reach 查詢覆蓋，避免 Frequency 被日期切段扭曲。
   function splitDateRangeIfLarge(since, until) {
@@ -5595,8 +5575,7 @@ function MetaAdsLedger() {
 function PerformanceBreakdown({ ads, currencyCode, accountId }) {
     const { qualifyingAds, buckets } = groupAdsByPerformance(ads);
     const brandPageId = derivePageIdFromAds(ads);
-    // 預設先把每一組收起來(不然「成效好」動輒上百支廣告,頁面會很長),
-    // 點卡片跳過去的時候,才把該組展開,同時捲動過去。
+    // 預設全部展開；使用者仍可手動收合各成效分類。
     const [collapsed, setCollapsed] = useState({ good: false, normal: false, poor: false, learning: false });
 
     useEffect(() => {
@@ -5825,8 +5804,7 @@ async function toggleRememberToken(checked) {
     setApiNotice("Meta 自動同步已由中央排程接管；此頁只讀取已同步資料。手動抓取功能保留作緊急備援。");
   }
 
-  // 開啟網頁時的自動同步:檢查上週(週一~週日)跟上個月的資料是否已經存在,
-  // 沒有的話就自動用記住的權杖抓一次,依序抓每個常用品牌(或預設帳號),中間間隔 4 秒避免觸發 Meta 頻率限制。
+  // 前端備援同步只檢查上個月資料是否存在；正式同步已由中央排程接管。
   async function runAutoSyncWith(token, brandsList, defaultAccountId) {
   if (!token || !token.trim()) return;
   const cleanDefaultId = (defaultAccountId || "").trim().replace(/^act_/, "");
