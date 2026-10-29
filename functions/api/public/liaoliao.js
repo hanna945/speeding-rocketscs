@@ -1,6 +1,5 @@
 const BRAND_ID = "1638891154598307";
 const MONTH_PREFIX = `metaads-month:${BRAND_ID}::`;
-const WEEK_PREFIX = `metaads-week:${BRAND_ID}::`;
 const LEDGER_PREFIX = `metaads-ledger:${BRAND_ID}::`;
 
 function corsHeaders() {
@@ -73,7 +72,6 @@ export async function onRequestGet({ env }) {
   try {
     const [
       months,
-      weeks,
       ledger,
       cpaAll,
       cpcAll,
@@ -83,7 +81,6 @@ export async function onRequestGet({ env }) {
       productNamesAll,
     ] = await Promise.all([
       readPrefixMap(env, MONTH_PREFIX),
-      readPrefixMap(env, WEEK_PREFIX),
       readPrefixMap(env, LEDGER_PREFIX),
       readJson(env, "meta-api-cpa-thresholds", {}),
       readJson(env, "meta-api-cpc-thresholds", {}),
@@ -100,7 +97,6 @@ export async function onRequestGet({ env }) {
         name: "Liaoliao 撩撩",
       },
       months,
-      weeks,
       ledger: sanitizeLedgerMap(ledger),
       settings: {
         cpaTarget: scopedSetting(cpaAll),
