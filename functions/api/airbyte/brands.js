@@ -1,4 +1,5 @@
 import { verifyGitHubActionsOidc } from "../../_shared/githubOidc.js";
+import { extendCredentialRoster } from "../../_shared/brandDefaults.js";
 
 const HIDDEN_REPORT_BRAND_NAMES = new Set(["H&J官網業績"]);
 
@@ -26,9 +27,12 @@ function configuredBrandsFromEnv(env) {
   try {
     const creds = JSON.parse(env.TEAM_CREDENTIALS);
     Object.values(creds || {}).forEach((entry) => {
-      const list = entry && Array.isArray(entry.brands) ? entry.brands : [];
-      if (list === "*") return;
-      list.forEach((brand) => out.push(brand));
+      const rawList = entry && Array.isArray(entry.brands) ? entry.brands : [];
+      const normalized = rawList
+        .map((brand) => normalizeBrand(brand))
+        .filter(Boolean);
+      const extended = extendCredentialRoster((entry && entry.name) || "", normalized);
+      extended.forEach((brand) => out.push(brand));
     });
   } catch {}
   return out;
