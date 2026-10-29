@@ -4175,61 +4175,11 @@ function MetaAdsLedger() {
     }
   }
 
-  async function importLedgerFile(file) {
-    setLedgerImportLoading(true); setLedgerImportError(null); setLedgerImportNotice(null);
-    try {
-      const buf = await file.arrayBuffer();
-      const workbook = XLSX.read(buf, { type: "array", cellDates: true });
-      const parsedByMonth = parseLedgerWorkbook(workbook, Number(ledgerYear));
-      const monthKeys = Object.keys(parsedByMonth);
-      if (!monthKeys.length) {
-        setLedgerImportError("在這份檔案裡沒有找到看得懂的月份分頁(分頁名稱需要是「1月」~「12月」這種格式),請確認檔案格式是否跟範例表單一致。");
-        return;
-      }
-      for (const mk of monthKeys) {
-        await storage.set(ledgerKeyFor(activeBrandId, mk), JSON.stringify(parsedByMonth[mk]));
-      }
-      await loadLedger(activeBrandId);
-      setLedgerImportNotice(`已匯入 ${monthKeys.map((mk) => monthLabel(mk)).join("、")} 的後台每日收益表,月報表會自動比對。`);
-      setShowLedgerModal(false);
-    } catch (e) {
-      setLedgerImportError("讀取檔案時發生問題,請確認上傳的是 .xlsx 檔,且格式跟範例表單一致。");
-    } finally {
-      setLedgerImportLoading(false);
-    }
-  }
-
+  async 
   // 從 Google 試算表直接同步後台每日收益表(方式B:試算表保持完全私密,只分享給一個服務帳號),
   // 取代手動下載 xlsx 再上傳的步驟。伺服器端(/api/sheets/sync)會用服務帳號金鑰讀「1月」~「12月」
   // 這些分頁,轉成跟 xlsx 匯入完全同一套格式後直接存進帳本,前端這裡只需要打一次 API。
-  async function syncFromGoogleSheet() {
-    if (!activeBrandId) {
-      setLedgerImportError("請先在上方選擇或建立一個品牌(廣告帳號),系統才知道要把同步回來的資料存到哪一本帳。");
-      return;
-    }
-    const sheetId = sheetIdInput.trim();
-    setSheetSyncLoading(true); setLedgerImportError(null); setLedgerImportNotice(null);
-    try {
-      const res = await fetch(`/api/sheets/sync`, {
-        method: "POST",
-        headers: { ...teamKeyHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: activeBrandId, sheetId, year: Number(ledgerYear) }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      await loadLedger(activeBrandId);
-      const monthsLabel = (json.importedMonths || []).map((mk) => monthLabel(mk)).join("、");
-      setLedgerImportNotice(
-        `已從 Google 試算表同步 ${monthsLabel} 的後台每日收益表。` +
-        (json.errors && json.errors.length ? ` (部分分頁略過:${json.errors.join(";")})` : "")
-      );
-    } catch (e) {
-      setLedgerImportError("同步失敗:" + e.message + "——請確認這份試算表已經分享給服務帳號的 email(檢視者權限即可),且 ID 沒有貼錯。");
-    } finally {
-      setSheetSyncLoading(false);
-    }
-  }
-
+  async 
   function handleBrandSwitch(brandId) { setActiveBrandId(brandId); }
 
   async function loadAll(brandId, isStale) {
@@ -5310,67 +5260,13 @@ function MetaAdsLedger() {
   // 直接呼叫 /api/sheets/sync(不是 /api/sheets/auto),指定明確的 accountId——
   // 跟登入自動觸發的每日同步用同一支後端 API,但這支沒有「一天一次」的限制,手動按永遠會真的去抓一次最新的。
   // sheetId 留空,後端會自動沿用這個品牌上次記住的試算表 ID,不用重新貼一次。
-  async function syncLedgerForAccount(accountId) {
-    const res = await fetch(`/api/sheets/sync`, {
-      method: "POST",
-      headers: { ...teamKeyHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ accountId, sheetId: "", year: Number(ledgerYear) }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-    if (accountId === activeBrandId) await loadLedger(activeBrandId);
-    return json;
-  }
-
+  async 
   // 一鍵刷新全部資料來源:①官網+一頁廣告成效(Meta,近3個月+近4週)②Shopline 訂單(近3個月+近4週)
   // ③一頁業績的每日收益表(Google 試算表)。依序執行(不是同時打,避免太多請求一起打向 Meta/Shopline 觸發頻率限制),
   // 手動點的動作,不受背景自動同步「一天一次」的限制,想刷新隨時可以按。任一項目失敗不會擋住其他項目繼續執行。
   // force=true(手動按「刷新全部」):不管今天有沒有跑過,一定重新整理一次。
   // force=false(網頁打開時自動觸發):先檢查今天是否已經自動刷新過,跑過就直接跳過,避免同一天開好幾次網頁重複打一堆 API。
-  async function refreshAllData(force = true) {
-    if (!force) {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const lastRunRes = await storage.get(AUTO_SYNC_DATE_KEY).catch(() => null);
-      if (lastRunRes && lastRunRes.value === todayStr) return;
-      // 關鍵修正:自動同步(非force)一旦確定要跑,立刻把「今天跑過了」寫進去,不要等整個流程
-      // (可能超過1分鐘)跑完才寫。不然使用者在同步跑到一半時重新整理頁面,新的頁面載入會看到
-      // 這個key還沒寫入、以為今天還沒跑過,又觸發一次自動同步——兩個同步流程同時打同一個
-      // 廣告帳號,很容易撞到Meta的頻率限制(錯誤代碼1/99)。手動按「刷新全部」(force=true)
-      // 不受這個保護限制,一律照使用者要求執行。
-      await storage.set(AUTO_SYNC_DATE_KEY, todayStr).catch(() => {});
-    }
-    setRefreshAllStatus("整理中… 官網 / 一頁廣告成效");
-    let metaOk = true;
-    try {
-      // 2026-07-30起:H&J一頁業績(ONEPAGE_BRAND_ID)這個帳號的Meta資料,改成以speedingscs/cron排程
-      // 為主要來源——H-J自己的「自動」同步(頁面載入觸發,不是使用者主動按的)不再重複對這個帳號打Meta,
-      // 直接讀共用KV裡speedingscs/cron已經抓好的資料就好,避免同一個帳號被兩套系統重複消耗同一份
-      // 300次/小時額度。手動按「刷新全部」(force=true)還是會兩個帳號都抓,當作緊急備援——
-      // 手動是使用者自己控制、intentional的動作,不會像自動同步那樣每次開頁面就觸發一次。
-      // 2026-07-30:先前這裡改成排除ONEPAGE_BRAND_ID、只讓speedingscs/cron抓一頁業績,但改完之後
-      // 出現兩個新問題(官網業績每月看不到資料、其他人看不到FB縮圖),時間點高度重疊,還沒完全查清楚
-      // 因果關係前,先撤回這個調整、恢復成兩個帳號都抓,回到已知穩定的狀態,不讓正式環境繼續帶著
-      // 問題運作。如果之後要重新做這個架構調整,要先確認清楚不會連帶影響到官網業績或縮圖資料。
-      await runAutoSyncWith(HARDCODED_BRANDS, force);
-    } catch { metaOk = false; }
-
-    const shoplineOk = true; // Mavis 沒有 SHOPLINE，略過 Shopline 刷新
-
-    setRefreshAllStatus("整理中… 每日收益表(Google 試算表)");
-    let ledgerOk = true;
-    try {
-      await syncLedgerForAccount(ONEPAGE_BRAND_ID); // H&J 一頁業績
-    } catch { ledgerOk = false; }
-
-    setRefreshAllStatus(null);
-    const failedParts = [!metaOk && "廣告成效", !ledgerOk && "每日收益表"].filter(Boolean);
-    setApiNotice(
-      failedParts.length
-        ? `刷新完成,但有部分失敗(${failedParts.join("、")}),可以再按一次或個別手動重試。`
-        : "已完成刷新全部資料:品牌廣告成效、每日收益表都是最新的。"
-    );
-  }
-
+  async 
   const sortedKeys = useMemo(() => Object.keys(months).sort(), [months]);
   const enriched = useMemo(() => { const out = {}; for (const mk of sortedKeys) out[mk] = deriveMetrics(months[mk]); return out; }, [months, sortedKeys]);
   const chartData = useMemo(() => sortedKeys.map((mk) => ({
