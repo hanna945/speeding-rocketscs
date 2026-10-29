@@ -826,7 +826,7 @@ let credentialBrandsCache = null; // 這組密碼「自帶」的品牌清單([{i
 async function probeCloud(force) {
   if (cloudStatusCache !== "unknown" && !force) return cloudStatusCache;
   try {
-    const res = await fetch(`${CLOUD_KV_BASE}/list?prefix=`, { headers: teamKeyHeaders() });
+    const res = await fetch(`${CLOUD_KV_BASE}/health`, { headers: teamKeyHeaders(), cache: "no-store" });
     if (res.status === 401) {
       cloudStatusCache = "unauthorized";
       credentialNameCache = "";
