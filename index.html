@@ -7040,6 +7040,8 @@ const shopeRealDailyMap = useMemo(() => {
               monthKey={focusMonth}
               roasTarget={roasTargets[activeBrandId] || 3}
               cpaTarget={cpaThresholds[activeBrandId]}
+              monthlyBudget={monthlyBudgets[activeBrandId]}
+              productNames={productNames[activeBrandId] || {}}
               sponsorStats={sponsorFocusStats && sponsorFocusStats.monthKey === focusMonth ? sponsorFocusStats : null}
               topProducts={monthLaunchProductTop3}
               history={sortedKeys.map((mk) => ({ monthKey: mk, ...enriched[mk] }))}
