@@ -1026,8 +1026,8 @@ function parseLedgerWorkbook(workbook, year) {
   return result;
 }
 
-// 把後台每日資料彙總成指定期間(週或月,用 since ~ until 這種 ISO 日期字串)的總計,依產品代號分組。
-// ledgerByMonth: { [monthKey]: monthObject },會自動跨月份撈資料,所以週報表算到跨月份的那一週也沒問題。
+// 把後台每日資料彙總成指定日期範圍(since ~ until 的 ISO 日期字串)總計,依產品代號分組。
+// ledgerByMonth: { [monthKey]: monthObject },會自動跨月份撈資料。
 function aggregateLedgerRange(ledgerByMonth, sinceISO, untilISO) {
   const matchedDays = [];
   Object.values(ledgerByMonth || {}).forEach((mo) => {
@@ -1776,7 +1776,7 @@ function colorForIndex(i) {
   return `hsl(${hue.toFixed(0)}, 38%, 42%)`;
 }
 
-// ROAS 效率分級,四級跟參考範例(行銷週報 PDF)的圖例一致。
+// ROAS 效率分級,四級維持既有報表圖例。
 const ROAS_TIERS = [
   { min: 5, label: "優秀", color: "#8A8D74" },
   { min: 3, label: "穩健", color: "#73624F" },
@@ -1812,7 +1812,7 @@ function HorizontalBarChart({ data, formatValue }) {
 // 規則式自動摘要——不是真的 AI(Claude)生成的文字,是根據數字用固定規則組句子,
 // 風格模仿範例報表的 🏆/⚠️/📌 條列重點,但本質是統計規則,不是語言模型理解數據後寫出來的。
 // 如果之後要換成真的 Claude 生成的分析,需要後台設定 Anthropic API 金鑰,現在還沒有。
-// 固定產出「剛好4條」,順序、角色固定(對齊參考的週報格式,也對齊 AI 版prompt的結構),
+// 固定產出「剛好4條」,順序、角色固定(對齊既有報表格式,也對齊 AI 版prompt的結構),
 // 不是原本那種依條件增減的做法——AI 失敗時退回這版,畫面看起來的結構要跟AI版一致,不會忽長忽短。
 function generateAutoInsights(rows, totalRevenue, totalSpend, roasTarget) {
   if (!rows.length) return [];
@@ -2864,12 +2864,12 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
               tabIndex={0}
               aria-expanded={!channelsCollapsed}
             >
-              平台／通路補充明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
+              平台／通路明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
               <span className="mal-major-section-toggle" aria-hidden="true">{channelsCollapsed ? "＋" : "−"}</span>
             </h2>
           ) : (
             <StaticSectionTitle className="mal-section-title" style={{ fontSize: 15, marginBottom: 10 }}>
-              平台／通路補充明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
+              平台／通路明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
             </StaticSectionTitle>
           )}
           {(!collapsible || !channelsCollapsed) && (
@@ -3444,9 +3444,8 @@ function MetaAdsLedger() {
   const [adLaunchFilter, setAdLaunchFilter] = useState("all"); // month view: "all" | "month" —— 只看該月份才開始投放的廣告
   const [adSearchKeyword, setAdSearchKeyword] = useState(""); // 依廣告名稱/行銷活動/UTM 關鍵字搜尋,空字串表示不篩選
   // 全域節流用:記錄「最後一次真正打到 Meta Graph API」的時間戳。
-  // 不管是週報表、月報表、批次、自動同步或縮圖抓取,只要是打 Meta 的請求都共用同一個時間戳,
-  // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS——即使使用者手動連續按「抓上週」再按「抓月報表」也一樣受限,
-  // 不再只靠批次迴圈裡的 4 秒 delay(那個只保護「同一輪批次抓取」,不會保護「先抓周報表、再手動切去抓月報表」這種跨動作的情境)。
+  // 月報表、批次、自動同步或縮圖抓取只要打 Meta 請求,都共用同一個時間戳。
+  // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS,避免跨動作連續請求撞到頻率限制。
   const lastApiCallRef = useRef(0);
   const [recentMonthsCount, setRecentMonthsCount] = useState(3); // 自動更新前3個月用
   const [apiToken, setApiToken] = useState("");
@@ -4229,7 +4228,7 @@ function MetaAdsLedger() {
     storage.set("meta-api-adratio-thresholds", JSON.stringify(updated)).catch(() => {});
   }
 
-  // 跟 editAdRatioThreshold 同一套模式:「投放成效報告」(週報表卡片+長條圖+分級表格)
+  // 跟 editAdRatioThreshold 同一套模式:「投放成效報告」(卡片+長條圖+分級表格)
   // 用的 ROAS 目標倍數,沒設定的話預設 3。
   function editRoasTarget(brandId) {
     const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
@@ -4353,8 +4352,8 @@ function MetaAdsLedger() {
 
   // 所有打 Meta Graph API 的地方都要改叫這個,不要直接用 fetch()。
   // 它會確保「這一次要打的請求」跟「上一次真正打出去的請求」之間至少間隔 MIN_API_GAP_MS,
-  // 不管上一次請求是來自周報表、月報表、批次、自動同步、或縮圖抓取,全部共用同一個計時器,
-  // 所以就算使用者用兩個不同按鈕(先抓上週、再抓月報表)手動連續觸發,也一樣會被這裡擋下來排隊等待。
+  // 不管上一次請求是來自月報表、批次、自動同步或縮圖抓取,全部共用同一個計時器,
+  // 因此跨動作連續觸發時也會依序排隊,避免短時間內重複打 Meta API。
   async function throttledFetch(url, context, options) {
     const now = Date.now();
     const wait = lastApiCallRef.current + MIN_API_GAP_MS - now;
@@ -4400,22 +4399,6 @@ function MetaAdsLedger() {
         return fetchGraphApi(url, context, retriesLeft - 1);
       }
       throw e;
-    }
-  }
-
-  // 查廣告帳號自己的時區(跟 UTC 差幾小時),讓「上週一~週日」的日期範圍照這個帳號自己的時區去算,
-  // 而不是照瀏覽器所在的時區——不然帳號時區跟瀏覽器不同的話,算出來的週報表區間會跟 Meta 後台的「上週」對不起來,
-  // 花費、轉單數、CPA、ROAS 就會整批兜不起來(尤其是靠近週一/週日交界的那幾筆資料)。
-  // 抓不到時區也不讓它卡住整個流程,直接退回用瀏覽器時區。
-  async function fetchAccountUtcOffset(token, accountId) {
-    try {
-      const json = await fetchGraphApi(
-        `https://graph.facebook.com/v19.0/act_${accountId}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(token)}`,
-        "讀取帳號時區"
-      );
-      return typeof json.timezone_offset_hours_utc === "number" ? json.timezone_offset_hours_utc : null;
-    } catch {
-      return null;
     }
   }
 
