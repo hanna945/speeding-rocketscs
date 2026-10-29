@@ -735,6 +735,26 @@
     .mal-ledger-compare-table td { padding-left: 9px; padding-right: 9px; }
   }
 
+
+  /* TOP 3 固定保留三個排名位置：品項不足時顯示空位，不讓區塊消失 */
+  .mal-top3-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .mal-top3-placeholder {
+    border-style: dashed;
+    background: rgba(251,247,240,.72);
+  }
+  .mal-top3-placeholder .mal-card-value {
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+  @media (max-width: 860px) {
+    .mal-top3-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 560px) {
+    .mal-top3-cards { grid-template-columns: 1fr; }
+  }
+
 </style>
 </head>
 <body>
@@ -6589,9 +6609,21 @@ function MetaAdsLedger() {
                 </div>
               </div>
               <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", fontWeight: 600, marginBottom: 8 }}>本月主投品項 TOP 3（依廣告費）</div>
-              {monthLaunchProductTop3.length > 0 ? (
-                <div className="mal-cards" style={{ marginBottom: 0 }}>
-                  {monthLaunchProductTop3.map((item, idx) => {
+              {(
+                <div className="mal-cards mal-top3-cards" style={{ marginBottom: 0 }}>
+                  {Array.from({ length: 3 }).map((_, idx) => {
+                    const item = monthLaunchProductTop3[idx];
+                    if (!item) {
+                      return (
+                        <div className="mal-card mal-top3-placeholder" key={`placeholder-${idx + 1}`}>
+                          <div className="mal-card-label">#{idx + 1} 主投品項</div>
+                          <div className="mal-card-value" style={{ fontSize: 22 }}>尚無品項</div>
+                          <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 6 }}>
+                            本月目前沒有第 {idx + 1} 名新投放品項
+                          </div>
+                        </div>
+                      );
+                    }
                     const displayName = (productNames[activeBrandId] || {})[item.code];
                     const share = monthStartedSpend > 0 ? item.spend / monthStartedSpend * 100 : 0;
                     const cpa = item.conversions > 0 ? item.spend / item.conversions : null;
@@ -6609,8 +6641,6 @@ function MetaAdsLedger() {
                     );
                   })}
                 </div>
-              ) : (
-                <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>目前沒有可辨識的本月新投放品項代號。</div>
               )}
             </div>
           )}
