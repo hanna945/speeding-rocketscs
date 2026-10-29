@@ -800,7 +800,6 @@ let credentialNameCache = "Halo-Mavis國際連線（光速代操）";
 let credentialBrandsCache = [{ id: PUBLIC_MAVIS_BRAND_ID, name: "Halo-Mavis國際連線（光速代操）" }];
 
 function getTeamKey() { return ""; }
-function setTeamKey() {}
 function teamKeyHeaders() { return {}; }
 
 async function loadPublicReport(force) {
@@ -4327,16 +4326,7 @@ function MetaAdsLedger() {
   // 也隨時可以重新設定或修改。輸入空白表示清除這個品牌的標準(改回「尚未設定」,不會顯示過高警示)。
   // 已經拿掉「預設帳本」,所以只要抓到資料,就一定要掛在一個看得到的品牌底下——
   // 如果這個帳號 ID 還沒存成常用品牌,就先用帳號 ID 當名稱自動建立一個(之後可以用「存為常用」改成正式名稱)。
-  async function ensureBrandRegistered(cleanId) {
-    const matched = brands.find((b) => b.id === cleanId);
-    if (matched) return matched.id;
-    const autoBrand = { name: cleanId, id: cleanId };
-    const updated = [...brands, autoBrand];
-    setBrands(updated);
-    await storage.set("meta-api-brands", JSON.stringify(updated)).catch(() => {});
-    return cleanId;
-  }
-
+  async 
   function editCpaThreshold(brandId) {
     const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
     const current = cpaThresholds[brandId];
@@ -4461,14 +4451,7 @@ function MetaAdsLedger() {
   async 
   
   async 
-  async function fetchOneBrandMonth(token, accountId, month) {
-    const [y, m] = month.split("-").map(Number);
-    const since = `${month}-01`;
-    const lastDay = new Date(y, m, 0).getDate();
-    const until = `${month}-${String(lastDay).padStart(2, "0")}`;
-    return fetchInsightsForRange(token, accountId, since, until);
-  }
-
+  async 
   const MIN_FETCH_SPEND = 500;
   const MIN_API_GAP_MS = 1200; // 任兩次 Meta Graph API 請求之間的最小間隔(毫秒)
 
@@ -4524,21 +4507,7 @@ function MetaAdsLedger() {
     }
   }
 
-  function apiErrorHint(e) {
-    const msg = (e && e.message) || "";
-    if (e && (e.code === 1 || e.code === 2)) {
-      return (
-        "。這不是你的權杖或帳號 ID 設定錯誤——Meta 官方把這種錯誤歸類為「暫時性問題,建議直接重試」," +
-        "常見原因是短時間內對同一個廣告帳號打太多次 API(可能是你自己連續按了好幾次、同事剛好也在同時間抓同一個品牌、" +
-        "或自動同步跟手動抓取撞在一起),系統已經自動重試過,如果還是失敗,等 1~2 分鐘再試一次通常就會恢復。"
-      );
-    }
-    if (/too many calls/i.test(msg) || /80004/.test(msg) || /error_subcode 2446079/i.test(msg)) {
-      return "。這是 Meta 廣告帳號的呼叫頻率限制,不是設定錯誤——通常等 5~15 分鐘再試一次就會恢復,批次抓多個品牌時建議一次不要抓太多個。";
-    }
-    return "。請確認權杖沒過期、廣告帳號 ID 正確,且已授權 ads_read 權限。";
-  }
-
+  
   // 大型帳號備援：Meta 官方建議大型 Insights 結果改用 async report run。
   // 平常仍先走原本同步 GET；只有同步查詢因資料量/處理時間失敗時才切 async，
   // 小帳號與既有流程完全不受影響。
@@ -5615,10 +5584,7 @@ function MetaAdsLedger() {
   const AUTO_SYNC_DATE_KEY = "meta-auto-sync-last-date";
   async 
   // 手動觸發同步(例如面板裡的「立即同步」按鈕)
-  function runAutoSync() {
-    return runAutoSyncWith(brands.length ? brands : HARDCODED_BRANDS);
-  }
-
+  
   // 直接呼叫 /api/sheets/sync(不是 /api/sheets/auto),指定明確的 accountId——
   // 跟登入自動觸發的每日同步用同一支後端 API,但這支沒有「一天一次」的限制,手動按永遠會真的去抓一次最新的。
   // sheetId 留空,後端會自動沿用這個品牌上次記住的試算表 ID,不用重新貼一次。
