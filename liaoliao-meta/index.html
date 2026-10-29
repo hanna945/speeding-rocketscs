@@ -3684,8 +3684,7 @@ function MetaAdsLedger() {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [focusMonth, setFocusMonth] = useState(null);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(null);
+    const [confirmDelete, setConfirmDelete] = useState(null);
   const [showAllAds, setShowAllAds] = useState(false);
   const [adSortMode, setAdSortMode] = useState("spend");
   const [adStatusFilter, setAdStatusFilter] = useState("all"); // "all" | "active" | "inactive" —— 篩選要看投放中還是已停止的廣告
@@ -3695,11 +3694,10 @@ function MetaAdsLedger() {
   // 月報表、批次、自動同步或縮圖抓取只要打 Meta 請求,都共用同一個時間戳。
   // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS,避免跨動作連續請求撞到頻率限制。
   const lastApiCallRef = useRef(0);
-  const [recentMonthsCount, setRecentMonthsCount] = useState(3); // 自動更新前3個月用
+  // 自動更新前3個月用
   const [apiToken, setApiToken] = useState("");
   // 這個工具只服務單一品牌,廣告帳號 ID 直接鎖定,不需要使用者輸入或從瀏覽器記錄裡讀取。
-  const [apiAccountId, setApiAccountId] = useState(HARDCODED_BRANDS[0].id);
-  const [brands, setBrands] = useState([]);
+    const [brands, setBrands] = useState([]);
   const [activeBrandId, setActiveBrandId] = useState("");
   const [cpaThresholds, setCpaThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「CPA 過高」標準
   const [cpcThresholds, setCpcThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的 CPC 目標
@@ -3708,9 +3706,7 @@ function MetaAdsLedger() {
   const [monthlyBudgets, setMonthlyBudgets] = useState({}); // { [brandId]: number } 每個品牌月廣告預算上限
   const [productNames, setProductNames] = useState({}); // { [brandId]: { [code]: name } } 每個品牌、每個代號各自的中文名稱,顯示成「代號(名稱)」——
   // 沒辦法從行銷活動名稱自動抓出乾淨的產品名稱(命名不夠固定),所以讓使用者自己設定,類似 roasTargets 那樣。
-  const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
-  const [batchProgress, setBatchProgress] = useState(null);
-  const [viewMode, setViewMode] = useState("month");
+      const [viewMode, setViewMode] = useState("month");
   // 診斷用:error boundary 在這個元件外層,沒辦法直接讀到這裡的 state,錯誤發生時只能靠這個
   // 全域變數(即時更新)才知道「事情發生的當下,使用者停在哪個頁面/哪個品牌」。純診斷用途,
   // 不影響任何功能或畫面。
@@ -3726,8 +3722,7 @@ function MetaAdsLedger() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
-  const [apiLoading, setApiLoading] = useState(false);
-  const [apiError, setApiError] = useState(null);
+    const [apiError, setApiError] = useState(null);
   const [apiNotice, setApiNotice] = useState(null);
   const [rememberToken, setRememberToken] = useState(false);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
@@ -3748,8 +3743,7 @@ function MetaAdsLedger() {
   const [sheetSyncLoading, setSheetSyncLoading] = useState(false);
   const [cloudStatus, setCloudStatus] = useState(HAS_SHARED_STORAGE ? "artifact" : "unknown");
   const [credentialName, setCredentialName] = useState("");
-  const [showTeamKeyModal, setShowTeamKeyModal] = useState(false);
-  // showApiPanel/showLedgerModal:對應的按鈕、彈窗畫面都拿掉了(這兩個是會外流權杖/試算表的舊功能),
+    // showApiPanel/showLedgerModal:對應的按鈕、彈窗畫面都拿掉了(這兩個是會外流權杖/試算表的舊功能),
   // 但底下還有幾支舊函式(importLedgerFile、syncFromGoogleSheet等)內部呼叫這兩個setter——
   // 這些函式現在沒有任何按鈕會觸發到,是真正的孤兒程式碼,之後應該整支拿掉,
   // 但這裡先保留state宣告本身,避免那幾支孤兒函式(萬一被別處呼叫到)直接噴出「未定義」的錯誤。
@@ -3846,8 +3840,7 @@ function MetaAdsLedger() {
 
   const [showApiPanel, setShowApiPanel] = useState(false);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
-  const [teamKeyInput, setTeamKeyInput] = useState(getTeamKey());
-
+  
   // ---------- Shopline 對照:state ----------
   // 公開報表不再持有 Worker URL / 驗證密鑰；Meta 已由中央 Airbyte 同步。
   const DEFAULT_SHOPLINE_WORKER_URL = "";
@@ -4497,209 +4490,7 @@ function MetaAdsLedger() {
   }
 
   // 月報明細維持花費 ≥ MIN_FETCH_SPEND 的既有門檻；帳號總計仍使用完整 rows，不受明細門檻影響。
-  async function fetchInsightsForRange(token, accountId, since, until) {
-    const encToken = encodeURIComponent(token);
-    const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
-
-    // 0) account currency
-    let currency = "TWD";
-    try {
-      const curJson = await fetchGraphApi(`https://graph.facebook.com/v19.0/act_${accountId}?fields=currency&access_token=${encToken}`, "讀取帳號幣別");
-      if (curJson.currency) currency = curJson.currency;
-    } catch { /* fall back to TWD, this call isn't critical */ }
-
-    // 1) per-ad performance for the month
-    // 關鍵參數 use_account_attribution_setting=true:讓這次 API 呼叫套用「這個廣告帳號自己在 Meta 後台設定的歸因窗口」,
-    // 而不是 API 預設的歸因窗口。如果沒有這個參數,API 預設的歸因窗口通常比後台顯示用的寬(例如把 7 天內的點擊、
-    // 甚至瀏覽後很久才發生的購買都算進來),會導致轉單數比 Meta 後台顯示的「結果」多出好幾倍,CPA 被嚴重低估、
-    // ROAS 被嚴重高估——這正是造成轉單數跟後台數字差非常多倍的根本原因,不是重複計算的問題。
-    const insightFields = "ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values";
-    let insightsUrl =
-      `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
-      `&fields=${insightFields}&time_range=${timeRange}&limit=500&access_token=${encToken}`;
-    let rows = [];
-    let page = 0;
-    try {
-      while (insightsUrl && page < 20) {
-        const json = await fetchGraphApi(insightsUrl, "讀取成效資料");
-        rows = rows.concat(json.data || []);
-        insightsUrl = json.paging && json.paging.next ? json.paging.next : null;
-        page++;
-      }
-      // 原本最多只讀 20 頁，超過時會默默截斷。大型 H&J 帳號改走 async 重新抓完整結果。
-      if (insightsUrl) {
-        rows = await fetchInsightsRowsAsync(token, accountId, since, until, insightFields);
-      }
-    } catch (e) {
-      const msg = String((e && e.message) || "").toLowerCase();
-      const likelyLargeReport =
-        e.code === 1 ||
-        e.code === 2 ||
-        /timeout|timed out|reduce the amount of data|request too large|unknown error/.test(msg);
-      if (!likelyLargeReport) throw e;
-      rows = await fetchInsightsRowsAsync(token, accountId, since, until, insightFields);
-    }
-
-    if (!rows.length) {
-      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], syncedAt: new Date().toISOString() };
-    }
-
-    // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
-    // H&J 帳號歷史廣告量很大。月報若把「所有有花費的 ad_id」都再查一次詳細資料，
-    // 會製造大量 /ads 請求，容易撞 Meta rate limit，也會讓整輪抓取拖非常久。
-    //
-    // 總計仍然使用完整 rows 計算，所以花費 / 轉單 / 營收 / ROAS 不會少算。
-    // 只有「廣告明細」需要額外抓 metadata：月報只查原本就會顯示的 spend >= MIN_FETCH_SPEND 廣告。
-    const detailTargetRows = rows.filter((r) => (parseFloat(r.spend) || 0) >= MIN_FETCH_SPEND);
-    const periodAdIds = [...new Set(detailTargetRows.map((r) => r.ad_id).filter(Boolean))];
-    let thumbMap = {};
-    let utmMap = {};
-    let statusMap = {};
-    let campaignMap = {};
-    let adSetMap = {};
-    let adSetIdMap = {};
-    let startDateMap = {};
-    let postIdMap = {};
-    let creativeIdMap = {};
-    let objectiveMap = {};
-    let optimizationGoalMap = {};
-    const ID_CHUNK_SIZE = 50;
-    for (let i = 0; i < periodAdIds.length; i += ID_CHUNK_SIZE) {
-      const chunk = periodAdIds.slice(i, i + ID_CHUNK_SIZE);
-      const filtering = encodeURIComponent(JSON.stringify([{ field: "id", operator: "IN", value: chunk }]));
-      let adsUrl =
-        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{id,name,objective},adset{id,name,start_time,optimization_goal},creative{id,thumbnail_url,image_url,url_tags,effective_object_story_id}` +
-        `&filtering=${filtering}&limit=500&access_token=${encToken}`;
-      let page2 = 0;
-      while (adsUrl && page2 < 5) {
-        const json = await fetchGraphApi(adsUrl, "讀取廣告清單");
-        (json.data || []).forEach((ad) => {
-          const thumb = ad.creative && (ad.creative.thumbnail_url || ad.creative.image_url);
-          if (thumb) thumbMap[ad.id] = thumb;
-          // effective_object_story_id = 「粉專ID_貼文ID」,用來組出貼文本身的前台連結。
-          const storyId = ad.creative && ad.creative.effective_object_story_id;
-          if (storyId) postIdMap[ad.id] = storyId;
-          const creativeId = ad.creative && ad.creative.id;
-          if (creativeId) creativeIdMap[ad.id] = creativeId;
-          if (ad.campaign && ad.campaign.objective) objectiveMap[ad.id] = ad.campaign.objective;
-          if (ad.adset && ad.adset.optimization_goal) optimizationGoalMap[ad.id] = ad.adset.optimization_goal;
-          // 有些廣告(例如動態素材/型錄類廣告)的追蹤參數是設在「創意」層級,不是廣告本身,
-          // 所以廣告本身的 url_tags 抓不到值時,再退回去看創意底下的 url_tags。
-          const tags = ad.url_tags || (ad.creative && ad.creative.url_tags) || "";
-          if (tags) utmMap[ad.id] = extractUtmValue(tags);
-          statusMap[ad.id] = ad.effective_status || "UNKNOWN";
-          if (ad.campaign && ad.campaign.name) campaignMap[ad.id] = ad.campaign.name;
-          if (ad.adset && ad.adset.name) adSetMap[ad.id] = ad.adset.name;
-          if (ad.adset && ad.adset.id) adSetIdMap[ad.id] = ad.adset.id;
-          // 投放起始時間:優先用廣告組合(adset)排定的開始時間,最貼近實際開始投放的日期;
-          // 抓不到的話(例如舊資料、權限限制)退回用廣告本身的建立時間,當作大概的參考。
-          const startRaw = (ad.adset && ad.adset.start_time) || ad.created_time || "";
-          if (startRaw) startDateMap[ad.id] = startRaw;
-        });
-        adsUrl = json.paging && json.paging.next ? json.paging.next : null;
-        page2++;
-      }
-    }
-
-    // 3) 先用「完整、未篩選」的資料算總計——這樣廣告費/轉單數/轉單金額才會跟 Meta 後台的帳號總覽數字完全一致。
-    // 後台的總計是把該期間「所有」廣告都算進去,不會因為某支廣告花費很小就不計入;
-    // 如果只加總「花費 ≥ 500」的廣告,總計就會比後台實際數字少,CPA/ROAS 也會跟著失真。
-    let totalSpend = 0, totalConv = 0, totalRev = 0, totalImpressions = 0, totalClicks = 0, totalLinkClicks = 0, totalReach = 0;
-    rows.forEach((row) => {
-      totalSpend += parseFloat(row.spend) || 0;
-      totalConv += pickPurchaseValue(row.actions);
-      totalRev += pickPurchaseValue(row.action_values);
-      totalImpressions += parseFloat(row.impressions) || 0;
-      totalClicks += parseFloat(row.clicks) || 0;
-      totalLinkClicks += parseFloat(row.inline_link_clicks) || 0;
-      totalReach += parseFloat(row.reach) || 0;
-    });
-
-    // 花費門檻只用來決定「廣告明細列表」要不要顯示這支廣告(避免清單被大量花費很少的測試廣告洗版),
-    // 不會再影響上面的總計數字。
-    const detailRows = rows.filter((row) => (parseFloat(row.spend) || 0) >= MIN_FETCH_SPEND);
-
-    // 4) aggregate, merging ads that share the same UTM tag —— 但「投放中」跟「已停止」的廣告絕對不會合併在一起,
-    // 即使 UTM 追蹤代碼相同,只要目前的投放狀態不一樣,就會拆成不同的兩列,避免誤把已經停掉的舊數字跟現在還在跑的混在一起看。
-    const grouped = {};
-    detailRows.forEach((row) => {
-      const spend = parseFloat(row.spend) || 0;
-      const conversions = pickPurchaseValue(row.actions);
-      const revenue = pickPurchaseValue(row.action_values);
-      const impressions = parseFloat(row.impressions) || 0;
-      const clicks = parseFloat(row.clicks) || 0;
-      const linkClicks = parseFloat(row.inline_link_clicks) || 0;
-      const reach = parseFloat(row.reach) || 0;
-      const landingPageViews = pickActionTypes(row.actions, ["landing_page_view", "omni_landing_page_view"]);
-
-      const adName = row.ad_name || "(未命名廣告)";
-      const utm = utmMap[row.ad_id] || "";
-      const isActive = statusMap[row.ad_id] === "ACTIVE";
-      // 跟shopline-proxy後端同一個bug、同一套修法。
-      const campaignName = campaignMap[row.ad_id] || "(未分類活動)";
-      const adSetName = adSetMap[row.ad_id] || "(未分類廣告組合)";
-      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::adset:" + adSetName + "::" + (isActive ? "on" : "off");
-      if (!grouped[groupKey]) {
-        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", creativeId: "", objective: "", optimizationGoal: "", spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, landingPageViews: 0, reach: 0, active: isActive, campaigns: new Set(), adSets: new Set(), adSetIds: new Set(), adIds: new Set(), startDate: null };
-      }
-      const g = grouped[groupKey];
-      g.names.add(adName);
-      g.spend += spend; g.conversions += conversions; g.revenue += revenue; g.impressions += impressions; g.clicks += clicks; g.linkClicks += linkClicks; g.landingPageViews += landingPageViews; g.reach += reach;
-      if (!g.image && thumbMap[row.ad_id]) g.image = thumbMap[row.ad_id];
-      if (!g.postId && postIdMap[row.ad_id]) g.postId = postIdMap[row.ad_id];
-      if (!g.creativeId && creativeIdMap[row.ad_id]) g.creativeId = creativeIdMap[row.ad_id];
-      if (!g.objective && objectiveMap[row.ad_id]) g.objective = objectiveMap[row.ad_id];
-      if (!g.optimizationGoal && optimizationGoalMap[row.ad_id]) g.optimizationGoal = optimizationGoalMap[row.ad_id];
-      if (campaignMap[row.ad_id]) g.campaigns.add(campaignMap[row.ad_id]);
-      if (adSetMap[row.ad_id]) g.adSets.add(adSetMap[row.ad_id]);
-      if (adSetIdMap[row.ad_id]) g.adSetIds.add(adSetIdMap[row.ad_id]);
-      if (row.ad_id) g.adIds.add(row.ad_id);
-      // 如果這個群組是合併了好幾支廣告(同一個 UTM 追蹤代碼),投放起始時間取「最早」的那個,
-      // 代表這個素材/追蹤代碼最初是什麼時候開始投放的。
-      const rowStart = startDateMap[row.ad_id];
-      if (rowStart && (!g.startDate || rowStart < g.startDate)) g.startDate = rowStart;
-    });
-
-    const ads = Object.values(grouped)
-      .map((g) => {
-        const nameList = [...g.names];
-        const adCount = g.adIds.size || nameList.length || 1;
-        const name =
-          nameList.length === 0
-            ? g.utm || "未命名廣告"
-            : nameList.length === 1
-            ? nameList[0]
-            : `${nameList[0]} 等 ${nameList.length} 支廣告`;
-        const campaignList = [...g.campaigns];
-        // 跟 shopline-proxy 後端同一個bug、同一個修法。
-        const campaign =
-          campaignList.length === 0
-            ? "(未分類活動)"
-            : campaignList.length === 1
-            ? campaignList[0]
-            : `${campaignList[0]} 等 ${campaignList.length} 個活動`;
-        const adSetList = [...g.adSets];
-        const adSet =
-          adSetList.length === 0
-            ? "(未分類廣告組合)"
-            : adSetList.length === 1
-            ? adSetList[0]
-            : `${adSetList[0]} 等 ${adSetList.length} 個廣告組合`;
-        return {
-          name, utm: g.utm, image: g.image, postId: g.postId, creativeId: g.creativeId, objective: g.objective, optimizationGoal: g.optimizationGoal, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
-          impressions: g.impressions, clicks: g.clicks, linkClicks: g.linkClicks, landingPageViews: g.landingPageViews, reach: g.reach,
-          adCount, rawNames: nameList, active: g.active, campaign, adSet, adSetIds: [...g.adSetIds], adIds: [...g.adIds], startDate: g.startDate,
-        };
-      })
-      .sort((a, b) => b.spend - a.spend);
-
-    return {
-      spend: totalSpend, conversions: totalConv, revenue: totalRev,
-      impressions: totalImpressions, clicks: totalClicks, linkClicks: totalLinkClicks, reach: totalReach,
-      campaigns: 0, currency, accountId, ads, syncedAt: new Date().toISOString()
-    };
-  }
-
+  async 
   // ---------- 投放中廣告成效分類(成效好 / 成效正常 / 成效不好 / 學習中) ----------
   const LEARNING_MIN_CONVERSIONS = 10; // 轉單數不足,還看不出真實成效,先歸類為「學習中」
   const PERF_LABELS = { good: "成效好", normal: "成效正常", poor: "成效不好", learning: "學習中" };
