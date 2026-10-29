@@ -6821,18 +6821,10 @@ const shopeRealDailyMap = useMemo(() => {
               <button className="mal-btn" onClick={() => setShowApiPanel(false)}>取消</button>
               <button
                 className="mal-btn mal-btn-primary"
-                disabled={apiLoading || weekLoading}
-                onClick={
-                  apiMode === "full"
-                    ? fetchFullMonthFromApi
-                    : apiMode === "multi"
-                    ? fetchBatchFromApi
-                    : apiMode === "recentWeeks"
-                    ? () => fetchRecentWeeksFromApi(recentWeeksCount)
-                    : fetchLastWeekData
-                }
+                disabled={apiLoading}
+                onClick={apiMode === "multi" ? fetchBatchFromApi : fetchFullMonthFromApi}
               >
-                {apiLoading || weekLoading ? "抓取中…" : "開始抓取"}
+                {apiLoading ? "抓取中…" : "開始抓取"}
               </button>
             </div>
           </div>
