@@ -1434,6 +1434,25 @@ async def sync_brand(
     print(f"[{brand['name']}] active campaigns={len(active_campaign_ids)}")
 
     old_meta = kv_get(base_url, meta_key(account_id))
+    status_metadata = old_meta if isinstance(old_meta, dict) else {
+        "campaigns": {}, "adsets": {}, "ads": {}, "creatives": {}
+    }
+    if force_backfill_days <= 0 and engine == "airbyte":
+        if connector is None:
+            raise RuntimeError("Airbyte connector is required for delivery-status refresh.")
+        status_metadata = await refresh_delivery_status_metadata(connector, account_id, status_metadata)
+        status_metadata["campaigns"] = {
+            **(status_metadata.get("campaigns") or {}),
+            **active_campaigns,
+        }
+        kv_put(base_url, meta_key(account_id), status_metadata)
+    elif force_backfill_days <= 0:
+        status_metadata = dict(status_metadata)
+        status_metadata["campaigns"] = {
+            **(status_metadata.get("campaigns") or {}),
+            **active_campaigns,
+        }
+
     if force_backfill_days > 0:
         # Manual recovery mode: explicitly requested historical backfill.
         query_since = max(current_month_start, local_today - timedelta(days=force_backfill_days - 1))
@@ -1470,14 +1489,7 @@ async def sync_brand(
     if engine == "airbyte" and reconcile_days > 0:
         if connector is None:
             raise RuntimeError("Airbyte connector is required for attribution reconciliation.")
-        reconcile_metadata = old_meta if isinstance(old_meta, dict) else {
-            "campaigns": {}, "adsets": {}, "ads": {}, "creatives": {}
-        }
-        reconcile_metadata = dict(reconcile_metadata)
-        reconcile_metadata["campaigns"] = {
-            **(reconcile_metadata.get("campaigns") or {}),
-            **active_campaigns,
-        }
+        reconcile_metadata = dict(status_metadata)
         await reconcile_recent_attribution_airbyte(
             connector,
             base_url,
@@ -1498,6 +1510,7 @@ async def sync_brand(
     if not isinstance(baseline, dict):
         baseline = existing_month if isinstance(existing_month, dict) else {}
         kv_put(base_url, baseline_key, baseline)
+    baseline = apply_delivery_status_to_record(baseline, status_metadata)
 
     print(
         f"[{brand['name']}] TODAY ONLY {local_today}, engine={engine}, "
@@ -1524,12 +1537,15 @@ async def sync_brand(
     update_cache_rows(caches, account_id, local_today, local_today, today_rows)
     kv_put(base_url, cache_key(account_id, month_key(local_today)), caches[month_key(local_today)])
 
-    # Reuse yesterday's metadata. Normal daily sync does not enumerate every ad/adset/creative.
-    metadata = old_meta if isinstance(old_meta, dict) else {"adsets": {}, "ads": {}, "creatives": {}}
-    metadata = dict(metadata)
-    metadata["campaigns"] = active_campaigns
+    # Keep full delivery-state metadata (including paused/archived/deleted ads).
+    # ACTIVE campaigns are used only to limit today's Insights query, not to erase metadata.
+    metadata = dict(status_metadata)
+    metadata["campaigns"] = {
+        **(metadata.get("campaigns") or {}),
+        **active_campaigns,
+    }
     metadata["syncedAt"] = datetime.now(timezone.utc).isoformat()
-    metadata["syncMode"] = f"{engine}_active_campaign_status_only"
+    metadata["syncMode"] = f"{engine}_today_active_metrics_with_full_delivery_status"
     kv_put(base_url, meta_key(account_id), metadata)
 
     today_reach = {
