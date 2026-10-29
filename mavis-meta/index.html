@@ -132,7 +132,7 @@
   .mal-card-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
   .mal-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 23px; font-weight: 500; letter-spacing: -0.005em; color: var(--num-ink); margin: 10px 0 9px; }
   /* 成效分類改成書刊式文字頁籤,不是大型卡片——這裡不是真正的篩選(點了會捲動到對應區塊,
-     不是隱藏其他分類),但視覺上要跟其他頁籤(週報表/月報表、投放狀態)用同一套語言。 */
+     不是隱藏其他分類),但視覺上要跟其他頁籤(月報表、投放狀態)用同一套語言。 */
   .mal-perf-tabs { display: flex; gap: 22px; overflow-x: auto; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
   .mal-perf-card {
     display: block; background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0;
@@ -511,7 +511,7 @@ const localOnlyStorage = {
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定、Shopline Worker 網址——這些是個人的登入憑證/個人設定,絕對不能共用,只存在自己瀏覽器(shared: false)。
 // 2026-07-30起:Meta 廣告成效資料也併入共用範圍了(原本這裡寫「維持各自瀏覽器」是舊版行為,
-// 已經在下面 SHARED_PREFIXES.push(STORAGE_PREFIX, WEEK_STORAGE_PREFIX) 那段改掉,不用被這段舊註解誤導)。
+// 已經在下面 SHARED_PREFIXES.push(STORAGE_PREFIX, STORAGE_PREFIX) 那段改掉,不用被這段舊註解誤導)。
 // 目前團隊共用的:後台每日收益表(帳本)、Meta 廣告成效資料。個人專屬、不共用的:
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定、Shopline Worker 網址——這些是登入憑證/個人設定。
 // 這三個 key 雖然不是「metaads-」開頭的資料表 key,但邏輯上也應該全隊共用(不是個人瀏覽器設定):
@@ -571,10 +571,8 @@ async function publicValueForKey(key) {
   if (key === "meta-api-product-names") return { [PUBLIC_MAVIS_BRAND_ID]: settings.productNames || {} };
 
   const monthPrefix = "metaads-month:" + PUBLIC_MAVIS_BRAND_ID + "::";
-  const weekPrefix = "metaads-week:" + PUBLIC_MAVIS_BRAND_ID + "::";
   const ledgerPrefix = "metaads-ledger:" + PUBLIC_MAVIS_BRAND_ID + "::";
   if (key.startsWith(monthPrefix)) return (feed.months || {})[key.slice(monthPrefix.length)] ?? null;
-  if (key.startsWith(weekPrefix)) return (feed.weeks || {})[key.slice(weekPrefix.length)] ?? null;
   if (key.startsWith(ledgerPrefix)) return (feed.ledger || {})[key.slice(ledgerPrefix.length)] ?? null;
   return null;
 }
@@ -595,8 +593,6 @@ const cloudStorage = {
     let keys = [];
     if (prefix === "metaads-month:") {
       keys = Object.keys(feed.months || {}).map((k) => "metaads-month:" + PUBLIC_MAVIS_BRAND_ID + "::" + k);
-    } else if (prefix === "metaads-week:") {
-      keys = Object.keys(feed.weeks || {}).map((k) => "metaads-week:" + PUBLIC_MAVIS_BRAND_ID + "::" + k);
     } else if (prefix === "metaads-ledger:") {
       keys = Object.keys(feed.ledger || {}).map((k) => "metaads-ledger:" + PUBLIC_MAVIS_BRAND_ID + "::" + k);
     }
@@ -670,17 +666,13 @@ const STORAGE_PREFIX = "metaads-month:";
 function monthKeyFor(brandId, mk) {
   return STORAGE_PREFIX + (brandId ? brandId + "::" : "") + mk;
 }
-const WEEK_STORAGE_PREFIX = "metaads-week:";
-function weekKeyFor(brandId, weekStart) {
-  return WEEK_STORAGE_PREFIX + (brandId ? brandId + "::" : "") + weekStart;
-}
 // ---------- 後台「一頁式正確業績」(每日收益表匯入) ----------
-// 每個品牌、每個月存一筆,key 格式跟月報表/週報表一致,方便重複匯入時直接覆蓋更新。
+// 每個品牌、每個月存一筆,key 格式跟月報表一致,方便重複匯入時直接覆蓋更新。
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
 function ledgerKeyFor(brandId, monthKey) {
   return LEDGER_STORAGE_PREFIX + (brandId ? brandId + "::" : "") + monthKey;
 }
-const SHARED_PREFIXES = [LEDGER_STORAGE_PREFIX]; // Shopline 前綴稍後宣告完再併入(見下方 SHOPLINE_WEEK_PREFIX/SHOPLINE_MONTH_PREFIX 之後)
+const SHARED_PREFIXES = [LEDGER_STORAGE_PREFIX]; // Shopline 前綴稍後宣告完再併入(見下方 SHOPLINE_MONTH_PREFIX 之後)
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
   return SHARED_PREFIXES.some((p) => key.startsWith(p));
@@ -920,25 +912,20 @@ function aggregateLedgerRange(ledgerByMonth, sinceISO, untilISO) {
 // Shopline 資料不分品牌(一個商店對應所有廣告帳號),所以這裡的 key 不像 Meta 那樣帶品牌 id。
 const SHOPLINE_ENABLED = false; // Mavis 沒有 SHOPLINE，獨立報表完全停用 Shopline 功能
 const SHOPLINE_WORKER_URL_KEY = "shopline-worker-url";
-const SHOPLINE_WEEK_PREFIX = "shopline-week:";
 const SHOPLINE_MONTH_PREFIX = "shopline-month:";
 // Shopline 週/月資料併入共用範圍,這樣排程 Worker 背景抓回來寫進共用資料庫的資料,網頁打開就能直接讀到,
 // 不用等使用者自己在瀏覽器裡按一次抓取。SHARED_PREFIXES 在更前面已經用 const 宣告過,這裡用 push 而不是重新賦值。
-SHARED_PREFIXES.push(SHOPLINE_WEEK_PREFIX, SHOPLINE_MONTH_PREFIX);
-const ADPERF_AI_WEEK_PREFIX = "adperf-ai-week:";
+SHARED_PREFIXES.push(SHOPLINE_MONTH_PREFIX);
 const ADPERF_AI_MONTH_PREFIX = "adperf-ai-month:";
-SHARED_PREFIXES.push(ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX);
-// 2026-07-30 修正:Meta 廣告成效資料(metaads-month:/metaads-week:)原本沒被納入共用範圍,
+SHARED_PREFIXES.push(ADPERF_AI_MONTH_PREFIX);
+// 2026-07-30 修正:Meta 廣告成效資料(metaads-month:)原本沒被納入共用範圍,
 // 導致每個瀏覽器/裝置都各自獨立對 Meta 抓一次同樣的資料——跟排程 Worker(brand-report-cron-sync)
 // 用的是完全同一組 key 格式,卻各自存在自己瀏覽器,互相看不到對方已經抓過的結果。這是遺漏,
 // 不是刻意設計(旁邊的 Shopline、AI分析資料都已經是共用的)。併入共用範圍後,不管是同事的瀏覽器、
 // 排程 Worker、還是 speedingscs,只要有任何一邊抓到某週/某月的資料,其他人打開就能直接讀到,
 // 不會重複對同一個廣告帳號打 Meta API——在 Meta App 目前是 Dev Tier(每帳號每小時300次請求)
 // 這種嚴格額度下,這是真正能大幅降低同一帳號總請求量的做法,而不是只優化單次查詢本身。
-SHARED_PREFIXES.push(STORAGE_PREFIX, WEEK_STORAGE_PREFIX);
-function shoplineWeekKey(weekStart) {
-  return SHOPLINE_WEEK_PREFIX + weekStart;
-}
+SHARED_PREFIXES.push(STORAGE_PREFIX);
 function shoplineMonthKey(monthKey) {
   return SHOPLINE_MONTH_PREFIX + monthKey;
 }
@@ -948,15 +935,7 @@ function fmtYmd(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// 一週(週一到週日)的起訖日期字串,給 Shopline Worker 用
-function weekRangeForShopline(weekStart) {
-  const start = new Date(weekStart + "T00:00:00");
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  return { since: fmtYmd(start), until: fmtYmd(end) };
-}
-
-// 一個月的起訖日期字串,給 Shopline Worker 用
+// 一個月的起訖日期字串// 一個月的起訖日期字串,給 Shopline Worker 用
 function monthRangeForShopline(monthKey) {
   const [y, m] = monthKey.split("-").map(Number);
   const start = new Date(y, m - 1, 1);
@@ -1026,24 +1005,7 @@ function fmtStartDate(isoString) {
   const day = parseInt(match[3], 10);
   return `${month}/${day}`;
 }
-// utcOffsetHours 是廣告帳號自己的時區(相對 UTC 的小時數,例如台北是 8)。
-// Meta 後台顯示的「上週」是照廣告帳號本身設定的時區去算的,不是瀏覽器所在的時區——
-// 如果沒有帶入帳號時區,就照舊用瀏覽器當下的時區(維持原本行為,通常也不會有問題)。
-// weeksAgo:要抓「往前第幾個完整週」,1 = 上週(預設,跟原本行為一樣),2 = 上上週,以此類推,用來支援「自動回溯抓取過去幾週」。
-function getLastWeekRange(utcOffsetHours, weeksAgo = 1) {
-  const offsetMs = typeof utcOffsetHours === "number" ? utcOffsetHours * 3600000 : -new Date().getTimezoneOffset() * 60000;
-  const ref = new Date(Date.now() + offsetMs);
-  const day = ref.getUTCDay(); // 0 = Sun ... 6 = Sat
-  const diffToThisMonday = day === 0 ? 6 : day - 1;
-  const thisMonday = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate() - diffToThisMonday));
-  const targetMonday = new Date(thisMonday);
-  targetMonday.setUTCDate(thisMonday.getUTCDate() - 7 * weeksAgo);
-  const targetSunday = new Date(targetMonday);
-  targetSunday.setUTCDate(targetMonday.getUTCDate() + 6);
-  const fmtUtc = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-  return { since: fmtUtc(targetMonday), until: fmtUtc(targetSunday), weekStart: fmtUtc(targetMonday) };
-}
-// 把一批 Shopline 訂單(record.orders)依下單日期分組,算出每天的訂單數、原價營收、折扣金額、實收營收。
+// 把一批 Shopline 訂單// 把一批 Shopline 訂單(record.orders)依下單日期分組,算出每天的訂單數、原價營收、折扣金額、實收營收。
 // 官網業績(H&J官網業績)的營收本來就是 Shopline 資料,不是 Google 試算表帳本,「每日報表」對這個品牌要看這份,不是空的帳本。
 // 2026-07-30再次修正:先後試過paymentStatus==='completed'(太窄,低估)、==='paid'(更窄,直接變成0),
 // 兩次都證明對Shopline實際欄位值的假設是錯的,不能再繼續猜「成功狀態」到底精確寫什麼字串。
@@ -1065,7 +1027,7 @@ function groupShoplineOrdersByDay(orders) {
     });
   return Object.values(byDay).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
-// 整段期間(一整個月或一整週)的真實Shopline訂單總計,不拆到逐日——用在每月/每週報表這種只要看
+// 整段期間(一整個月)的真實Shopline訂單總計,不拆到逐日——用在每月報表這種只要看
 // 總數的地方,跟上面逐日分組共用同一套篩選條件(已完成、未取消)。
 function sumShoplineOrders(orders) {
   const valid = (orders || []).filter((o) => !UNPAID_STATUSES.has(o.paymentStatus) && o.status !== "cancelled");
@@ -1345,18 +1307,7 @@ function monthDateRange(monthKey) {
   const until = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
   return { since, until };
 }
-// 週的 key 本身就是那一週的起始日(例如 "2026-06-29"),固定跨 7 天,加 6 天就是週末最後一天。
-function weekDateRange(weekKey) {
-  return { since: weekKey, until: addDaysISO(weekKey, 6) };
-}
-// 用 UTC 運算來加減天數,避免瀏覽器時區造成日期字串位移。
-function addDaysISO(iso, days) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
-}
-function fmtInt(n) { return Math.round(n).toLocaleString("zh-TW"); }
+function fmtInt(n)function fmtInt(n) { return Math.round(n).toLocaleString("zh-TW"); }
 function fmtMoney(n, currency) {
   try {
     return new Intl.NumberFormat("zh-TW", { style: "currency", currency: currency || "TWD", maximumFractionDigits: 0 }).format(n);
@@ -1388,7 +1339,7 @@ function deriveMetrics(agg) {
   const roas = agg.spend > 0 && agg.revenue > 0 ? agg.revenue / agg.spend : null;
   return { ...agg, cpa, roas };
 }
-// 依排序模式把廣告清單排序(每月/每週報表共用同一套邏輯,回傳新陣列、不改動原陣列)。
+// 依排序模式把廣告清單排序(每月報表共用同一套邏輯,回傳新陣列、不改動原陣列)。
 // mode:spend(廣告費 高→低,預設)/ cpa / roas / composite / startDate(投放時間 新→舊)
 //      / postPublish(貼文前台發佈時間 新→舊;後台直接發佈=抓不到前台發佈時間的排最前面)
 // ⚠️ 這個函式跟 speedingscs/index.html 的同名函式要保持一致,兩邊同步改。
@@ -3404,12 +3355,10 @@ function MetaAdsLedger() {
   const [adLaunchFilter, setAdLaunchFilter] = useState("all"); // month view: "all" | "month" —— 只看該月份才開始投放的廣告
   const [adSearchKeyword, setAdSearchKeyword] = useState(""); // 依廣告名稱/行銷活動/UTM 關鍵字搜尋,空字串表示不篩選
   // 全域節流用:記錄「最後一次真正打到 Meta Graph API」的時間戳。
-  // 不管是週報表、月報表、批次、自動同步或縮圖抓取,只要是打 Meta 的請求都共用同一個時間戳,
-  // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS——即使使用者手動連續按「抓上週」再按「抓月報表」也一樣受限,
-  // 不再只靠批次迴圈裡的 4 秒 delay(那個只保護「同一輪批次抓取」,不會保護「先抓周報表、再手動切去抓月報表」這種跨動作的情境)。
+  // 不管是月報表、批次、自動同步或縮圖抓取,只要是打 Meta 的請求都共用同一個時間戳,
+  // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS——即使使用者手動連續觸發不同抓取動作也一樣受限,
+  // 不再只靠批次迴圈裡的 4 秒 delay(那個只保護「同一輪批次抓取」,不會保護跨動作的情境)。
   const lastApiCallRef = useRef(0);
-  const [apiMode, setApiMode] = useState("full"); // "full" | "multi" | "week" | "recentWeeks"
-  const [recentWeeksCount, setRecentWeeksCount] = useState(4);
   const [recentMonthsCount, setRecentMonthsCount] = useState(3); // 自動更新前3個月用
   const [apiToken, setApiToken] = useState("");
   // 這個工具只服務單一品牌,廣告帳號 ID 直接鎖定,不需要使用者輸入或從瀏覽器記錄裡讀取。
@@ -3421,16 +3370,11 @@ function MetaAdsLedger() {
   const [adRatioThresholds, setAdRatioThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「廣告費佔比過高」標準(百分比數字,例如 30 代表 30%)
   const [roasTargets, setRoasTargets] = useState({}); // { [brandId]: number } 每個品牌各自的「投放成效報告」ROAS 目標倍數,預設 3
   const [monthlyBudgets, setMonthlyBudgets] = useState({}); // { [brandId]: number } 每個品牌月廣告預算上限
-  const [adjustmentPeriod, setAdjustmentPeriod] = useState("month"); // 廣告怎麼調頁面使用月報或週報資料
   const [productNames, setProductNames] = useState({}); // { [brandId]: { [code]: name } } 每個品牌、每個代號各自的中文名稱,顯示成「代號(名稱)」——
   // 沒辦法從行銷活動名稱自動抓出乾淨的產品名稱(命名不夠固定),所以讓使用者自己設定,類似 roasTargets 那樣。
   const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
   const [batchProgress, setBatchProgress] = useState(null);
-  const [weekInfo, setWeekInfo] = useState(getLastWeekRange());
-  const [weekLoading, setWeekLoading] = useState(false);
   const [viewMode, setViewMode] = useState("month");
-  const [weeksData, setWeeksData] = useState({});
-  const [focusWeek, setFocusWeek] = useState(null);
   // 診斷用:error boundary 在這個元件外層,沒辦法直接讀到這裡的 state,錯誤發生時只能靠這個
   // 全域變數(即時更新)才知道「事情發生的當下,使用者停在哪個頁面/哪個品牌」。純診斷用途,
   // 不影響任何功能或畫面。
@@ -3440,10 +3384,8 @@ function MetaAdsLedger() {
       activeBrandId,
       activeBrandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "(無)",
       brandCount: brands.length,
-      focusWeek,
     };
-  }, [viewMode, activeBrandId, brands, focusWeek]);
-  const [batchGranularity, setBatchGranularity] = useState("month");
+  }, [viewMode, activeBrandId, brands]);
   const [apiMonth, setApiMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -3576,7 +3518,6 @@ function MetaAdsLedger() {
   const SHOPLINE_PROXY_SECRET = "";
   const [shoplineWorkerUrl, setShoplineWorkerUrl] = useState(DEFAULT_SHOPLINE_WORKER_URL);
   const [shoplineWorkerUrlInput, setShoplineWorkerUrlInput] = useState(DEFAULT_SHOPLINE_WORKER_URL);
-  const [shoplineWeeksData, setShoplineWeeksData] = useState({}); // Mavis: SHOPLINE disabled
   const [shoplineMonthsData, setShoplineMonthsData] = useState({}); // Mavis: SHOPLINE disabled
   const [shoplineLoading, setShoplineLoading] = useState(false);
   const [shoplineError, setShoplineError] = useState(null);
@@ -3682,12 +3623,6 @@ function MetaAdsLedger() {
     return () => { cancelled = true; };
   }, [activeBrandId]);
   useEffect(() => {
-    setWeekInfo(getLastWeekRange());
-    let cancelled = false;
-    loadAllWeeks(activeBrandId, () => cancelled);
-    return () => { cancelled = true; };
-  }, [activeBrandId]);
-  useEffect(() => {
     let cancelled = false;
     loadLedger(activeBrandId, () => cancelled);
     return () => { cancelled = true; }; // 品牌再度切換,或元件卸載時,讓這次還沒跑完的請求作廢
@@ -3760,14 +3695,6 @@ function MetaAdsLedger() {
           setShoplineWorkerUrl(urlRes.value);
           setShoplineWorkerUrlInput(urlRes.value);
         }
-        const weekList = await storage.list(SHOPLINE_WEEK_PREFIX).catch(() => ({ keys: [] }));
-        const weekEntries = {};
-        for (const k of weekList.keys || []) {
-          const res = await storage.get(k).catch(() => null);
-          if (res && res.value) weekEntries[k.slice(SHOPLINE_WEEK_PREFIX.length)] = JSON.parse(res.value);
-        }
-        setShoplineWeeksData(weekEntries);
-
         const monthList = await storage.list(SHOPLINE_MONTH_PREFIX).catch(() => ({ keys: [] }));
         const monthEntries = {};
         for (const k of monthList.keys || []) {
@@ -3823,13 +3750,6 @@ function MetaAdsLedger() {
     }
   }
 
-  function fetchShoplineForWeek(weekStart) {
-    const { since, until } = weekRangeForShopline(weekStart);
-    return fetchShoplineData(since, until, shoplineWeekKey(weekStart), (data) => {
-      setShoplineWeeksData((prev) => ({ ...prev, [weekStart]: data }));
-    });
-  }
-
   function fetchShoplineForMonth(monthKey) {
     const { since, until } = monthRangeForShopline(monthKey);
     return fetchShoplineData(since, until, shoplineMonthKey(monthKey), (data) => {
@@ -3838,7 +3758,7 @@ function MetaAdsLedger() {
   }
 
   // 折價券查詢:自訂時間範圍(日曆選的起訖日),不綁定既有的週/月固定區間,查詢結果只放在畫面上,不存進共用/本機儲存空間
-  // (跟週報表/月報表的 Shopline 資料是分開的兩份,避免互相覆蓋)。
+  // (跟月報表的 Shopline 資料是分開的兩份,避免互相覆蓋)。
   async function fetchCouponQueryData() {
     if (!couponQuerySince || !couponQueryUntil) {
       setCouponQueryError("請選擇開始與結束日期。");
@@ -3941,36 +3861,7 @@ function MetaAdsLedger() {
     }
   }
 
-  async function updateLastWeek() {
-    if (!activeBrandId) {
-      setMetaUpdateError("請先選擇一個品牌。");
-      return;
-    }
-    setMetaUpdateLoading("week");
-    setMetaUpdateError(null);
-    setMetaUpdateNotice(null);
-    try {
-      const tz = await callMetaWorker("/api/meta/timezone", { accountId: activeBrandId });
-      const info = getLastWeekRange(tz.utcOffsetHours);
-      const record = await callMetaWorker("/api/meta/insights", {
-        accountId: activeBrandId,
-        since: info.since,
-        until: info.until,
-        relax: "true",
-      });
-      record.source = "manual";
-      await storage.set(weekKeyFor(activeBrandId, info.weekStart), JSON.stringify(record));
-      setWeekInfo(info);
-      await loadAllWeeks(activeBrandId);
-      setMetaUpdateNotice(`已更新 ${weekLabel(info.weekStart)} 的廣告成效,共 ${record.ads.length} 支廣告。`);
-    } catch (e) {
-      setMetaUpdateError(friendlyMetaError(e));
-    } finally {
-      setMetaUpdateLoading(null);
-    }
-  }
-
-  async function updateThisMonth() {
+  async function updateThisMonth() {  async function updateThisMonth() {
     if (!activeBrandId) {
       setMetaUpdateError("請先選擇一個品牌。");
       return;
@@ -4004,37 +3895,7 @@ function MetaAdsLedger() {
     }
   }
 
-  async function loadAllWeeks(brandId, isStale) {
-    try {
-      const listRes = await storage.list(WEEK_STORAGE_PREFIX);
-      if (isStale && isStale()) return;
-      const keys = (listRes.keys || []).filter((k) => {
-        const rest = k.slice(WEEK_STORAGE_PREFIX.length);
-        return brandId ? rest.startsWith(brandId + "::") : !rest.includes("::");
-      });
-      const entries = {};
-      for (const k of keys) {
-        if (isStale && isStale()) return;
-        const res = await storage.get(k);
-        if (res && res.value) {
-          const rest = k.slice(WEEK_STORAGE_PREFIX.length);
-          const wk = brandId ? rest.slice((brandId + "::").length) : rest;
-          entries[wk] = JSON.parse(res.value);
-        }
-      }
-      if (isStale && isStale()) return;
-      setWeeksData(entries);
-      const sorted = Object.keys(entries).sort();
-      setFocusWeek(sorted.length ? sorted[sorted.length - 1] : null);
-    } catch {
-      if (!(isStale && isStale())) {
-        setWeeksData({});
-        setFocusWeek(null);
-      }
-    }
-  }
-
-  async function loadLedger(brandId, isStale) {
+  async function loadLedger(brandId, isStale) {  async function loadLedger(brandId, isStale) {
     try {
       const listRes = await storage.list(LEDGER_STORAGE_PREFIX);
       if (isStale && isStale()) return; // 品牌已經切換了,這次請求過期,不要再往下做白工
@@ -4077,7 +3938,7 @@ function MetaAdsLedger() {
         await storage.set(ledgerKeyFor(activeBrandId, mk), JSON.stringify(parsedByMonth[mk]));
       }
       await loadLedger(activeBrandId);
-      setLedgerImportNotice(`已匯入 ${monthKeys.map((mk) => monthLabel(mk)).join("、")} 的後台每日收益表,週報表/月報表會自動比對。`);
+      setLedgerImportNotice(`已匯入 ${monthKeys.map((mk) => monthLabel(mk)).join("、")} 的後台每日收益表,月報表會自動比對。`);
       setShowLedgerModal(false);
     } catch (e) {
       setLedgerImportError("讀取檔案時發生問題,請確認上傳的是 .xlsx 檔,且格式跟範例表單一致。");
@@ -4455,23 +4316,7 @@ function MetaAdsLedger() {
     }
   }
 
-  // 查廣告帳號自己的時區(跟 UTC 差幾小時),讓「上週一~週日」的日期範圍照這個帳號自己的時區去算,
-  // 而不是照瀏覽器所在的時區——不然帳號時區跟瀏覽器不同的話,算出來的週報表區間會跟 Meta 後台的「上週」對不起來,
-  // 花費、轉單數、CPA、ROAS 就會整批兜不起來(尤其是靠近週一/週日交界的那幾筆資料)。
-  // 抓不到時區也不讓它卡住整個流程,直接退回用瀏覽器時區。
-  async function fetchAccountUtcOffset(token, accountId) {
-    try {
-      const json = await fetchGraphApi(
-        `https://graph.facebook.com/v19.0/act_${accountId}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(token)}`,
-        "讀取帳號時區"
-      );
-      return typeof json.timezone_offset_hours_utc === "number" ? json.timezone_offset_hours_utc : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function apiErrorHint(e) {
+  function apiErrorHint(e) {  function apiErrorHint(e) {
     const msg = (e && e.message) || "";
     if (e && (e.code === 1 || e.code === 2)) {
       return (
@@ -4533,10 +4378,8 @@ function MetaAdsLedger() {
     return rows;
   }
 
-  // relaxThreshold=true(目前只有「上週報表」會用到):篩選階段不會排除掉「目前還在投放中」的廣告,
-  // 就算這支廣告這段期間花費還沒到 500,只要現在仍在投放,一樣會保留下來,方便看到剛起步/學習中的廣告。
-  // 月報表(fetchOneBrandMonth)沒有帶這個參數,維持原本花費 ≥ 500 才留下的嚴格門檻。
-  async function fetchInsightsForRange(token, accountId, since, until, relaxThreshold = false) {
+  // 月報明細維持花費 ≥ MIN_FETCH_SPEND 的既有門檻；帳號總計仍使用完整 rows，不受明細門檻影響。
+  async function fetchInsightsForRange(token, accountId, since, until) {
     const encToken = encodeURIComponent(token);
     const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
 
@@ -4552,7 +4395,7 @@ function MetaAdsLedger() {
     // 而不是 API 預設的歸因窗口。如果沒有這個參數,API 預設的歸因窗口通常比後台顯示用的寬(例如把 7 天內的點擊、
     // 甚至瀏覽後很久才發生的購買都算進來),會導致轉單數比 Meta 後台顯示的「結果」多出好幾倍,CPA 被嚴重低估、
     // ROAS 被嚴重高估——這正是造成轉單數跟後台數字差非常多倍的根本原因,不是重複計算的問題。
-    const insightFields = "ad_id,ad_name,campaign_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values";
+    const insightFields = "ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values";
     let insightsUrl =
       `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
       `&fields=${insightFields}&time_range=${timeRange}&limit=500&access_token=${encToken}`;
@@ -4580,7 +4423,7 @@ function MetaAdsLedger() {
     }
 
     if (!rows.length) {
-      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], sponsorAds: [], syncedAt: new Date().toISOString() };
+      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], syncedAt: new Date().toISOString() };
     }
 
     // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
@@ -4588,12 +4431,8 @@ function MetaAdsLedger() {
     // 會製造大量 /ads 請求，容易撞 Meta rate limit，也會讓整輪抓取拖非常久。
     //
     // 總計仍然使用完整 rows 計算，所以花費 / 轉單 / 營收 / ROAS 不會少算。
-    // 只有「廣告明細」需要額外抓 metadata：
-    //   - 月報：只查原本就會顯示的 spend >= MIN_FETCH_SPEND 廣告
-    //   - 週報(relaxThreshold)：維持查本週所有有成效列的廣告，才能保留低花費但仍投放中的新廣告
-    const detailTargetRows = relaxThreshold
-      ? rows
-      : rows.filter((r) => (parseFloat(r.spend) || 0) >= MIN_FETCH_SPEND);
+    // 只有「廣告明細」需要額外抓 metadata：月報只查原本就會顯示的 spend >= MIN_FETCH_SPEND 廣告。
+    const detailTargetRows = rows.filter((r) => (parseFloat(r.spend) || 0) >= MIN_FETCH_SPEND);
     const periodAdIds = [...new Set(detailTargetRows.map((r) => r.ad_id).filter(Boolean))];
     let thumbMap = {};
     let utmMap = {};
@@ -4658,29 +4497,11 @@ function MetaAdsLedger() {
       totalReach += parseFloat(row.reach) || 0;
     });
 
-    // 業配統計必須跟 Meta 後台「行銷活動名稱包含 業配」完全同口徑，
-    // 所以從完整 rows 計算，不能先套用單支 500 元明細門檻。
-    const sponsorAds = rows
-      .filter((row) => String(row.campaign_name || "").includes("業配"))
-      .map((row) => ({
-        name: row.ad_name || "(未命名廣告)",
-        adId: row.ad_id || "",
-        campaign: row.campaign_name || "(未分類活動)",
-        spend: parseFloat(row.spend) || 0,
-        conversions: pickPurchaseValue(row.actions),
-        revenue: pickPurchaseValue(row.action_values),
-      }));
+    // 花費門檻只用來決定「廣告明細列表」要不要顯示這支廣告(避免清單被大量花費很少的測試廣告洗版),
+    // 不會再影響上面的總計數字。
+    const detailRows = rows.filter((row) => (parseFloat(row.spend) || 0) >= MIN_FETCH_SPEND);
 
-    // 花費門檻只用來決定「一般廣告明細列表」要不要顯示這支廣告，
-    // 不再影響業配統計。
-    const detailRows = rows.filter((row) => {
-      const spend = parseFloat(row.spend) || 0;
-      if (spend >= MIN_FETCH_SPEND) return true;
-      if (relaxThreshold && statusMap[row.ad_id] === "ACTIVE") return true;
-      return false;
-    });
-
-    // 4) aggregate, merging ads that share the same UTM tag —— 但「投放中」跟「已停止」的廣告絕對不會合併在一起,
+    // 4) aggregate, merging ads  // 4) aggregate, merging ads that share the same UTM tag —— 但「投放中」跟「已停止」的廣告絕對不會合併在一起,
     // 即使 UTM 追蹤代碼相同,只要目前的投放狀態不一樣,就會拆成不同的兩列,避免誤把已經停掉的舊數字跟現在還在跑的混在一起看。
     const grouped = {};
     detailRows.forEach((row) => {
@@ -4761,129 +4582,7 @@ function MetaAdsLedger() {
     };
   }
 
-  async function fetchLastWeekData() {
-    if (!apiToken.trim() || !apiAccountId.trim()) {
-      setApiError("請填入存取權杖跟廣告帳號 ID。");
-      return;
-    }
-    setApiError(null);
-    setApiNotice(null);
-    setWeekLoading(true);
-    try {
-      const cleanId = apiAccountId.trim().replace(/^act_/, "");
-      const tzOffset = await fetchAccountUtcOffset(apiToken.trim(), cleanId);
-      const info = getLastWeekRange(tzOffset);
-      const record = await fetchInsightsForRange(apiToken.trim(), cleanId, info.since, info.until, true);
-      const brandIdToUse = await ensureBrandRegistered(cleanId);
-      record.source = "manual";
-      await storage.set(weekKeyFor(brandIdToUse, info.weekStart), JSON.stringify(record));
-      setActiveBrandId(brandIdToUse);
-      setWeekInfo(info);
-      await loadAllWeeks(brandIdToUse);
-      setFocusWeek(info.weekStart);
-      setViewMode("week");
-      setApiNotice(`已抓到上週(${info.since} ~ ${info.until})的資料,共 ${record.ads.length} 支廣告。`);
-      setShowApiPanel(false);
-    } catch (e) {
-      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
-    } finally {
-      setWeekLoading(false);
-    }
-  }
-
-  // 自動回溯抓取過去 N 週(週一~週日),依序一週一週抓、中間間隔 4 秒避免觸發 Meta 頻率限制。
-  // 每一週都是獨立呼叫 fetchInsightsForRange,所以就算某一週失敗,也不會影響其他週的結果。
-  async function fetchRecentWeeksFromApi(weeksCount) {
-    if (!apiToken.trim() || !apiAccountId.trim()) {
-      setApiError("請填入存取權杖跟廣告帳號 ID。");
-      return;
-    }
-    setApiError(null);
-    setApiNotice(null);
-    setWeekLoading(true);
-    setShowApiPanel(false);
-    try {
-      const cleanId = apiAccountId.trim().replace(/^act_/, "");
-      const brandIdToUse = await ensureBrandRegistered(cleanId);
-      const tzOffset = await fetchAccountUtcOffset(apiToken.trim(), cleanId);
-
-      const progress = [];
-      for (let w = 1; w <= weeksCount; w++) {
-        const info = getLastWeekRange(tzOffset, w);
-        progress.push({ id: "w" + w, name: `${info.since} ~ ${info.until}`, status: "pending", message: "" });
-      }
-      setBatchProgress(progress);
-
-      let lastInfo = null, successCount = 0, errorCount = 0;
-      for (let w = 1; w <= weeksCount; w++) {
-        setBatchProgress((prev) => prev.map((p, idx) => (idx === w - 1 ? { ...p, status: "running" } : p)));
-        try {
-          const info = getLastWeekRange(tzOffset, w);
-          const record = await fetchInsightsForRange(apiToken.trim(), cleanId, info.since, info.until, true);
-          record.source = "manual";
-          await storage.set(weekKeyFor(brandIdToUse, info.weekStart), JSON.stringify(record));
-          lastInfo = info;
-          successCount++;
-          setBatchProgress((prev) =>
-            prev.map((p, idx) => (idx === w - 1 ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
-          );
-        } catch (e) {
-          errorCount++;
-          setBatchProgress((prev) => prev.map((p, idx) => (idx === w - 1 ? { ...p, status: "error", message: e.message } : p)));
-        }
-        if (w < weeksCount) await new Promise((r) => setTimeout(r, 4000));
-      }
-
-      setActiveBrandId(brandIdToUse);
-      if (lastInfo) setWeekInfo(lastInfo);
-      await loadAllWeeks(brandIdToUse);
-      setViewMode("week");
-      setApiNotice(`已抓取過去 ${weeksCount} 週的資料:成功 ${successCount} 週${errorCount > 0 ? `,失敗 ${errorCount} 週(可以之後單獨用「上週報表」模式補抓)` : ""}。`);
-    } catch (e) {
-      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
-    } finally {
-      setWeekLoading(false);
-    }
-  }
-
-  function computeWeekAnalysis(record) {
-    if (!record) return [];
-    const insights = [];
-    const cpa = record.conversions > 0 ? record.spend / record.conversions : null;
-    const roas = record.spend > 0 && record.revenue > 0 ? record.revenue / record.spend : null;
-
-    if (roas !== null) {
-      if (roas >= 3) insights.push(`ROAS ${roas.toFixed(2)}x,表現不錯,廣告花費有換回明顯的營收。`);
-      else if (roas >= 1.5) insights.push(`ROAS ${roas.toFixed(2)}x,表現普通,還有優化空間。`);
-      else insights.push(`ROAS ${roas.toFixed(2)}x,偏低,建議檢視這週表現差的廣告是否該關掉或調整素材。`);
-    } else {
-      insights.push("這週沒有轉換金額資料,無法計算 ROAS。");
-    }
-
-    if (cpa !== null) {
-      insights.push(`平均每筆訂單成本(CPA)是 ${fmtMoney(cpa, record.currency)},轉單數共 ${fmtInt(record.conversions)} 筆。`);
-    } else {
-      insights.push("這週沒有任何轉單,檢查一下廣告是否正常投放中。");
-    }
-
-    const spendyAds = record.ads.filter((a) => a.spend >= 500);
-    if (spendyAds.length) {
-      const bestRoas = spendyAds
-        .map((a) => ({ ...a, roasVal: a.spend > 0 && a.revenue > 0 ? a.revenue / a.spend : null }))
-        .filter((a) => a.roasVal !== null)
-        .sort((a, b) => b.roasVal - a.roasVal)[0];
-      if (bestRoas) insights.push(`這週表現最好的廣告是「${bestRoas.name}」,ROAS 有 ${bestRoas.roasVal.toFixed(2)}x。`);
-
-      const badOnes = spendyAds.filter((a) => a.spend > 0 && (a.revenue <= 0 || a.revenue / a.spend < 1));
-      if (badOnes.length) {
-        insights.push(`有 ${badOnes.length} 支花費超過 500 的廣告 ROAS 低於 1x(等於虧錢),建議優先檢查這些廣告。`);
-      }
-    }
-
-    return insights;
-  }
-
-  // ---------- 投放中廣告成效分類(成效好 / 成效正常 / 成效不好 / 學習中) ----------
+  // ---------- 投放中廣告成效分類  // ---------- 投放中廣告成效分類(成效好 / 成效正常 / 成效不好 / 學習中) ----------
   const LEARNING_MIN_CONVERSIONS = 10; // 轉單數不足,還看不出真實成效,先歸類為「學習中」
   const PERF_LABELS = { good: "成效好", normal: "成效正常", poor: "成效不好", learning: "學習中" };
   const PERF_COLORS = { good: "var(--green)", normal: "var(--blue)", poor: "var(--red)", learning: "var(--amber)" };
@@ -5647,8 +5346,8 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
   }
 
   async function fetchBatchFromApi() {
-    if (!apiToken.trim() || (batchGranularity === "month" && !apiMonth)) {
-      setApiError("請填入存取權杖" + (batchGranularity === "month" ? "並選擇月份。" : "。"));
+    if (!apiToken.trim() || !apiMonth) {
+      setApiError("請填入存取權杖並選擇月份。");
       return;
     }
     const targets = brands.filter((b) => selectedBatchBrandIds.includes(b.id));
@@ -5661,41 +5360,24 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
     setApiLoading(true);
     const progress = targets.map((b) => ({ id: b.id, name: b.name, status: "pending", message: "" }));
     setBatchProgress(progress);
-    let lastWeekRangeUsed = null;
     for (let i = 0; i < targets.length; i++) {
       const b = targets[i];
       setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "running" } : p)));
       try {
-        if (batchGranularity === "week") {
-          // 每個品牌的廣告帳號時區可能不一樣,「上週」要分別依各自帳號的時區去算,
-          // 不能整批共用同一組日期,不然時區跟瀏覽器不同的帳號會抓錯週次、數字對不起來。
-          const tzOffset = await fetchAccountUtcOffset(apiToken.trim(), b.id);
-          const weekRangeForThisBrand = getLastWeekRange(tzOffset);
-          lastWeekRangeUsed = weekRangeForThisBrand;
-          const record = await fetchInsightsForRange(apiToken.trim(), b.id, weekRangeForThisBrand.since, weekRangeForThisBrand.until, true);
-          record.source = "manual";
-          await storage.set(weekKeyFor(b.id, weekRangeForThisBrand.weekStart), JSON.stringify(record));
-          setBatchProgress((prev) =>
-            prev.map((p, idx) => (idx === i ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
-          );
-        } else {
-          const record = await fetchOneBrandMonth(apiToken.trim(), b.id, apiMonth);
-          record.source = "manual";
-          await storage.set(monthKeyFor(b.id, apiMonth), JSON.stringify(record));
-          setBatchProgress((prev) =>
-            prev.map((p, idx) => (idx === i ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
-          );
-        }
+        const record = await fetchOneBrandMonth(apiToken.trim(), b.id, apiMonth);
+        record.source = "manual";
+        await storage.set(monthKeyFor(b.id, apiMonth), JSON.stringify(record));
+        setBatchProgress((prev) =>
+          prev.map((p, idx) => (idx === i ? { ...p, status: record.ads.length ? "done" : "empty", message: record.ads.length + " 支廣告" } : p))
+        );
       } catch (e) {
         setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "error", message: e.message } : p)));
       }
-      if (i < targets.length - 1) await new Promise((r) => setTimeout(r, 4000));
+      if (i < targets.length - 1) await new Promise((resolve) => setTimeout(resolve, 4000));
     }
     setApiLoading(false);
-    if (batchGranularity === "week" && lastWeekRangeUsed) setWeekInfo(lastWeekRangeUsed);
     setApiNotice("批次抓取完成,上方可以切換品牌查看結果。");
     await loadAll(activeBrandId);
-    await loadAllWeeks(activeBrandId);
   }
 
   // 自動更新前3個月月報表:計算當月和前2個月,依次抓取每個月的資料
@@ -5755,11 +5437,6 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
     }
   }
 
-  // 自動更新前4週週報表:快捷版本,直接抓過去4週
-  async function fetchRecentWeeks4FromApi() {
-    await fetchRecentWeeksFromApi(4);
-  }
-
   async function toggleRememberToken(checked) {
     setRememberToken(checked);
     if (checked) {
@@ -5793,93 +5470,53 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
   async function runAutoSyncWith(brandsList, force = false) {
     const targets = (brandsList && brandsList.length) ? brandsList : HARDCODED_BRANDS;
     if (!targets.length) return;
-
     const todayStr = new Date().toISOString().slice(0, 10);
     if (!force) {
       const lastRunRes = await storage.get(AUTO_SYNC_DATE_KEY).catch(() => null);
-      if (lastRunRes && lastRunRes.value === todayStr) return; // 今天已經自動同步過了(手動按「刷新全部」不受這個限制)
-      // 同樣的道理:確定要跑就立刻寫入日期,不要等流程跑完才寫,避免同步進行中被重複觸發。
+      if (lastRunRes && lastRunRes.value === todayStr) return;
       await storage.set(AUTO_SYNC_DATE_KEY, todayStr).catch(() => {});
     }
-
-    const RECENT_MONTHS = 3; // 當月 + 前2個月,定義跟「快速補3月」一致
-    const RECENT_WEEKS = 4; // 上週起算的前4週,定義跟「快速補4週」一致
+    const RECENT_MONTHS = 3;
     let successCount = 0, errorCount = 0;
-    setAutoSyncStatus(`自動同步中… 更新近 ${RECENT_MONTHS} 個月與近 ${RECENT_WEEKS} 週資料`);
-
+    setAutoSyncStatus("自動同步中… 更新近 " + RECENT_MONTHS + " 個月資料");
     for (const t of targets) {
       try {
-        const tz = await callMetaWorker("/api/meta/timezone", { accountId: t.id });
-
-        // 月份:m=0 是當月,每次都重新抓;m=1、m=2 是已結束的月份,缺了才補。
-        // 2026-07-30新增「新鮮度」判斷:當月資料如果最近幾小時內剛被更新過(不管是誰更新的——
-        // 你自己另一台裝置、同事、speedingscs、或cron排程),就不用再重抓一次,直接沿用。
-        // 這是為了避免「每次打開頁面都自動重打Meta API」造成額度浪費(Meta App目前是Dev Tier,
-        // 額度是每帳號每小時300次,不必要的重複抓取在這種嚴格額度下代價很高)。
-        const FRESH_ENOUGH_MS = 3 * 3600 * 1000; // 3小時內更新過就算新鮮,不用重抓
+        const FRESH_ENOUGH_MS = 3 * 3600 * 1000;
         const now = new Date();
         for (let m = 0; m < RECENT_MONTHS; m++) {
           const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
-          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          const monthKey = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
           if (m > 0) {
             const existing = await storage.get(monthKeyFor(t.id, monthKey)).catch(() => null);
-            if (existing) continue; // 已結束的月份,已經抓過就跳過
+            if (existing) continue;
           } else {
-            // 當月:檢查現有資料新不新鮮,新鮮就跳過,不要每次打開頁面都重抓。
             const existingRaw = await storage.get(monthKeyFor(t.id, monthKey)).catch(() => null);
             if (existingRaw && existingRaw.value) {
               try {
                 const existingRecord = JSON.parse(existingRaw.value);
                 const syncedAtMs = existingRecord.syncedAt ? new Date(existingRecord.syncedAt).getTime() : 0;
-                if (syncedAtMs && Date.now() - syncedAtMs < FRESH_ENOUGH_MS) continue; // 夠新鮮,跳過這個月
-              } catch { /* 舊格式或解析失敗,當作沒有新鮮度資訊,照原本邏輯繼續重抓 */ }
+                if (syncedAtMs && Date.now() - syncedAtMs < FRESH_ENOUGH_MS) continue;
+              } catch {}
             }
           }
           try {
-            const since = `${monthKey}-01`;
+            const since = monthKey + "-01";
             const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-            const until = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+            const until = monthKey + "-" + String(lastDay).padStart(2, "0");
             const record = await callMetaWorker("/api/meta/insights", { accountId: t.id, since, until, relax: "false" });
             record.source = "auto";
             await storage.set(monthKeyFor(t.id, monthKey), JSON.stringify(record));
             successCount++;
           } catch { errorCount++; }
-          await new Promise((r) => setTimeout(r, 4000));
-        }
-
-        // 週:w=1 是上週,每次都重新抓(上週如果剛結束沒幾天,數字可能還在微調);w=2~4 缺了才補。
-        for (let w = 1; w <= RECENT_WEEKS; w++) {
-          const info = getLastWeekRange(tz.utcOffsetHours, w);
-          if (w > 1) {
-            const existing = await storage.get(weekKeyFor(t.id, info.weekStart)).catch(() => null);
-            if (existing) continue;
-          } else {
-            const existingRaw = await storage.get(weekKeyFor(t.id, info.weekStart)).catch(() => null);
-            if (existingRaw && existingRaw.value) {
-              try {
-                const existingRecord = JSON.parse(existingRaw.value);
-                const syncedAtMs = existingRecord.syncedAt ? new Date(existingRecord.syncedAt).getTime() : 0;
-                if (syncedAtMs && Date.now() - syncedAtMs < FRESH_ENOUGH_MS) continue;
-              } catch { /* 忽略解析失敗,照原本邏輯繼續 */ }
-            }
-          }
-          try {
-            const record = await callMetaWorker("/api/meta/insights", { accountId: t.id, since: info.since, until: info.until, relax: "true" });
-            record.source = "auto";
-            await storage.set(weekKeyFor(t.id, info.weekStart), JSON.stringify(record));
-            successCount++;
-          } catch { errorCount++; }
-          await new Promise((r) => setTimeout(r, 4000));
+          await new Promise((resolve) => setTimeout(resolve, 4000));
         }
       } catch { errorCount++; }
     }
-
     await storage.set(AUTO_SYNC_DATE_KEY, todayStr);
     setAutoSyncStatus(null);
     await loadAll(activeBrandId);
-    await loadAllWeeks(activeBrandId);
     if (successCount > 0) {
-      setMetaUpdateNotice(`已自動同步完成:成功更新 ${successCount} 筆資料${errorCount > 0 ? `,${errorCount} 筆失敗(可能是頻率限制,之後再手動抓一次即可)` : ""}。`);
+      setMetaUpdateNotice("已自動同步完成:成功更新 " + successCount + " 筆資料" + (errorCount > 0 ? "," + errorCount + " 筆失敗(可能是頻率限制,之後再手動抓一次即可)" : "") + "。");
     }
   }
 
@@ -6016,7 +5653,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
     : (sortedDailyDays.length ? sortedDailyDays[sortedDailyDays.length - 1].date : null);
   const focusDayRecord = activeFocusDay ? sortedDailyDays.find((d) => d.date === activeFocusDay) : null;
   // 前一天的紀錄,用來做「業績比例分析」的日對日比較——只在同一個月份分頁裡往前找,
-  // 不跨月(如果focusDay是這個月第一天,就沒有前一天可比,這跟月報表/週報表比不到「上一期」是同樣的道理)。
+  // 不跨月(如果focusDay是這個月第一天,就沒有前一天可比,這跟月報表比不到「上一期」是同樣的道理)。
   const focusDayIdx = activeFocusDay ? sortedDailyDays.findIndex((d) => d.date === activeFocusDay) : -1;
   const prevDayRecord = focusDayIdx > 0 ? sortedDailyDays[focusDayIdx - 1] : null;
   const dailyMatrixCodesRaw = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
@@ -6139,20 +5776,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
   }, [sponsorMonthlyStats]);
   const sponsorMonthsWithData = sponsorMonthlyStats.filter((m) => m.ads.length > 0);
 
-  const sortedWeekKeys = useMemo(() => Object.keys(weeksData).sort(), [weeksData]);
-  const focusWeekData = focusWeek ? weeksData[focusWeek] : null;
-  const focusWeekIdx = sortedWeekKeys.indexOf(focusWeek);
-  const prevWeekData = focusWeekIdx > 0 ? weeksData[sortedWeekKeys[focusWeekIdx - 1]] : null;
-  function weekLabel(weekStart) {
-    if (!weekStart) return "";
-    const [y, m, d] = weekStart.split("-").map(Number);
-    const start = new Date(y, m - 1, d);
-    const end = new Date(y, m - 1, d + 6);
-    const fmt2 = (dt) => `${String(dt.getMonth() + 1).padStart(2, "0")}/${String(dt.getDate()).padStart(2, "0")}`;
-    return `${fmt2(start)}~${fmt2(end)}`;
-  }
-
-  const sortedVisibleAds = useMemo(() => sortAdsByMode(visibleAds, adSortMode), [visibleAds, adSortMode]);
+  const sortedVisibleAds = useMemo(  const sortedVisibleAds = useMemo(() => sortAdsByMode(visibleAds, adSortMode), [visibleAds, adSortMode]);
 
   // 折價券查詢:依目前選中/搜尋的折價券代碼,從查詢結果的原始訂單裡篩出用過這組代碼的所有訂單(不分大小寫比對)。
   const couponFocusOrders = useMemo(() => {
@@ -6242,7 +5866,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
                 ↺ 恢復預設
               </button>
             )}
-            {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
+            {sortedKeys.length > 0 && (
               <button className="mal-btn mal-print-btn" onClick={handlePrintClick}><span className="mal-btn-emoji">🖨</span> 列印 / 匯出 PDF</button>
             )}
             {logoUploadNotice && <span style={{ fontSize: 11.5, color: "var(--ink-soft)", alignSelf: "center" }}>{logoUploadNotice}</span>}
@@ -7411,7 +7035,7 @@ function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, perio
 // 會直接把錯誤訊息印在畫面上,而不是留下一片空白,才能真正知道問題出在哪一行。之後確認問題解決,
 // 這層可以拿掉,但保留著也無害,不影響任何正常功能。
 // 特意不吞掉錯誤、不用空白畫面取代——顯示完整診斷內容才是重點,不是讓畫面看起來「正常」。
-const MAL_DEPLOY_VERSION = "hj-diag2"; // 每次部署更新這個標記,方便確認瀏覽器載入的是不是最新版本
+const MAL_DEPLOY_VERSION = "mavis-liaoliao-parity-20261029"; // 每次部署更新這個標記,方便確認瀏覽器載入的是不是最新版本
 class MalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -7429,7 +7053,6 @@ class MalErrorBoundary extends React.Component {
       "發生當下的頁面(viewMode): " + debugState.viewMode + "\n" +
       "發生當下選中的品牌: " + debugState.activeBrandName + "(id: " + debugState.activeBrandId + ")\n" +
       "當下品牌總數: " + debugState.brandCount + "\n" +
-      "當下focusWeek: " + debugState.focusWeek + "\n" +
       "錯誤訊息(error.message): " + (error && error.message) + "\n" +
       "錯誤堆疊(error.stack):\n" + (error && error.stack) + "\n" +
       "元件堆疊(componentStack):\n" + (info && info.componentStack) + "\n" +
