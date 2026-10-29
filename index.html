@@ -5390,6 +5390,7 @@ function MetaAdsLedger() {
   // 沒辦法從行銷活動名稱自動抓出乾淨的產品名稱(命名不夠固定),所以讓使用者自己設定,類似 roasTargets 那樣。
   const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
   const [batchProgress, setBatchProgress] = useState(null);
+  const [centralSyncRunUrl, setCentralSyncRunUrl] = useState("");
   const [viewMode, setViewMode] = useState("month");
   const [apiMonth, setApiMonth] = useState(() => {
     const d = new Date();
@@ -5497,21 +5498,14 @@ function MetaAdsLedger() {
         if (merged.length > 0) setActiveBrandId((prev) => prev || merged[0].id);
       }
 
-      const remembered = rememberRes && rememberRes.value === "1";
-      let loadedToken = "";
-      if (remembered) {
-        setRememberToken(true);
-        const tRes = await storage.get("meta-api-token").catch(() => null);
-        if (tRes && tRes.value) loadedToken = tRes.value;
-        if (loadedToken) setApiToken(loadedToken);
-      }
-
-      // Meta 自動同步已由 GitHub Actions 中央排程接管。
-      // 舊的「開頁自動抓 Meta」永久關閉，避免每台瀏覽器重複消耗同一顆 System User Token / rate limit。
+      // 舊版曾把 Meta Access Token 存在瀏覽器。現在手動與自動同步都統一走中央 Airbyte，
+      // 前端不再需要 Meta Token，載入時主動清掉舊憑證與舊自動同步旗標。
+      setRememberToken(false);
       setAutoSyncEnabled(false);
-      if (autoSyncRes && autoSyncRes.value === "1") {
-        storage.set("meta-api-autosync", "0").catch(() => {});
-      }
+      setApiToken("");
+      storage.delete("meta-api-token").catch(() => {});
+      storage.set("meta-api-remember-token", "0").catch(() => {});
+      storage.set("meta-api-autosync", "0").catch(() => {});
     }
     loadInitialConfig();
   }, []);
@@ -7473,9 +7467,76 @@ async function toggleRememberToken(checked) {
   }
 }
 
-// 手動觸發同步(例如面板裡的「立即同步」按鈕),用目前畫面上的權杖跟品牌清單
-  function runAutoSync() {
-    return runAutoSyncWith(apiToken, brands, apiAccountId);
+// 手動同步統一走中央 Airbyte，不再由瀏覽器直接呼叫 Meta Graph API。
+  async function runCentralAirbyteSync() {
+    setApiError(null);
+    setApiNotice(null);
+    setApiLoading(true);
+    setCentralSyncRunUrl("");
+    const requestId = "manual-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "running", message: "正在送出同步要求…" }]);
+
+    try {
+      const startRes = await fetch("/api/airbyte/sync", {
+        method: "POST",
+        headers: { ...teamKeyHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId }),
+      });
+      const startJson = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startJson.ok) {
+        if (startJson.error === "github_workflow_token_not_configured") {
+          throw new Error("尚未設定中央同步權限 GITHUB_WORKFLOW_TOKEN");
+        }
+        if (startRes.status === 401) throw new Error("部門登入已失效，請先重新登入");
+        throw new Error(startJson.message || startJson.error || ("HTTP " + startRes.status));
+      }
+
+      setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "running", message: "已排入中央同步佇列" }]);
+
+      const deadline = Date.now() + 55 * 60 * 1000;
+      let found = false;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        const statusRes = await fetch("/api/airbyte/sync?request_id=" + encodeURIComponent(requestId), {
+          headers: teamKeyHeaders(),
+          cache: "no-store",
+        });
+        const statusJson = await statusRes.json().catch(() => ({}));
+        if (!statusRes.ok || !statusJson.ok) continue;
+
+        if (!statusJson.found) {
+          setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "running", message: "等待 GitHub Actions 啟動…" }]);
+          continue;
+        }
+
+        found = true;
+        if (statusJson.htmlUrl) setCentralSyncRunUrl(statusJson.htmlUrl);
+        if (statusJson.status !== "completed") {
+          setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "running", message: statusJson.status === "queued" ? "排隊中…" : "Airbyte 同步中…" }]);
+          continue;
+        }
+
+        if (statusJson.conclusion === "success") {
+          setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "done", message: "全部品牌同步完成" }]);
+          setApiNotice("Airbyte 已完成全部品牌 Meta 更新，報表已重新載入最新資料。");
+          await loadAll(activeBrandId);
+        } else {
+          setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "error", message: "同步失敗：" + (statusJson.conclusion || "unknown") }]);
+          setApiError("Airbyte 同步失敗，可點 GitHub 執行紀錄查看原因。");
+        }
+        setApiLoading(false);
+        return;
+      }
+
+      setApiLoading(false);
+      setApiNotice(found
+        ? "Airbyte 仍在背景執行；你可以關閉這個視窗，稍後重新整理報表查看最新資料。"
+        : "同步要求已送出，但暫時還看不到執行紀錄；稍後重新整理即可。");
+    } catch (e) {
+      setApiLoading(false);
+      setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "error", message: e.message || String(e) }]);
+      setApiError("無法啟動 Airbyte：" + (e.message || String(e)));
+    }
   }
 
   const sortedKeys = useMemo(() => Object.keys(months).sort(), [months]);
@@ -7657,7 +7718,7 @@ const shopeRealDailyMap = useMemo(() => {
             <h1 className="mal-title">品牌成效分析</h1>
             <p className="mal-subtitle">
               廣告費 · 轉單 · CPA · ROAS,每月自動累積
-              {cloudStatus === "artifact" && "(報表資料團隊共用,Meta 金鑰只留在你自己的瀏覽器)"}
+              {cloudStatus === "artifact" && "(報表資料團隊共用，Meta 由中央 Airbyte 自動同步)"}
               {cloudStatus === "connected" && `(已連上 Cloudflare 共用資料庫${credentialName ? `,目前身份:${credentialName}` : ",團隊看到的是同一份資料"})`}
               {cloudStatus === "unauthorized" && "(已連上 Cloudflare,但團隊密碼不對,請點右上角重新輸入)"}
               {(cloudStatus === "unavailable" || cloudStatus === "unknown") && "(尚未連上共用資料庫,目前資料只存在這個瀏覽器)"}
@@ -7666,7 +7727,7 @@ const shopeRealDailyMap = useMemo(() => {
         </div>
         <div className="mal-header-actions">
           <div className="mal-header-actions-primary">
-            <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}><span className="mal-btn-emoji">🔌</span> 連接 Meta API</button>
+            <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}><span className="mal-btn-emoji">🔄</span> 立即同步 Meta</button>
             {!HAS_SHARED_STORAGE && (
               <button type="button" className="mal-btn" onClick={openDepartmentSwitcher} title="切換登入部門">
                 {cloudStatus === "connected"
@@ -8021,8 +8082,8 @@ const shopeRealDailyMap = useMemo(() => {
           <div className="mal-empty">
             <div style={{ fontSize: 30 }}>📖</div>
             <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>帳本還是空的</h3>
-            <p>點選下方按鈕連接 Meta API，系統會自動抓取廣告費、成果/購買次數、轉換價值等資料。</p>
-            <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}>🔌 連接 Meta API</button>
+            <p>點選下方按鈕啟動中央 Airbyte，同步報表名單內全部品牌的最新 Meta 資料。</p>
+            <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}>🔄 立即同步 Meta</button>
           </div>
         ) : (
           <>
@@ -8669,166 +8730,34 @@ const shopeRealDailyMap = useMemo(() => {
 
       {showApiPanel && (
         <div className="mal-modal-overlay">
-          <div className="mal-modal mal-modal-small mal-api-modal">
-            <h3>連接 Meta API</h3>
+          <div className="mal-modal mal-modal-small">
+            <h3>🔄 立即同步 Meta</h3>
             <p className="mal-modal-sub">
-              {rememberToken
-                ? "權杖已記住,存在這台瀏覽器裡(其他人用同一台電腦、同一個瀏覽器也看得到)。"
-                : "權杖不會存起來,重新整理頁面後要重新貼一次。"}
+              這個按鈕會透過中央 Airbyte 更新報表名單內的全部品牌，不需要在瀏覽器輸入 Meta Access Token，也不需要逐一勾選品牌。
             </p>
 
-            <div className="mal-field">
-              <label>模式</label>
-              <select value={apiMode} onChange={(e) => { setApiMode(e.target.value); setBatchProgress(null); }}>
-                <option value="full">直接抓整月資料</option>
-                <option value="multi">多品牌批次抓取</option>
-                </select>
+            <div style={{ border:"1px solid var(--rule)", borderRadius:14, padding:"14px 16px", background:"var(--paper-soft)", marginBottom:14 }}>
+              <div style={{ fontSize:13.5, fontWeight:700, marginBottom:7 }}>同步方式</div>
+              <div style={{ fontSize:12.5, lineHeight:1.7, color:"var(--ink-secondary)" }}>
+                手動同步：按下方按鈕立即觸發 Airbyte 全品牌更新。<br/>
+                自動同步：系統仍會每天 02:23、08:23、14:23、20:23 自動執行。
+              </div>
             </div>
-
-            <div className="mal-field">
-              <label>存取權杖(Access Token)</label>
-              <input
-                type="password"
-                value={apiToken}
-                onChange={(e) => setApiToken(e.target.value)}
-                placeholder="EAAxxxxxxxxxxxxxxxx"
-              />
-              <label className="mal-checkbox-row" style={{ marginTop: 10, fontSize: 12.5 }}>
-                <input type="checkbox" checked={rememberToken} onChange={(e) => toggleRememberToken(e.target.checked)} />
-                <span className="mal-checkbox-box"></span>
-                <span>記住這組權杖(存在這台瀏覽器,下次開啟自動帶入)</span>
-              </label>
-              {rememberToken && (
-                <label className="mal-checkbox-row" style={{ marginTop: 8, fontSize: 12.5 }}>
-                  <input type="checkbox" checked={autoSyncEnabled} onChange={(e) => toggleAutoSync(e.target.checked)} />
-                  <span className="mal-checkbox-box"></span>
-                  <span>開啟網頁時自動檢查並補抓上個月的資料</span>
-                </label>
-              )}
-              {autoSyncEnabled && rememberToken && (
-                <p style={{ fontSize: 11.5, color: "var(--ink-secondary)", marginTop: 8, lineHeight: 1.5 }}>
-                  只在打開這個網頁的當下才會檢查,不會在你沒開網頁時於背景執行。已經抓過的月份不會重抓。
-                </p>
-              )}
-            </div>
-
-            {rememberToken && (
-              <div className="mal-field">
-                <button
-                  type="button"
-                  className="mal-btn"
-                  style={{ height: 40, fontWeight: 500 }}
-                  disabled={!!autoSyncStatus}
-                  onClick={runAutoSync}
-                >
-                  {autoSyncStatus ? "同步中…" : "立即檢查並補抓上月資料"}
-                </button>
-              </div>
-            )}
-
-            {apiMode !== "multi" && brands.length > 0 && (
-              <div className="mal-field">
-                <label>常用品牌</label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <select
-                    style={{ flex: 1 }}
-                    value={brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")) ? brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")).name : ""}
-                    onChange={(e) => selectBrand(e.target.value)}
-                  >
-                    <option value="">— 選擇品牌自動帶入 ID —</option>
-                    {brands.map((b) => (
-                      <option key={b.name} value={b.name}>{b.name}</option>
-                    ))}
-                  </select>
-                  {brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")) && (
-                    <button
-                      type="button"
-                      className="mal-icon-btn mal-delete-brand-btn"
-                      title="刪除這個常用品牌"
-                      onClick={() => deleteBrand(brands.find((b) => b.id === apiAccountId.trim().replace(/^act_/, "")).name)}
-                    >
-                      🗑
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {apiMode !== "multi" && (
-              <div className="mal-field">
-                <label>廣告帳號 ID</label>
-                <div className="mal-input-btn-row">
-                  <input
-                    type="text"
-                    value={apiAccountId}
-                    onChange={(e) => setApiAccountId(e.target.value)}
-                    placeholder="2157995930925784 或 act_2157995930925784"
-                  />
-                  <button type="button" className="mal-btn mal-input-row-btn" onClick={saveCurrentAsBrand}>
-                    存為常用
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {apiMode === "multi" && (
-              <div className="mal-field">
-                <label>選擇要一起抓的品牌</label>
-                {brands.length === 0 ? (
-                  <p style={{ fontSize: 12.5, color: "var(--ink-secondary)" }}>
-                    還沒有存過任何常用品牌。先切到「直接抓整月資料」模式,填一次帳號 ID 並「存為常用」,之後就能在這裡勾選批次抓取。
-                  </p>
-                ) : (
-                  <div className="mal-api-brand-list" style={{ border: "1px solid var(--rule)", borderRadius: "5px", padding: "6px 10px", maxHeight: 160, overflowY: "auto" }}>
-                    {brands.map((b) => (
-                      <label key={b.id} className="mal-checkbox-row" style={{ padding: "6px 0", fontSize: 13 }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedBatchBrandIds.includes(b.id)}
-                          onChange={(e) => {
-                            setSelectedBatchBrandIds((prev) =>
-                              e.target.checked ? [...prev, b.id] : prev.filter((id) => id !== b.id)
-                            );
-                          }}
-                        />
-                        <span className="mal-checkbox-box"></span>
-                        <span>{b.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {(apiMode === "full" || apiMode === "multi") && (
-              <div className="mal-field">
-                <label>要抓哪個月?</label>
-                <input
-                  type="month"
-                  value={apiMonth}
-                  onChange={(e) => setApiMonth(e.target.value)}
-                />
-                <p style={{ fontSize: 11.5, color: "var(--ink-secondary)", marginTop: 8, lineHeight: 1.5 }}>
-                  只會統計「購買」類型的轉換(訂單數與金額)。如果你的廣告目標不是導購,轉單數可能會顯示 0,這是正常的。
-                </p>
-              </div>
-            )}
 
             {batchProgress && (
               <div className="mal-field">
-                <label>批次進度</label>
-                <div style={{ border: "1px solid var(--rule)", borderRadius: "10px", padding: "8px 10px" }}>
+                <label>同步狀態</label>
+                <div style={{ border:"1px solid var(--rule)", borderRadius:10, padding:"10px 12px" }}>
                   {batchProgress.map((p) => (
-                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "4px 0" }}>
+                    <div key={p.id} style={{ display:"flex", justifyContent:"space-between", gap:12, fontSize:12.5, padding:"4px 0" }}>
                       <span>{p.name}</span>
                       <span style={{
-                        color: p.status === "error" ? "var(--red)" : p.status === "done" ? "var(--green)" : "var(--ink-soft)",
+                        textAlign:"right",
+                        color:p.status === "error" ? "var(--red)" : p.status === "done" ? "var(--green)" : "var(--ink-soft)",
                       }}>
-                        {p.status === "pending" && "等待中"}
-                        {p.status === "running" && "抓取中…"}
-                        {p.status === "done" && `✓ ${p.message}`}
-                        {p.status === "empty" && "沒有資料"}
-                        {p.status === "error" && `✗ ${p.message}`}
+                        {p.status === "running" && "⏳ " + (p.message || "同步中…")}
+                        {p.status === "done" && "✓ " + p.message}
+                        {p.status === "error" && "✗ " + p.message}
                       </span>
                     </div>
                   ))}
@@ -8836,14 +8765,22 @@ const shopeRealDailyMap = useMemo(() => {
               </div>
             )}
 
+            {apiError && <div className="mal-error">⚠ {apiError}</div>}
+            {apiNotice && <div className="mal-notice">✓ {apiNotice}</div>}
+            {centralSyncRunUrl && (
+              <p style={{ fontSize:11.5, color:"var(--ink-soft)", lineHeight:1.5, marginTop:8 }}>
+                <a href={centralSyncRunUrl} target="_blank" rel="noopener noreferrer" style={{ color:"var(--brown)", fontWeight:700 }}>↗ 查看 GitHub 同步執行紀錄</a>
+              </p>
+            )}
+
             <div className="mal-modal-actions">
-              <button className="mal-btn" onClick={() => setShowApiPanel(false)}>取消</button>
+              <button className="mal-btn" onClick={() => setShowApiPanel(false)}>關閉</button>
               <button
                 className="mal-btn mal-btn-primary"
                 disabled={apiLoading}
-                onClick={apiMode === "multi" ? fetchBatchFromApi : fetchFullMonthFromApi}
+                onClick={runCentralAirbyteSync}
               >
-                {apiLoading ? "抓取中…" : "開始抓取"}
+                {apiLoading ? "同步中…" : "開始全品牌同步"}
               </button>
             </div>
           </div>
