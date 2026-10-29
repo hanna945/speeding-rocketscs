@@ -42,7 +42,7 @@ permissions:
 
 concurrency:
   group: airbyte-meta-central-sync
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   sync:
@@ -87,6 +87,7 @@ jobs:
         run: python -m pip install --upgrade facebook-business
 
       - name: Sync Meta through Airbyte into existing report KV
+        id: sync_meta
         if: steps.configured.outputs.ready == 'true'
         env:
           META_SYSTEM_USER_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
@@ -99,3 +100,42 @@ jobs:
             --backfill-days "${{ github.event.inputs.backfill_days || '0' }}" \
             --reconcile-days 2 \
             --engine "${{ github.event.inputs.engine || 'airbyte' }}"
+
+      - name: Update manual sync request status
+        if: always() && github.event_name == 'workflow_dispatch' && github.event.inputs.request_id != ''
+        uses: actions/github-script@v7
+        env:
+          REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
+          REQUEST_ID: ${{ github.event.inputs.request_id }}
+          META_READY: ${{ steps.configured.outputs.ready || 'false' }}
+          SYNC_OUTCOME: ${{ steps.sync_meta.outcome || 'skipped' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const requestId = process.env.REQUEST_ID;
+            const ready = process.env.META_READY === 'true';
+            const outcome = process.env.SYNC_OUTCOME;
+            const success = ready && outcome === 'success';
+            const token = await core.getIDToken('speedingscs-airbyte');
+            const base = process.env.REPORT_BASE_URL.replace(/\/$/, '');
+
+            const response = await fetch(base + '/api/airbyte/sync', {
+              method: 'POST',
+              headers: {
+                Authorization: 'Bearer ' + token,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                action: 'complete',
+                requestId,
+                conclusion: success ? 'success' : 'failure',
+                htmlUrl: process.env.RUN_URL,
+                message: success
+                  ? '全部品牌同步完成'
+                  : (!ready ? 'META_SYSTEM_USER_TOKEN 未設定' : 'Airbyte 同步失敗'),
+              }),
+            });
+            const body = await response.json();
+            if (!response.ok || !body.ok) {
+              core.warning('Unable to update manual sync status: ' + JSON.stringify(body));
+            }

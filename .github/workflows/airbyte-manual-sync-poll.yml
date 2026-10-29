@@ -1,0 +1,111 @@
+name: Airbyte Manual Sync Poll
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  actions: write
+
+concurrency:
+  group: airbyte-manual-sync-poll
+  cancel-in-progress: true
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check pending manual sync request
+        id: pending
+        uses: actions/github-script@v7
+        env:
+          REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
+        with:
+          script: |
+            const token = await core.getIDToken('speedingscs-airbyte');
+            const base = process.env.REPORT_BASE_URL.replace(/\/$/, '');
+            const response = await fetch(base + '/api/airbyte/sync?machine=pending', {
+              headers: {
+                Authorization: 'Bearer ' + token,
+                Accept: 'application/json',
+              },
+            });
+            const body = await response.json();
+            if (!response.ok || !body.ok) {
+              core.setFailed('Unable to read pending sync request: ' + JSON.stringify(body));
+              return;
+            }
+            if (!body.pending) {
+              core.info('No pending manual Airbyte sync request.');
+              core.setOutput('pending', 'false');
+              return;
+            }
+            core.setOutput('pending', 'true');
+            core.setOutput('request_id', body.requestId);
+            core.info('Pending request: ' + body.requestId);
+
+      - name: Claim request and dispatch central sync
+        if: steps.pending.outputs.pending == 'true'
+        uses: actions/github-script@v7
+        env:
+          REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
+          REQUEST_ID: ${{ steps.pending.outputs.request_id }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const requestId = process.env.REQUEST_ID;
+            const base = process.env.REPORT_BASE_URL.replace(/\/$/, '');
+            const oidc = await core.getIDToken('speedingscs-airbyte');
+
+            const claim = await fetch(base + '/api/airbyte/sync', {
+              method: 'POST',
+              headers: {
+                Authorization: 'Bearer ' + oidc,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                action: 'claim',
+                requestId,
+                htmlUrl: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/actions',
+              }),
+            });
+            const claimBody = await claim.json();
+            if (!claim.ok || !claimBody.ok) {
+              core.setFailed('Unable to claim request: ' + JSON.stringify(claimBody));
+              return;
+            }
+
+            try {
+              await github.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'airbyte-meta-sync.yml',
+                ref: 'main',
+                inputs: {
+                  brand_id: '',
+                  backfill_days: '0',
+                  engine: 'airbyte',
+                  request_id: requestId,
+                },
+              });
+              core.info('Dispatched Airbyte central sync for ' + requestId);
+            } catch (error) {
+              await fetch(base + '/api/airbyte/sync', {
+                method: 'POST',
+                headers: {
+                  Authorization: 'Bearer ' + oidc,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  action: 'complete',
+                  requestId,
+                  conclusion: 'failure',
+                  message: 'GitHub Actions dispatch failed',
+                }),
+              });
+              throw error;
+            }

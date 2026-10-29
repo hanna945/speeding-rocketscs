@@ -3,6 +3,10 @@ const JWKS_URL = ISSUER + "/.well-known/jwks";
 const EXPECTED_AUDIENCE = "speedingscs-airbyte";
 const EXPECTED_REPOSITORY = "hanna945/speeding-rocketscs";
 const EXPECTED_REF = "refs/heads/main";
+const ALLOWED_WORKFLOWS = new Set([
+  ".github/workflows/airbyte-meta-sync.yml",
+  ".github/workflows/airbyte-manual-sync-poll.yml",
+]);
 
 function decodeBase64Url(input) {
   const base64 = input.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(input.length / 4) * 4, "=");
@@ -61,7 +65,10 @@ export async function verifyGitHubActionsOidc(request) {
     if (claims.nbf && claims.nbf > now + 30) return null;
 
     const workflowRef = String(claims.workflow_ref || "");
-    if (!workflowRef.startsWith(EXPECTED_REPOSITORY + "/.github/workflows/airbyte-meta-sync.yml@")) return null;
+    const workflowPath = workflowRef
+      .replace(EXPECTED_REPOSITORY + "/", "")
+      .split("@")[0];
+    if (!ALLOWED_WORKFLOWS.has(workflowPath)) return null;
 
     const ok = await verifySignature(
       token,
