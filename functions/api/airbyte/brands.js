@@ -1,7 +1,7 @@
 import { verifyGitHubActionsOidc } from "../../_shared/githubOidc.js";
 import { extendCredentialRoster } from "../../_shared/brandDefaults.js";
 
-const HIDDEN_REPORT_BRAND_NAMES = new Set(["H&J官網業績"]);
+const HJ_OFFICIAL_ACCOUNT = { id: "436280797192761", name: "H&J官網業績" };
 
 function normalizeBrand(raw) {
   if (!raw) return null;
@@ -16,7 +16,7 @@ function normalizeBrand(raw) {
 
 function mergeBrand(map, raw) {
   const brand = normalizeBrand(raw);
-  if (!brand || HIDDEN_REPORT_BRAND_NAMES.has(brand.name)) return;
+  if (!brand) return;
   const existing = map.get(brand.id);
   if (!existing || existing.name === existing.id) map.set(brand.id, brand);
 }
@@ -49,6 +49,10 @@ export async function onRequestGet({ request, env }) {
 
   const map = new Map();
   configuredBrandsFromEnv(env).forEach((brand) => mergeBrand(map, brand));
+  // H&J has two real Meta ad accounts. The official-site account is intentionally hidden
+  // from the main brand switch UI to avoid duplicate reporting surfaces, but Airbyte still
+  // needs to sync it for the dedicated H&J report.
+  mergeBrand(map, HJ_OFFICIAL_ACCOUNT);
 
   const rawShared = await env.REPORT_KV.get("meta-api-brands");
   if (rawShared) {
