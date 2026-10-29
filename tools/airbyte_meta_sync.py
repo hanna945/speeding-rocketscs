@@ -338,7 +338,7 @@ async def refresh_metadata(
     ads = await paged(
         connector.ads.list,
         account_id=account_id,
-        fields="id,name,adset_id,campaign_id,configured_status,effective_status,created_time,creative,status,tracking_specs",
+        fields="id,name,adset_id,campaign_id,effective_status,created_time,creative,status",
         limit=500,
     )
     creatives = await paged(
@@ -365,15 +365,28 @@ async def fetch_daily_insights(
 ) -> list[dict[str, Any]]:
     if since > until:
         return []
-    return await paged(
-        connector.ads_insights.list,
-        account_id=account_id,
-        fields="account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,clicks,impressions,reach,spend,date_start,date_stop,actions,action_values",
-        time_range=json.dumps({"since": since.isoformat(), "until": until.isoformat()}),
-        level="ad",
-        time_increment="1",
-        limit=500,
-    )
+
+    # Meta can reject or time out on high-volume accounts when a whole month of ad-level
+    # actions/action_values is requested in one call. Keep the same daily grain, but request
+    # at most 2 calendar days per API window and merge the rows client-side.
+    rows: list[dict[str, Any]] = []
+    cursor = since
+    while cursor <= until:
+        chunk_until = min(until, cursor + timedelta(days=1))
+        chunk = await paged(
+            connector.ads_insights.list,
+            account_id=account_id,
+            fields="account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,clicks,impressions,reach,spend,date_start,date_stop,actions,action_values",
+            time_range=json.dumps({"since": cursor.isoformat(), "until": chunk_until.isoformat()}),
+            level="ad",
+            time_increment="1",
+            limit=500,
+        )
+        rows.extend(chunk)
+        cursor = chunk_until + timedelta(days=1)
+        if cursor <= until:
+            await asyncio.sleep(0.7)
+    return rows
 
 
 async def fetch_period_reach(
