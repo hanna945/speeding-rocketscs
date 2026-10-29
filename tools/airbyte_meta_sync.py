@@ -1237,7 +1237,7 @@ def merge_month_with_today(
             target["reach"] = as_float(row.get("reach"))
         for field in (
             "name", "campaignId", "campaign", "adSetId", "adSet", "objective",
-            "campaignEffectiveStatus", "optimizationGoal", "creativeId", "postId",
+            "effectiveStatus", "campaignEffectiveStatus", "optimizationGoal", "creativeId", "postId",
             "utm", "image", "startDate", "postPublishDate"
         ):
             if row.get(field):
@@ -1291,6 +1291,9 @@ def merge_month_with_today(
                 "name": ad_name or "(未命名廣告)",
                 "adId": str(ad.get("adId") or ""),
                 "campaign": campaign_name or "(未分類活動)",
+                "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
+                "active": bool(ad.get("active")),
+                "campaignEffectiveStatus": str(ad.get("campaignEffectiveStatus") or "UNKNOWN"),
                 "spend": as_float(ad.get("spend")),
                 "conversions": as_float(ad.get("conversions")),
                 "revenue": as_float(ad.get("revenue")),
