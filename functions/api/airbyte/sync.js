@@ -160,6 +160,15 @@ export async function onRequestGet({ request, env }) {
       await env.REPORT_KV.delete(PENDING_KEY);
       return json({ ok: true, pending: false });
     }
+    if (status && status.status === "running") {
+      return json({
+        ok: true,
+        pending: false,
+        active: true,
+        requestId: pending.requestId,
+        status: "running",
+      });
+    }
     return json({
       ok: true,
       pending: true,
