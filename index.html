@@ -145,12 +145,10 @@
     border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--ink-secondary); cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
   }
   .mal-viewmode-btn-active { color: var(--blue-deep); background: transparent; box-shadow: none; border-bottom-color: var(--blue-deep); font-weight: 600; }
-  .mal-week-box { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 22px 8px; margin-bottom: 28px; box-shadow: 0 2px 10px rgba(74,63,53,0.05); }
-  .mal-week-title { margin-top: 0; border-bottom: 1px solid var(--rule); }
-  .mal-week-analysis { margin: 14px 0 16px; }
-  .mal-week-analysis-title { font-family: 'Noto Serif TC', serif; font-weight: 600; font-size: 14px; margin-bottom: 8px; }
-  .mal-week-analysis ul { margin: 0; padding-left: 20px; }
-  .mal-week-analysis li { font-size: 13px; line-height: 1.7; color: var(--ink); margin-bottom: 4px; }
+  .mal-analysis { margin: 14px 0 16px; }
+  .mal-analysis-title { font-family: 'Noto Serif TC', serif; font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+  .mal-analysis ul { margin: 0; padding-left: 20px; }
+  .mal-analysis li { font-size: 13px; line-height: 1.7; color: var(--ink); margin-bottom: 4px; }
   .mal-ledger-table { background: #FAF6EE; table-layout: auto; width: max-content; min-width: max-content; border-collapse: separate; border-spacing: 0; }
   .mal-ledger-table th, .mal-ledger-table td { white-space: nowrap; word-break: normal; overflow-wrap: normal; flex-shrink: 0; }
   .mal-ledger-table th:not(:first-child), .mal-ledger-table td:not(:first-child) { min-width: 96px; }
@@ -202,7 +200,7 @@
   }
   .mal-card-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
   .mal-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 23px; font-weight: 500; letter-spacing: -0.005em; color: var(--num-ink); margin: 10px 0 9px; }
-  /* 週報表儀表板:整體ROAS卡片(達標時用綠底跟其他卡片區隔)、橫條圖、圖例。
+  /* 報表儀表板:整體ROAS卡片(達標時用綠底跟其他卡片區隔)、橫條圖、圖例。
      顏色沿用全站既有色票(--green/--blue/--amber/--red),ROAS四級分色不額外造新顏色。 */
   .mal-dash-card-roas { background: #EEF3EA; border-color: var(--green); }
   .mal-dash-card-sub { font-size: 11.5px; color: var(--ink-soft); }
@@ -701,7 +699,7 @@
   body.mal-exporting .mal-perf-section-chevron {
     display: none !important;
   }
-  /* 週報告匯出成PDF/列印時,編輯用的控制項(新增/刪除/AI分析按鈕、存檔狀態文字、立即儲存按鈕)
+  /* 月報告匯出成PDF/列印時,編輯用的控制項(新增/刪除/AI分析按鈕、存檔狀態文字、立即儲存按鈕)
      不該出現在正式報告裡,直接隱藏;輸入框/文字框改成看起來像單純文字,不要有邊框跟
      輸入框底色,不然PDF看起來會像一份還沒填完的表單,不像給老闆看的正式報告。 */
   body.mal-exporting .mal-plan-remove,
@@ -1047,8 +1045,8 @@ async function sharedReportPlanSet(key, value) {
 }
 
 // 「嚴格版」存檔——跟上面 storage.set 的差異是:連不上雲端/雲端回錯,這裡會直接把錯誤丟出去,
-// 不會悄悄退回存到本機。只給「週報告」這種使用者主動打字、資料遺失會很有感的功能用;
-// 其他既有功能(月報表/週報表快取等)本來就是靠自動同步機制重新填滿,繼續沿用會悄悄退回本機
+// 不會悄悄退回存到本機。只給「月報告」這種使用者主動打字、資料遺失會很有感的功能用;
+// 其他既有功能(月報表快取等)本來就是靠自動同步機制重新填滿,繼續沿用會悄悄退回本機
 // 的 storage.set,不改,降低這次修正波及其他既有功能的風險。
 async function storageSetStrict(key, value) {
   if (isReportPlanKey(key)) {
@@ -1133,11 +1131,8 @@ const storage = {
 function monthKeyFor(brandId, mk) {
   return STORAGE_PREFIX + (brandId ? brandId + "::" : "") + mk;
 }
-function weekKeyFor(brandId, weekStart) {
-  return WEEK_STORAGE_PREFIX + (brandId ? brandId + "::" : "") + weekStart;
-}
 // ---------- 後台「一頁式正確業績」(每日收益表匯入) ----------
-// 每個品牌、每個月存一筆,key 格式跟月報表/週報表一致,方便重複匯入時直接覆蓋更新。
+// 每個品牌、每個月存一筆,key 格式跟月報表一致,方便重複匯入時直接覆蓋更新。
 function ledgerKeyFor(brandId, monthKey) {
   return LEDGER_STORAGE_PREFIX + (brandId ? brandId + "::" : "") + monthKey;
 }
@@ -1795,7 +1790,7 @@ function deriveMetrics(agg) {
   const roas = agg.spend > 0 && agg.revenue > 0 ? agg.revenue / agg.spend : null;
   return { ...agg, cpa, roas };
 }
-// 依排序模式把廣告清單排序(每月/每週報表共用同一套邏輯,回傳新陣列、不改動原陣列)。
+// 依排序模式把廣告清單排序(每月報表使用的排序邏輯,回傳新陣列、不改動原陣列)。
 // mode:spend(廣告費 高→低,預設)/ cpa / roas / composite / startDate(投放時間 新→舊)
 //      / postPublishDate(貼文前台發佈時間 新→舊;後台直接發佈=抓不到前台發佈時間的排最前面)
 // ⚠️ 這個函式跟 H-J/index.html 的同名函式要保持一致,兩邊同步改。
@@ -2478,7 +2473,7 @@ function EvidenceExecutiveSummary({
   return (
     <div className="mal-evidence-report">
       <div className="mal-evidence-hero">
-        <div className="mal-evidence-kicker">Executive Summary · {periodType === "week" ? "Weekly" : "Monthly"} Report</div>
+        <div className="mal-evidence-kicker">Executive Summary · Monthly Report</div>
         <h2 className="mal-evidence-headline">{headline}</h2>
         <div className="mal-evidence-deck">{deck}</div>
         <div className="mal-evidence-status">{healthIcon} 投放健康度 {score}/100 · {healthLabel}</div>
@@ -2557,7 +2552,7 @@ function EvidenceSectionNavigator({ refreshKey = "" }) {
   );
 }
 
-function DecisionIntelligencePanel({ currentRecord, previousRecord, roasTarget = 3, cpaTarget = null, monthlyBudget = null, periodType = "week", periodLabel = "" }) {
+function DecisionIntelligencePanel({ currentRecord, previousRecord, roasTarget = 3, cpaTarget = null, monthlyBudget = null, periodType = "month", periodLabel = "" }) {
   const result = buildDecisionIntelligence(currentRecord, previousRecord, roasTarget, cpaTarget, monthlyBudget, periodType);
   if (!result) return null;
   const { current, previous, deltas, anomalies, decisions, actions, score } = result;
@@ -2778,7 +2773,7 @@ function MetaAdsOpenSourceSuite({
   previousRecord,
   roasTarget = 3,
   cpaTarget = null,
-  periodType = "week",
+  periodType = "month",
   periodLabel = ""
 }) {
   const [collapsed, setCollapsed] = useState(true);
@@ -3069,8 +3064,8 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 補回宣告——這支元件寫在最外層(跟 roasTier/HorizontalBarChart/exportAdPerformanceToWord 同一層),
 // 不在主 App 元件裡面,所以拿不到 brands/activeBrandId 這些畫面狀態,要透過 props 傳進來,不能用 closure 讀。
 // forwardRef + useImperativeHandle:讓外層(週報表/月報表主畫面)可以直接呼叫這個元件內部的
-// generateAiInsights,藉此做出「一個按鈕同時觸發投放成效+週報告兩邊AI分析」的效果——
-// 選這個做法是因為兩邊(這裡、WeeklyPlanningSection)原本各自的AI邏輯、loading/error狀態管理
+// generateAiInsights,藉此做出「一個按鈕同時觸發投放成效+月報告兩邊AI分析」的效果——
+// 選這個做法是因為兩邊(這裡、ReportPlanningSection)原本各自的AI邏輯、loading/error狀態管理
 // 都已經測過沒問題,用ref讓外部觸發內部既有函式,比整個拆掉重寫、把狀態都提到最外層風險小很多。
 const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
   { ledgerAgg, currencyCode, periodLabel, roasTarget = 3, monthlyBudget = null, brands, activeBrandId, onEditRoasTarget, onEditMonthlyBudget, productNames = {}, onEditProductName, adRatioThreshold, onOpenImport, storageKey },
@@ -3086,7 +3081,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
   const [editText, setEditText] = useState("");
   const [aiSaveStatus, setAiSaveStatus] = useState("");
   // 自動判斷結果(insights+逐代號判斷)存到雲端,不然重新整理/換裝置就不見了——
-  // key跟「週報告」同一套設計,依品牌+週期分開存,彼此不會互相蓋掉。只讀不寫silent失敗:
+  // key跟「月報告」同一套設計,依品牌+週期分開存,彼此不會互相蓋掉。只讀不寫silent失敗:
   // 讀取失敗就當作「還沒有存檔」處理,不會用錯誤訊息打斷使用者第一次打開頁面的體驗。
   useEffect(() => {
     if (!storageKey) return;
@@ -3604,7 +3599,7 @@ function MetaAdsLedger() {
     { key: "campaign-analysis", label: "行銷活動整體成效分析" },
     { key: "performance-breakdown", label: "廣告成效分類" },
     { key: "ad-list", label: "廣告明細" },
-    { key: "weekly-plan", label: "週報告" },
+    { key: "monthly-plan", label: "月報告" },
   ];
   const [showPdfSectionModal, setShowPdfSectionModal] = useState(false);
   const [pdfSelectedSections, setPdfSelectedSections] = useState(() => new Set(PDF_SECTION_OPTIONS.map((o) => o.key)));
@@ -3620,9 +3615,9 @@ function MetaAdsLedger() {
   const [adSearchKeyword, setAdSearchKeyword] = useState(""); // 依廣告名稱/行銷活動/UTM 關鍵字搜尋,空字串表示不篩選
   const [showApiPanel, setShowApiPanel] = useState(false);
   // 全域節流用:記錄「最後一次真正打到 Meta Graph API」的時間戳。
-  // 不管是週報表、月報表、批次、自動同步或縮圖抓取,只要是打 Meta 的請求都共用同一個時間戳,
-  // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS——即使使用者手動連續按「抓上週」再按「抓月報表」也一樣受限,
-  // 不再只靠批次迴圈裡的 4 秒 delay(那個只保護「同一輪批次抓取」,不會保護「先抓周報表、再手動切去抓月報表」這種跨動作的情境)。
+  // 不管是月報表、批次、自動同步或縮圖抓取,只要是打 Meta 的請求都共用同一個時間戳,
+  // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS——即使使用者手動連續觸發抓取也一樣受限,
+  // 不再只靠批次迴圈裡的 4 秒 delay(那個只保護「同一輪批次抓取」,不會保護「跨動作連續抓取」這種跨動作的情境)。
   const lastApiCallRef = useRef(0);
   const [apiMode, setApiMode] = useState("full"); // "full" | "multi"
   const [apiToken, setApiToken] = useState("");
@@ -3660,7 +3655,7 @@ function MetaAdsLedger() {
       activeBrandName: (brands.find((b) => b.id === activeBrandId) || {}).name || "(無)",
       brandCount: brands.length,
       }; }, [viewMode, activeBrandId, brands]);
-  // 「一次AI分析」按鈕用的ref——月報表、週報表各自的「投放成效」「週報告」元件實例是分開的,
+  // 「一次AI分析」按鈕用的ref——月報表、週報表各自的「投放成效」「月報告」元件實例是分開的,
   // 所以要各自一組ref,不能共用(月報表按了不該連動去觸發週報表那邊的分析)。
   const monthlyAdReportRef = useRef(null);
   const monthlyPlanRef = useRef(null);
@@ -3777,12 +3772,6 @@ function MetaAdsLedger() {
   useEffect(() => {
     let cancelled = false;
     loadAll(activeBrandId, () => cancelled);
-    return () => { cancelled = true; };
-  }, [activeBrandId]);
-  useEffect(() => {
-    setWeekInfo(getLastWeekRange());
-    let cancelled = false;
-    loadAllWeeks(activeBrandId, () => cancelled);
     return () => { cancelled = true; };
   }, [activeBrandId]);
   useEffect(() => {
@@ -4094,7 +4083,7 @@ function MetaAdsLedger() {
       /* 個別字重載入失敗也不中斷匯出流程 */
     }
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    await new Promise((resolve) => setTimeout(resolve, 900)); // 等雲端資料(週報告/AI分析)讀取完成
+    await new Promise((resolve) => setTimeout(resolve, 900)); // 等雲端資料(月報告/AI分析)讀取完成
 
     // 隱藏使用者沒勾選的區塊
     const hiddenEls = [];
@@ -4106,7 +4095,7 @@ function MetaAdsLedger() {
       }
     });
 
-    // textarea 動態撐高(跟列印同一個理由,週報告的文字框不會自動撐開)
+    // textarea 動態撐高(跟列印同一個理由,月報告的文字框不會自動撐開)
     const resizedTextareas = [];
     document.querySelectorAll(".mal-plan-textarea").forEach((el) => {
       resizedTextareas.push({ el, originalHeight: el.style.height });
@@ -4897,12 +4886,12 @@ function MetaAdsLedger() {
   // 產品代號完全依實際行銷活動名稱動態產生——新增產品時只要照同一套命名規則建立行銷活動,
   // 不需要在系統裡手動登記新產品,代號就會自動出現在分析裡。
   // 「一頁式正確業績」比對區塊:後台每日收益表匯入後的實際營收/廣告費,vs. Meta 回報的轉單金額,依產品代號逐一比對落差。
-  // 週報告 / 下週規劃區塊——每個品牌、每個週期(週/月)各自獨立一份,存在KV,使用者自己編輯,
-  // 不是系統自動產生的。三個子區塊對應 Hanna 提供的範例格式:下週操作方向(編號+標題+說明)、
+  // 月報告 / 後續規劃區塊——每個品牌、每個週期(週/月)各自獨立一份,存在KV,使用者自己編輯,
+  // 不是系統自動產生的。三個子區塊對應 Hanna 提供的範例格式:後續操作方向(編號+標題+說明)、
   // 專案進度(負責人/預定完成日/進度/狀態燈號/說明)、素材調整方向(狀態燈號+標題+內容)。
   // 900ms 防抖自動儲存,不用按「儲存」按鈕,跟這裡其他設定(ROAS目標等)是不同的儲存模式——
   // 那些是「跳出視窗一次填完」,這裡是「持續編輯的長文字內容」,debounce autosave 比較適合。
-  const WeeklyPlanningSection = React.forwardRef(function WeeklyPlanningSection(
+  const ReportPlanningSection = React.forwardRef(function ReportPlanningSection(
     { storageKey, ads, currencyCode, roasTarget, periodLabel, brandName, minSpend },
     planRef
   ) {
@@ -5019,7 +5008,7 @@ function MetaAdsLedger() {
     // 送去跟「投放成效」共用同一支 OpenAI 金鑰的另一支後端(material-issues.js,職責不同、金鑰共用),
     // 請AI挑出「值得下週特別調整」的系列,寫成標題+數據佐證+建議方向。是「新增建議草稿」進現有清單,
     // 不會清掉使用者已經手動寫好/編輯過的項目,AI生成的項目使用者一樣可以編輯或刪除。
-    // 「下週操作方向」「素材調整方向」兩個子區塊的AI按鈕都呼叫這同一個函式——同一份期間數據,
+    // 「後續操作方向」「素材調整方向」兩個子區塊的AI按鈕都呼叫這同一個函式——同一份期間數據,
     // 沒必要因為使用者按了兩個不同按鈕就打兩次OpenAI,拿到回應後兩個子區塊會一起更新。
     function runAiMaterialAnalysis() {
       if (!data) return;
@@ -5071,7 +5060,7 @@ function MetaAdsLedger() {
     if (loadError) {
       return (
         <div className="mal-plan-load-error">
-          <p>⚠ 週報告讀取失敗:{loadError}</p>
+          <p>⚠ 月報告讀取失敗:{loadError}</p>
           <p style={{ fontSize: 12, marginTop: 4 }}>這不代表資料不存在,是暫時連不上雲端資料庫確認——請勿在這個狀態下新增內容,以免蓋掉原本已經存在雲端的資料。稍後重新整理再試一次。</p>
         </div>
       );
@@ -5102,7 +5091,7 @@ function MetaAdsLedger() {
     function removeProject(id) {
       scheduleSave({ ...data, projects: data.projects.filter((it) => it.id !== id) });
     }
-    // 圖片存進雲端資料庫時,是跟整份「週報告」文字內容存在同一個key裡(不是另外開檔案儲存空間),
+    // 圖片存進雲端資料庫時,是跟整份「月報告」文字內容存在同一個key裡(不是另外開檔案儲存空間),
     // 原圖(尤其手機拍的照片)動輒4-5MB,同時放幾張很容易撐爆單一key的儲存上限、也會讓每次
     // 存檔/讀取變慢。選好圖片後,先用畫布把長邊壓縮到最多960px、轉成JPEG(品質0.75)再存,
     // 壓縮後通常只有幾百KB,對「輔助說明用的示意圖」這種用途來說,畫質已經很夠用。
@@ -5145,7 +5134,7 @@ function MetaAdsLedger() {
       <>
         <div className="mal-plan-title-row">
           <CollapsibleSectionTitle className="mal-section-title" style={{ margin: 0 }}>
-            📋 週報告{saveStatus && (
+            📋 月報告{saveStatus && (
               <span className={saveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {saveStatus}</span>
             )}
           </CollapsibleSectionTitle>
@@ -5179,7 +5168,7 @@ function MetaAdsLedger() {
 
         <div className="mal-plan-block">
           <div className="mal-plan-block-header">
-            <div className="mal-plan-block-title">下週操作方向</div>
+            <div className="mal-plan-block-title">後續操作方向</div>
             <button className="mal-icon-btn" onClick={runAiMaterialAnalysis} disabled={aiLoading || !ads}>
               {aiLoading ? "計算中…" : "⚙️ 自動判斷"}
             </button>
@@ -5365,8 +5354,8 @@ function MetaAdsLedger() {
         <CollapsibleSectionTitle className="mal-section-title">
           行銷活動整體成效分析<span className="mal-section-count">({campaignStats.length} 個投放中活動)</span>
         </CollapsibleSectionTitle>
-        <div className="mal-week-analysis">
-          <div className="mal-week-analysis-title">整體分析</div>
+        <div className="mal-analysis">
+          <div className="mal-analysis-title">整體分析</div>
           <ul>
             {insights.map((line, i) => (
               <li key={i}>{line}</li>
@@ -5999,7 +5988,7 @@ const shopeRealDailyMap = useMemo(() => {
               <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
               <div className="mal-combined-ai-row">
                 <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(monthlyAdReportRef, monthlyPlanRef)}>
-                  ⚙️ 一次自動判斷(投放成效＋週報告)
+                  ⚙️ 一次自動判斷(投放成效＋月報告)
                 </button>
               </div>
               <div data-pdf-section="ad-performance">
@@ -6161,8 +6150,8 @@ const shopeRealDailyMap = useMemo(() => {
           </div>
 
           {focusData && (
-            <div data-pdf-section="weekly-plan">
-              <WeeklyPlanningSection
+            <div data-pdf-section="monthly-plan">
+              <ReportPlanningSection
                 ref={monthlyPlanRef}
                 storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`}
                 key={`monthplan::${activeBrandId}::${focusMonth}`}
@@ -6270,7 +6259,7 @@ const shopeRealDailyMap = useMemo(() => {
             <CollapsibleSectionTitle className="mal-section-title">逐月業配廣告明細</CollapsibleSectionTitle>
             {sponsorMonthsWithData.map((m) => (
               <div key={m.monthKey} style={{ marginBottom: 22 }}>
-                <div className="mal-week-analysis-title">
+                <div className="mal-analysis-title">
                   {m.month}
                   <span className="mal-section-count">
                     (花費 {fmtMoney(m.spend, currency)}、轉單 {fmtInt(m.conversions)}、CPA {m.cpa !== null ? fmtMoney(m.cpa, currency) : "—"}、ROAS {m.roas !== null ? `${m.roas.toFixed(2)}x` : "—"})
@@ -6600,8 +6589,8 @@ const shopeRealDailyMap = useMemo(() => {
             )}
 
             {dailyMonthRecord && (
-              <div className="mal-week-analysis">
-                <div className="mal-week-analysis-title">基礎分析</div>
+              <div className="mal-analysis">
+                <div className="mal-analysis-title">基礎分析</div>
                 <ul>
                   <li>廣告費佔比 = 廣告費 ÷ 營收,反映這筆營收有多少比例被廣告成本吃掉,佔比越低代表帶量效率越好;佔比拉高不代表淨利潤會等比例下降,要看原本的毛利空間夠不夠厚。</li>
                   {dailyRatioStats.highestDay && (
@@ -6960,7 +6949,6 @@ class MalErrorBoundary extends React.Component {
       "發生當下的頁面(viewMode): " + debugState.viewMode + "\n" +
       "發生當下選中的品牌: " + debugState.activeBrandName + "(id: " + debugState.activeBrandId + ")\n" +
       "當下品牌總數: " + debugState.brandCount + "\n" +
-      "當下focusWeek: " + debugState.focusWeek + "\n" +
       "錯誤訊息(error.message): " + (error && error.message) + "\n" +
       "錯誤堆疊(error.stack):\n" + (error && error.stack) + "\n" +
       "元件堆疊(componentStack):\n" + (info && info.componentStack) + "\n" +
