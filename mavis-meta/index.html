@@ -2185,6 +2185,94 @@ function CrossCampaignCreativePanel({ currentRecord, cpaTarget = null, cpcTarget
   );
 }
 
+
+function TodayActionPlan({ decisions = [], currentRecord }) {
+  const [expanded, setExpanded] = useState(false);
+  const active = (decisions || []).filter((x) => x && x.ad && x.ad.active !== false);
+  if (!active.length) return null;
+
+  const labels = {
+    REDUCE: { icon: "🔴", title: "降量", detail: "降低預算 / 停低效" },
+    REFRESH: { icon: "🟠", title: "換素材", detail: "素材疲勞 / CTR 下滑" },
+    SCALE: { icon: "🟢", title: "加預算", detail: "單次建議 +10–15%" },
+    MONITOR: { icon: "🟡", title: "觀察", detail: "樣本不足 / 接近目標" },
+    KEEP: { icon: "✅", title: "維持", detail: "目前表現正常" },
+  };
+  const order = ["REDUCE", "REFRESH", "SCALE", "MONITOR", "KEEP"];
+  const counts = Object.fromEntries(order.map((code) => [code, active.filter((x) => x.decision.code === code).length]));
+  const urgent = active.filter((x) => ["REDUCE", "REFRESH", "SCALE"].includes(x.decision.code));
+  const visible = (expanded ? active : (urgent.length ? urgent : active)).slice(0, expanded ? 50 : 12);
+  const currency = (currentRecord && currentRecord.currency) || "TWD";
+
+  return (
+    <div className="mal-insight-box" style={{ marginBottom: 14, padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--rule-soft)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <div className="mal-insight-box-title">🚨 今日廣告怎麼調</div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 4 }}>
+              Shadow Mode · 只提供建議，不會自動修改預算、開關或 Campaign
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {order.map((code) => counts[code] > 0 && (
+              <span key={code} style={{ fontSize: 11.5, padding: "4px 8px", border: "1px solid var(--rule-soft)", borderRadius: 999, background: "var(--paper-raised)" }}>
+                {labels[code].icon} {labels[code].title} {counts[code]}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+        <table className="mal-table">
+          <thead>
+            <tr>
+              <th>優先動作</th><th>廣告</th><th>Campaign</th><th>花費</th><th>轉單</th><th>CPA</th><th>ROAS</th><th>理由</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map(({ ad, decision }, i) => {
+              const spend = Number(ad.spend || 0);
+              const conv = Number(ad.conversions || 0);
+              const revenue = Number(ad.revenue || 0);
+              const cpa = conv > 0 ? spend / conv : null;
+              const roas = spend > 0 ? revenue / spend : null;
+              const meta = labels[decision.code] || labels.MONITOR;
+              return (
+                <tr key={(ad.adId || ad.name || "ad") + "::" + i}>
+                  <td style={{ minWidth: 105 }}>
+                    <strong>{meta.icon} {meta.title}</strong>
+                    <div style={{ fontSize: 10.5, color: "var(--ink-soft)", marginTop: 2 }}>{meta.detail}</div>
+                  </td>
+                  <td style={{ minWidth: 180, fontWeight: 600 }}>{ad.name || "(未命名廣告)"}</td>
+                  <td style={{ minWidth: 180 }}>{ad.campaign || "—"}</td>
+                  <td>{fmtMoney(spend, currency)}</td>
+                  <td>{fmtInt(conv)}</td>
+                  <td>{cpa != null ? fmtMoney(cpa, currency) : "—"}</td>
+                  <td>{roas != null ? `${roas.toFixed(2)}x` : "—"}</td>
+                  <td style={{ minWidth: 230, whiteSpace: "normal", lineHeight: 1.45 }}>{decision.reason}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ padding: "10px 14px", borderTop: "1px solid var(--rule-soft)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>
+          {urgent.length ? `優先處理 ${urgent.length} 支；其餘維持 / 觀察。` : "目前沒有需要立即調整的廣告。"}
+        </span>
+        {active.length > 12 && (
+          <button className="mal-icon-btn" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? "收起" : `查看全部 ${active.length} 支`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cpaTarget=null,cpcTarget=null,monthlyBudget=null,periodType="week",periodLabel=""}){
   const [sectionCollapsed, setSectionCollapsed] = useState(true);
   const result=buildDecisionIntelligence(currentRecord,previousRecord,roasTarget,cpaTarget,monthlyBudget,periodType);
@@ -2216,7 +2304,8 @@ function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cp
           {metrics.map(([label,value,delta,invert])=><div className="mal-card" key={label}><div className="mal-card-label">{label}</div><div className="mal-card-value" style={{fontSize:22}}>{value}</div><div style={{fontSize:11.5}}>{previous?<><span style={{color:"var(--ink-soft)",marginRight:6}}>vs 前期</span><DeltaBadge value={delta} invert={invert}/></>:<span style={{color:"var(--ink-soft)"}}>前期無可比資料</span>}</div></div>)}
         </div>
         <div className="mal-insight-box" style={{marginBottom:14}}><div className="mal-insight-box-title">🚨 異常偵測</div>{anomalies.length?<ul>{anomalies.map((a,i)=><li key={i}><strong>{a.level==="red"?"🔴":"🟡"} {a.title}</strong> · {a.detail}</li>)}</ul>:<p style={{fontSize:13,color:"var(--ink-soft)"}}>目前沒有偵測到超出門檻的異常變化。</p>}</div>
-        <CrossCampaignCreativePanel
+                <TodayActionPlan decisions={decisions} currentRecord={currentRecord} />
+<CrossCampaignCreativePanel
           currentRecord={currentRecord}
           roasTarget={roasTarget}
           cpaTarget={cpaTarget}
