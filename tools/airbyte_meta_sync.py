@@ -844,7 +844,12 @@ def apply_day_delta_to_month(
         for field in NUMERIC_AD_FIELDS:
             target[field] = as_float(target.get(field)) + as_float(row.get(field))
         for field, value in row.items():
-            if field not in NUMERIC_AD_FIELDS and value not in (None, ""):
+            if field in NUMERIC_AD_FIELDS or field == "reach":
+                continue
+            # Reconciliation changes completed-day metrics, not current delivery state or
+            # month-level descriptive metadata. Preserve existing values; only fill blanks
+            # (newly discovered ads still receive their metadata).
+            if value not in (None, "") and target.get(field) in (None, ""):
                 target[field] = value
 
     raw_ads = [
