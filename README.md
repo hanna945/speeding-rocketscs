@@ -107,29 +107,28 @@ Cloudflare KV
 
 Airbyte 會呼叫受保護的 `/api/airbyte/brands`，從目前的 `TEAM_CREDENTIALS` 與共用 `meta-api-brands` 動態取得這個登入身份能看的品牌。現在品牌報表有 7 個品牌，但程式不會把數字 7 寫死；未來新增第 8 個品牌，只要加入既有品牌權限/清單就會自動納入。
 
-### GitHub 需要新增 Repository Secrets
+### GitHub 只需要 1 個 Repository Secret
 
 到 GitHub Repo → Settings → Secrets and variables → Actions → New repository secret：
 
 1. `META_SYSTEM_USER_TOKEN`
    - Meta System User 的長效 Access Token。
    - System User 必須被指派到要同步的 Meta 廣告帳號。
-   - Airbyte 官方建議 server-to-server 使用 System User Token。
 
-2. `REPORT_TEAM_KEYS_JSON`（多部門建議）
-   - **不需要一組能看全部品牌的萬用密碼。**
-   - 把各部門目前已存在的 TEAM_CREDENTIALS key 放成 JSON 陣列，例如：
-     `["品牌A部的key","品牌B部的key","品牌C部的key"]`
-   - Airbyte 會分別用每組 key 取得該部門能看的品牌，再依品牌 ID 去重。
-   - 寫回 Cloudflare KV 時也會沿用該品牌所屬部門的 key，因此不會繞過現有權限隔離。
+Airbyte **不再需要任何部門密碼**，也不需要 `REPORT_TEAM_KEY` / `REPORT_TEAM_KEYS_JSON`。
 
-如果真的有一組單一 key 可以看全部品牌，也仍相容舊的 `REPORT_TEAM_KEY`；但多部門環境優先使用 `REPORT_TEAM_KEYS_JSON`。
+GitHub Actions 會透過 OIDC 取得短效機器身分，Cloudflare 只接受：
+- repository：`hanna945/speeding-rocketscs`
+- branch：`main`
+- workflow：`.github/workflows/airbyte-meta-sync.yml`
+- audience：`speedingscs-airbyte`
+
+這張身分票是短效的，不能拿來登入品牌報表前台。前台的品牌A部 / 品牌B部 / 品牌C部密碼與使用者權限維持原樣。
 
 可選 GitHub Repository Variable：
-
 - `REPORT_BASE_URL`：若未設定，預設使用 `https://speedingscs.pages.dev`。
 
-Secrets 沒有設定完成以前，排程會顯示「installed but dormant」並正常結束，不會破壞既有報表、也不會打 Meta API。啟用條件是 `META_SYSTEM_USER_TOKEN` 加上 `REPORT_TEAM_KEYS_JSON`（或舊的單一 `REPORT_TEAM_KEY`）。
+`META_SYSTEM_USER_TOKEN` 尚未設定以前，排程會顯示 dormant 並正常結束，不會打 Meta API，也不會覆寫既有報表資料。
 
 ### 同步策略
 
