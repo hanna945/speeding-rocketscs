@@ -3483,18 +3483,11 @@ function MetaAdsLedger() {
         if (loadedToken) setApiToken(loadedToken);
       }
 
-      const autoSyncOn = autoSyncRes && autoSyncRes.value === "1";
-      if (autoSyncOn) setAutoSyncEnabled(true);
-
-      // 所有設定都載入完成後,才決定要不要自動同步——避免品牌清單/權杖還沒載完就搶跑,
-      // 這裡直接用剛讀到的資料(而不是 apiAccountId/brands 這兩個 state),因為 setState 不會馬上生效。
-      if (autoSyncOn && loadedToken.trim() && !autoSyncRanRef.current) {
-        autoSyncRanRef.current = true;
-        const loadedBrands = brandsRes && brandsRes.value ? (() => {
-          try { return JSON.parse(brandsRes.value).filter((b) => !LEGACY_DEFAULT_BRAND_IDS.includes(b.id)); } catch { return []; }
-        })() : [];
-        const loadedAccountId = (accountIdRes && accountIdRes.value) || "";
-        runAutoSyncWith(loadedToken, loadedBrands, loadedAccountId);
+      // Meta 自動同步已由 GitHub Actions 中央排程接管。
+      // 舊的「開頁自動抓 Meta」永久關閉，避免每台瀏覽器重複消耗同一顆 System User Token / rate limit。
+      setAutoSyncEnabled(false);
+      if (autoSyncRes && autoSyncRes.value === "1") {
+        storage.set("meta-api-autosync", "0").catch(() => {});
       }
     }
     loadInitialConfig();
@@ -5386,9 +5379,10 @@ function MetaAdsLedger() {
     }
   }
 
-  async function toggleAutoSync(checked) {
-    setAutoSyncEnabled(checked);
-    await storage.set("meta-api-autosync", checked ? "1" : "0").catch(() => {});
+  async function toggleAutoSync() {
+    setAutoSyncEnabled(false);
+    await storage.set("meta-api-autosync", "0").catch(() => {});
+    setApiNotice("Meta 自動同步已由中央排程接管；此頁只讀取已同步資料。手動抓取功能保留作緊急備援。");
   }
 
   // 開啟網頁時的自動同步:檢查上週(週一~週日)跟上個月的資料是否已經存在,
