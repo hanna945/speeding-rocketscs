@@ -5734,10 +5734,10 @@ const shopeRealDailyMap = useMemo(() => {
             {activeBrandId && (
               <button className="mal-btn" onClick={() => setShowLedgerModal(true)}><span className="mal-btn-emoji">📥</span> 匯入後台業績</button>
             )}
-            {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
+            {sortedKeys.length > 0 && (
               <button className="mal-btn mal-print-btn" onClick={handlePrintClick}><span className="mal-btn-emoji">🖨</span> 列印</button>
             )}
-            {(sortedKeys.length > 0 || sortedWeekKeys.length > 0) && (
+            {sortedKeys.length > 0 && (
               <button className="mal-btn mal-print-btn" onClick={() => setShowPdfSectionModal(true)}><span className="mal-btn-emoji">📄</span> 匯出 PDF</button>
             )}
           </div>
