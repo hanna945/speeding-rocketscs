@@ -508,6 +508,13 @@
   .mal-threshold-row + .mal-threshold-row { border-left: 1px solid var(--rule-soft); }
 
   .mal-viewmode-switch { gap: 6px; padding: 6px; margin: 0 0 22px; border-bottom: 1px solid var(--rule); }
+  .mal-report-navigation { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .mal-report-navigation-group { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .mal-report-navigation-divider { width: 1px; height: 28px; background: var(--rule); margin: 0 4px; }
+  .mal-report-navigation-shortcuts { margin-left: auto; }
+  .mal-nav-jump-btn { color: var(--blue-deep); }
+  .mal-nav-jump-btn:hover { background: var(--paper); }
+  .mal-report-anchor { scroll-margin-top: 18px; }
   .mal-viewmode-btn {
     flex: 0 0 auto; padding: 10px 15px; border: 0; border-radius: 10px; color: var(--ink-secondary);
   }
@@ -592,6 +599,10 @@
     .mal-card { padding: 16px 14px; border-radius: 13px; }
     .mal-card-value { font-size: 23px; }
     .mal-viewmode-switch { overflow-x: auto; flex-wrap: nowrap; }
+    .mal-report-navigation { display: flex; flex-wrap: nowrap; justify-content: flex-start; }
+    .mal-report-navigation-group { flex-wrap: nowrap; flex: 0 0 auto; }
+    .mal-report-navigation-divider { flex: 0 0 1px; }
+    .mal-report-navigation-shortcuts { margin-left: 0; }
     .mal-viewmode-btn { padding: 9px 12px; }
     .mal-section-title { font-size: 18px; margin-top: 30px; }
   }
@@ -2172,7 +2183,7 @@ function CrossCampaignCreativePanel({ currentRecord, cpaTarget = null, cpcTarget
 
   const available = ["cpa", "cpc", "cpm", "other"].filter((type) => counts[type] > 0);
   const [strategyType, setStrategyType] = useState("cpa");
-  const [sectionCollapsed, setSectionCollapsed] = useState(true);
+  const [sectionCollapsed, setSectionCollapsed] = useState(false);
   useEffect(() => {
     if (!available.includes(strategyType)) setStrategyType(available[0] || "cpa");
   }, [currentRecord, cpaTarget, cpcTarget, counts.cpa, counts.cpc, counts.cpm, counts.other]);
@@ -2395,7 +2406,7 @@ function TodayActionPlan({ decisions = [], currentRecord }) {
 }
 
 function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cpaTarget=null,cpcTarget=null,monthlyBudget=null,periodType="week",periodLabel=""}){
-  const [sectionCollapsed, setSectionCollapsed] = useState(true);
+  const [sectionCollapsed, setSectionCollapsed] = useState(false);
   const result=buildDecisionIntelligence(currentRecord,previousRecord,roasTarget,cpaTarget,monthlyBudget,periodType);
   if(!result) return null;
   const {current,previous,deltas,anomalies,decisions,score}=result;
@@ -2426,13 +2437,6 @@ function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cp
         </div>
         <div className="mal-insight-box" style={{marginBottom:14}}><div className="mal-insight-box-title">🚨 異常偵測</div>{anomalies.length?<ul>{anomalies.map((a,i)=><li key={i}><strong>{a.level==="red"?"🔴":"🟡"} {a.title}</strong> · {a.detail}</li>)}</ul>:<p style={{fontSize:13,color:"var(--ink-soft)"}}>目前沒有偵測到超出門檻的異常變化。</p>}</div>
                 <TodayActionPlan decisions={decisions} currentRecord={currentRecord} />
-<CrossCampaignCreativePanel
-          currentRecord={currentRecord}
-          roasTarget={roasTarget}
-          cpaTarget={cpaTarget}
-          cpcTarget={cpcTarget}
-          compact={true}
-        />
       </div>
     )}
   </div>;
@@ -2567,7 +2571,7 @@ function MetaAdsOpenSourceSuite({
   periodType = "week",
   periodLabel = ""
 }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   if (!currentRecord) return null;
   const diag = buildMetaSuiteDiagnostics(currentRecord, previousRecord, roasTarget, cpaTarget, periodType);
   const urgent = diag.findings.filter((x) => x.level === "red" || x.level === "orange").length;
@@ -2822,7 +2826,7 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
     ...rows.filter((r) => r.isChannel),
     ...channelRevenueOnlyRows,
   ].sort((a, b) => b.revenue - a.revenue);
-  const [channelsCollapsed, setChannelsCollapsed] = useState(true);
+  const [channelsCollapsed, setChannelsCollapsed] = useState(false);
 
   return (
     <div className="mal-ops-summary">
@@ -3278,7 +3282,7 @@ function DonutChart({ data, size = 176, thickness = 30 }) {
 // ---------- main app ----------
 
 function CollapsibleSectionTitle({ children, className = "", style, ...props }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -5126,7 +5130,7 @@ function MetaAdsLedger() {
     const brandPageId = derivePageIdFromAds(ads);
     // 預設先把每一組收起來(不然「成效好」動輒上百支廣告,頁面會很長),
     // 點卡片跳過去的時候,才把該組展開,同時捲動過去。
-    const [collapsed, setCollapsed] = useState({ good: true, normal: true, poor: true, learning: true });
+    const [collapsed, setCollapsed] = useState({ good: false, normal: false, poor: false, learning: false });
 
     useEffect(() => {
       function handleExpandAll() {
@@ -5916,6 +5920,23 @@ function MetaAdsLedger() {
     return (couponQueryData.discountSummary || []).find((d) => String(d.code).toUpperCase() === target) || null;
   }, [couponFocusCode, couponQueryData]);
 
+  function jumpToMonthlySection(sectionId) {
+    const tryScroll = (attempt = 0) => {
+      const el = document.getElementById(sectionId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      if (attempt < 8) setTimeout(() => tryScroll(attempt + 1), 80);
+    };
+    if (viewMode !== "month") {
+      setViewMode("month");
+      setTimeout(() => tryScroll(0), 0);
+    } else {
+      tryScroll(0);
+    }
+  }
+
   // ---------- 密碼閘:還沒驗證通過就不顯示任何報表內容 ----------
   if (isUnlocked === null) {
     return null; // 還在檢查瀏覽器有沒有記住解鎖狀態,先不顯示任何畫面,避免閃一下
@@ -6050,24 +6071,33 @@ function MetaAdsLedger() {
       {apiError && <div className="mal-error">⚠ {apiError}</div>}
       {metaUpdateError && <div className="mal-error">⚠ {metaUpdateError}</div>}
 
-      <div className="mal-viewmode-switch">
-        <button className={`mal-viewmode-btn ${viewMode === "week" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("week")}>
-          🗓 每週報表
-        </button>
-        <button className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("month")}>
-          📅 每月報表
-        </button>
-        <button className={`mal-viewmode-btn ${viewMode === "daily" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("daily")}>
-          📆 每日報表
-        </button>
-        <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
-          🎤 業配分析
-        </button>
-        {activeBrandId === OFFICIAL_SITE_BRAND_ID && (
-          <button className={`mal-viewmode-btn ${viewMode === "coupon" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("coupon")}>
-            🎟 折價券查詢
+      <div className="mal-viewmode-switch mal-report-navigation">
+        <div className="mal-report-navigation-group">
+          <button className={`mal-viewmode-btn ${viewMode === "week" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("week")}>
+            🗓 每週報表
           </button>
-        )}
+          <button className={`mal-viewmode-btn ${viewMode === "month" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("month")}>
+            📅 每月報表
+          </button>
+          <button className={`mal-viewmode-btn ${viewMode === "daily" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("daily")}>
+            📆 每日報表
+          </button>
+          <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
+            🎤 業配分析
+          </button>
+          {activeBrandId === OFFICIAL_SITE_BRAND_ID && (
+            <button className={`mal-viewmode-btn ${viewMode === "coupon" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("coupon")}>
+              🎟 折價券查詢
+            </button>
+          )}
+        </div>
+        <div className="mal-report-navigation-divider" aria-hidden="true"></div>
+        <div className="mal-report-navigation-group mal-report-navigation-shortcuts">
+          <button className="mal-viewmode-btn mal-nav-jump-btn" onClick={() => jumpToMonthlySection("report-decision")}>🧠 決策分析</button>
+          <button className="mal-viewmode-btn mal-nav-jump-btn" onClick={() => jumpToMonthlySection("report-performance")}>📊 投放成效</button>
+          <button className="mal-viewmode-btn mal-nav-jump-btn" onClick={() => jumpToMonthlySection("report-ads")}>🎯 廣告分析</button>
+          <button className="mal-viewmode-btn mal-nav-jump-btn" onClick={() => jumpToMonthlySection("report-reconciliation")}>🧾 業績核對</button>
+        </div>
       </div>
 
       {viewMode === "adjust" && (
@@ -6260,7 +6290,7 @@ function MetaAdsLedger() {
           )}
 
           {focusData && (
-            <>
+            <div id="report-decision" className="mal-report-anchor">
               <DecisionIntelligencePanel
                 currentRecord={focusData}
                 previousRecord={prevData}
@@ -6279,9 +6309,10 @@ function MetaAdsLedger() {
                 periodType="month"
                 periodLabel={monthLabel(focusMonth)}
               />
-            </>
+            </div>
           )}
 
+          <div id="report-performance" className="mal-report-anchor">
           {focusData && (
             <AdPerformanceReport
               key={`${activeBrandId}::${focusMonth}`}
@@ -6306,7 +6337,9 @@ function MetaAdsLedger() {
           {focusData && <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />}
           {focusData && <AdSetAnalysis ads={focusData.ads} currencyCode={focusData.currency} />}
           {focusData && <PerformanceBreakdown ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)} currencyCode={focusData.currency} accountId={focusData.accountId} />}
+          </div>
 
+          <div id="report-ads" className="mal-report-anchor">
           {focusData && spendFilteredAds.length > 0 && (
             <>
               <div className="mal-chart-box" style={{ marginBottom: 18 }}>
@@ -6421,6 +6454,9 @@ function MetaAdsLedger() {
             </>
           )}
 
+          </div>
+
+          <div id="report-reconciliation" className="mal-report-anchor">
           {focusData && (
             activeBrandId === OFFICIAL_SITE_BRAND_ID ? (
               <>
@@ -6478,6 +6514,7 @@ function MetaAdsLedger() {
                 })}
               </tbody>
             </table>
+          </div>
           </div>
         </>
       ))}
