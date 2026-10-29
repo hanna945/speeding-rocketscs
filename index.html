@@ -1517,6 +1517,50 @@
     }
   }
 
+
+  /* Presentation fullscreen link-return helper */
+  .mal-presentation-resume-overlay {
+    position:absolute;
+    inset:0;
+    z-index:20;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(47,36,29,.34);
+    backdrop-filter:blur(8px);
+  }
+  .mal-presentation-resume-card {
+    width:min(480px,calc(100% - 48px));
+    padding:28px 30px;
+    border-radius:22px;
+    background:#fbf7f0;
+    border:1px solid rgba(137,113,90,.20);
+    box-shadow:0 24px 70px rgba(53,40,31,.22);
+    text-align:center;
+    color:#3b2f27;
+  }
+  .mal-presentation-resume-card h3 {
+    margin:0;
+    font-family:'Noto Serif TC',serif;
+    font-size:28px;
+    font-weight:700;
+  }
+  .mal-presentation-resume-card p {
+    margin:10px 0 18px;
+    font-size:15px;
+    line-height:1.6;
+    color:#75675b;
+  }
+  .mal-presentation-resume-actions {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+  }
+  .mal-presentation-resume-actions .mal-btn {
+    min-width:132px;
+  }
+
 </style>
 </head>
 <body>
@@ -4418,7 +4462,9 @@ function MonthlyPresentation({
 }) {
   const [slideIndex, setSlideIndex] = useState(0);
   const [planState, setPlanState] = useState({ current: null, next: null, loading: true });
+  const [resumeFullscreenPending, setResumeFullscreenPending] = useState(false);
   const stageRef = useRef(null);
+  const fullscreenLinkPendingRef = useRef(false);
   const safeRecord = currentRecord || { ads: [], spend: 0, revenue: 0, conversions: 0, currency: "TWD" };
   const currencyCode = safeRecord.currency || "TWD";
   const ads = Array.isArray(safeRecord.ads) ? safeRecord.ads : [];
@@ -5075,9 +5121,50 @@ function MonthlyPresentation({
     }
   }, [slideIndex]);
 
+  useEffect(() => {
+    const maybeOfferResume = () => {
+      if (
+        fullscreenLinkPendingRef.current &&
+        !document.fullscreenElement &&
+        document.visibilityState !== "hidden"
+      ) {
+        setResumeFullscreenPending(true);
+      }
+    };
+    document.addEventListener("fullscreenchange", maybeOfferResume);
+    document.addEventListener("visibilitychange", maybeOfferResume);
+    window.addEventListener("focus", maybeOfferResume);
+    return () => {
+      document.removeEventListener("fullscreenchange", maybeOfferResume);
+      document.removeEventListener("visibilitychange", maybeOfferResume);
+      window.removeEventListener("focus", maybeOfferResume);
+    };
+  }, []);
+
+  function handlePresentationLinkCapture(e) {
+    const target = e && e.target;
+    const anchor = target && target.closest ? target.closest("a[href]") : null;
+    if (!anchor) return;
+    if (document.fullscreenElement) fullscreenLinkPendingRef.current = true;
+  }
+
+  async function resumePresentationFullscreen() {
+    try {
+      if (stageRef.current && stageRef.current.requestFullscreen) {
+        await stageRef.current.requestFullscreen();
+        fullscreenLinkPendingRef.current = false;
+        setResumeFullscreenPending(false);
+      }
+    } catch {}
+  }
+
   async function toggleFullscreen(){
     try{
-      if(!document.fullscreenElement&&stageRef.current&&stageRef.current.requestFullscreen) await stageRef.current.requestFullscreen();
+      if(!document.fullscreenElement&&stageRef.current&&stageRef.current.requestFullscreen) {
+        await stageRef.current.requestFullscreen();
+        fullscreenLinkPendingRef.current = false;
+        setResumeFullscreenPending(false);
+      }
       else if(document.fullscreenElement&&document.exitFullscreen) await document.exitFullscreen();
     }catch{}
   }
@@ -5096,8 +5183,20 @@ function MonthlyPresentation({
           <button className="mal-btn mal-btn-primary" onClick={toggleFullscreen}>全螢幕播放</button>
         </div>
       </div>
-      <div className="mal-presentation-stage" ref={stageRef}>
+      <div className="mal-presentation-stage" ref={stageRef} onClickCapture={handlePresentationLinkCapture}>
         {slides[slideIndex] ? React.cloneElement(slides[slideIndex].node, { key: slides[slideIndex].key }) : null}
+        {resumeFullscreenPending ? (
+          <div className="mal-presentation-resume-overlay">
+            <div className="mal-presentation-resume-card">
+              <h3>回到簡報</h3>
+              <p>你剛剛開啟了外部連結。瀏覽器會因此退出全螢幕，點一下即可回到剛才的投影片繼續報告。</p>
+              <div className="mal-presentation-resume-actions">
+                <button className="mal-btn mal-btn-primary" onClick={resumePresentationFullscreen}>恢復全螢幕</button>
+                <button className="mal-btn" onClick={()=>{ fullscreenLinkPendingRef.current=false; setResumeFullscreenPending(false); }}>先不用</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className="mal-presentation-controls">
           <button onClick={()=>setSlideIndex((v)=>Math.max(0,v-1))} disabled={slideIndex===0} aria-label="上一頁">‹</button>
           <div className="mal-presentation-dot-row">{slides.map((slide,i)=><button key={slide.key} className={"mal-presentation-dot "+(i===slideIndex?"active":"")} onClick={()=>setSlideIndex(i)} aria-label={"第 "+(i+1)+" 頁"}/>)}</div>
