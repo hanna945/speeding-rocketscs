@@ -1348,9 +1348,6 @@ function sumShoplineOrders(orders) {
 function sortCodesChannelFirst(codes) {
   return splitBusinessCodes(codes);
 }
-function fmtDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 // 把 Meta 回傳的投放起始時間(ISO 字串,例如 "2026-07-16T00:00:00+0800")格式化成「7/16」這種簡短格式。
 // 直接用字串前面的年月日去解析,不透過 Date 物件轉時區,避免因為瀏覽器時區不同而讓日期跑掉一天。
@@ -5476,11 +5473,7 @@ function MetaAdsLedger() {
     return "。請確認權杖沒過期、廣告帳號 ID 正確,且已授權 ads_read 權限。";
   }
 
-  function parseDateStr(dateStr) {
-    const [y, m, d] = dateStr.split("-").map(Number);
-    return { y, m, d };
-  }
-  // 高量帳號(例如 H&J)整月直接做 level=ad Insights 容易讓 Meta 查詢過重。
+    // 高量帳號(例如 H&J)整月直接做 level=ad Insights 容易讓 Meta 查詢過重。
   // 改成最多 4 天一段，再把「可加總」指標依 ad_id 合併；31 天月份最多 8 段，
   // 仍遠低於每小時呼叫上限，也比整月單次查詢穩定。Reach 不能跨區間相加，下面會另外用
   // 一次輕量的 full-range reach 查詢覆蓋，避免 Frequency 被日期切段扭曲。
