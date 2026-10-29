@@ -7480,7 +7480,7 @@ async function toggleRememberToken(checked) {
     setApiNotice(null);
     setApiLoading(true);
     setCentralSyncRunUrl("");
-    const requestId = "manual-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    let requestId = "manual-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
     setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "running", message: "正在送出同步要求…" }]);
 
     try {
@@ -7491,14 +7491,12 @@ async function toggleRememberToken(checked) {
       });
       const startJson = await startRes.json().catch(() => ({}));
       if (!startRes.ok || !startJson.ok) {
-        if (startJson.error === "github_workflow_token_not_configured") {
-          throw new Error("尚未設定中央同步權限 GITHUB_WORKFLOW_TOKEN");
-        }
         if (startRes.status === 401) throw new Error("部門登入已失效，請先重新登入");
         throw new Error(startJson.message || startJson.error || ("HTTP " + startRes.status));
       }
 
-      setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "running", message: "已排入中央同步佇列" }]);
+      requestId = startJson.requestId || requestId;
+      setBatchProgress([{ id: "airbyte-all", name: "Airbyte 全品牌同步", status: "running", message: startJson.reused ? "已有同步任務進行中，接續查看狀態…" : "已排入中央同步佇列，等待系統接手…" }]);
 
       const deadline = Date.now() + 55 * 60 * 1000;
       let found = false;
@@ -8740,13 +8738,13 @@ const shopeRealDailyMap = useMemo(() => {
           <div className="mal-modal mal-modal-small">
             <h3>🔄 立即同步 Meta</h3>
             <p className="mal-modal-sub">
-              這個按鈕會透過中央 Airbyte 更新報表名單內的全部品牌，不需要在瀏覽器輸入 Meta Access Token，也不需要逐一勾選品牌。
+              這個按鈕會透過中央 Airbyte 更新報表名單內的全部品牌，不需要 Meta Access Token、GitHub Token，也不需要逐一勾選品牌。
             </p>
 
             <div style={{ border:"1px solid var(--rule)", borderRadius:14, padding:"14px 16px", background:"var(--paper-soft)", marginBottom:14 }}>
               <div style={{ fontSize:13.5, fontWeight:700, marginBottom:7 }}>同步方式</div>
               <div style={{ fontSize:12.5, lineHeight:1.7, color:"var(--ink-secondary)" }}>
-                手動同步：按下方按鈕立即觸發 Airbyte 全品牌更新。<br/>
+                手動同步：按下方按鈕送出全品牌更新，通常會在 5 分鐘內由 GitHub Actions 接手。<br/>
                 自動同步：系統仍會每天 02:23、08:23、14:23、20:23 自動執行。
               </div>
             </div>
