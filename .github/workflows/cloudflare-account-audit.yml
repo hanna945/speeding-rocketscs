@@ -115,6 +115,34 @@ jobs:
           ' | sort -k2
 
           echo
+          echo "=== KV KEY COUNTS ==="
+          for ns in d283e1d9fa8f4ec1b1a64f2818649cb0 d1c488eadc704d319ee762138f718b08; do
+            echo "--- $ns ---"
+            cursor=""
+            total=0
+            pages=0
+            while :; do
+              if [ -n "$cursor" ]; then
+                keys_json="$(cf_get "/storage/kv/namespaces/$ns/keys?limit=1000&cursor=$cursor")"
+              else
+                keys_json="$(cf_get "/storage/kv/namespaces/$ns/keys?limit=1000")"
+              fi
+              if ! echo "$keys_json" | show_error_or_pass; then
+                break
+              fi
+              count="$(echo "$keys_json" | jq '.result | length')"
+              total=$((total + count))
+              pages=$((pages + 1))
+              if [ "$pages" -eq 1 ]; then
+                echo "$keys_json" | jq -r '.result[0:25][]?.name'
+              fi
+              cursor="$(echo "$keys_json" | jq -r '.result_info.cursor // empty')"
+              [ -n "$cursor" ] || break
+            done
+            echo "TOTAL_KEYS=$total"
+          done
+
+          echo
           echo "=== D1 DATABASES ==="
           d1_json="$(cf_get "/d1/database?per_page=100")"
           echo "$d1_json" | show_error_or_pass && echo "$d1_json" | jq -r '
