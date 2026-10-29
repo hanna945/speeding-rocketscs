@@ -474,6 +474,7 @@ async def fetch_daily_insights(
     since: date,
     until: date,
     active_campaign_ids: set[str] | None = None,
+    minimal: bool = False,
 ) -> list[dict[str, Any]]:
     if since > until:
         return []
@@ -506,7 +507,13 @@ async def fetch_daily_insights(
                 chunk = await paged(
                     connector.ads_insights.list,
                     account_id=account_id,
-                    fields="account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,clicks,impressions,reach,spend,date_start,date_stop,actions,action_values",
+                    fields=(
+                        "account_id,campaign_id,adset_id,ad_id,clicks,impressions,reach,spend,"
+                        "date_start,date_stop,actions,action_values"
+                        if minimal else
+                        "account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,"
+                        "ad_id,ad_name,clicks,impressions,reach,spend,date_start,date_stop,actions,action_values"
+                    ),
                     time_range=json.dumps({"since": cursor.isoformat(), "until": chunk_until.isoformat()}),
                     level="ad",
                     time_increment="1",
@@ -962,6 +969,7 @@ async def reconcile_recent_attribution_airbyte(
             day,
             day,
             active_campaign_ids=None,
+            minimal=True,
         )
         cache["days"][day.isoformat()] = fresh_rows
         cache["updatedAt"] = datetime.now(timezone.utc).isoformat()
@@ -1021,6 +1029,7 @@ async def reconcile_recent_attribution_airbyte(
             day,
             day,
             active_campaign_ids=None,
+            minimal=True,
         )
 
         legacy = legacy_ad_meta(month_record)
