@@ -109,6 +109,16 @@ jobs:
           done < <(echo "$workers_json" | jq -r '.result[]?.id // .result[]?.name // empty' | sort)
 
           echo
+          echo "=== RETAINED WORKER SOURCE HINTS ==="
+          for script in brand-report-cron-sync shopline-proxy; do
+            echo "--- $script ---"
+            curl -sS "$api/workers/scripts/$script" -H "Authorization: Bearer $CF_API_TOKEN" |
+              tr '\r' '\n' |
+              grep -E -i 'scheduled|event\.cron|controller\.cron|shopline|google|meta|openai|REPORT_KV|/api/(orders|meta|img)' |
+              head -n 160 || true
+          done
+
+          echo
           echo "=== KV NAMESPACES ==="
           kv_json="$(cf_get "/storage/kv/namespaces?per_page=100")"
           echo "$kv_json" | show_error_or_pass && echo "$kv_json" | jq -r '
