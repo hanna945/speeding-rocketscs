@@ -8,6 +8,7 @@ on:
       - "tools/airbyte_meta_sync.py"
       - "functions/api/airbyte/**"
       - "functions/_shared/auth.js"
+      - "functions/_shared/githubOidc.js"
       - ".github/workflows/airbyte-meta-sync.yml"
   schedule:
     - cron: "23 */6 * * *"
@@ -24,6 +25,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: airbyte-meta-central-sync
@@ -46,20 +48,20 @@ jobs:
         run: |
           python -m py_compile tools/airbyte_meta_sync.py
           node --check functions/api/airbyte/brands.js
+          node --check functions/_shared/githubOidc.js
+          node --check 'functions/api/airbyte/kv/item/[key].js'
 
-      - name: Check whether central sync secrets are configured
+      - name: Check whether Meta machine token is configured
         id: configured
         shell: bash
         env:
           META_SYSTEM_USER_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
-          REPORT_TEAM_KEY: ${{ secrets.REPORT_TEAM_KEY }}
-          REPORT_TEAM_KEYS_JSON: ${{ secrets.REPORT_TEAM_KEYS_JSON }}
         run: |
-          if [ -n "$META_SYSTEM_USER_TOKEN" ] && { [ -n "$REPORT_TEAM_KEYS_JSON" ] || [ -n "$REPORT_TEAM_KEY" ]; }; then
+          if [ -n "$META_SYSTEM_USER_TOKEN" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Airbyte sync is installed but dormant. Add META_SYSTEM_USER_TOKEN plus REPORT_TEAM_KEYS_JSON (preferred) or REPORT_TEAM_KEY."
+            echo "Airbyte sync is installed but dormant. Add META_SYSTEM_USER_TOKEN to activate it."
           fi
 
       - name: Install Airbyte Agent SDK
@@ -70,8 +72,6 @@ jobs:
         if: steps.configured.outputs.ready == 'true'
         env:
           META_SYSTEM_USER_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
-          REPORT_TEAM_KEY: ${{ secrets.REPORT_TEAM_KEY }}
-          REPORT_TEAM_KEYS_JSON: ${{ secrets.REPORT_TEAM_KEYS_JSON }}
           REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
         run: |
           python tools/airbyte_meta_sync.py             --lookback-days 8             --metadata-max-age-hours 24             --brand-id "${{ github.event.inputs.brand_id || '' }}"             --backfill-days "${{ github.event.inputs.backfill_days || '0' }}"
