@@ -100,6 +100,29 @@
   .mal-empty { border: 1.5px dashed var(--rule); border-radius: 6px; padding: 56px 24px; text-align: center; background: var(--paper-raised); }
   .mal-plan-savestatus { font-family: 'Noto Sans TC', sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
   .mal-plan-savestatus-error { color: var(--red); font-weight: 700; }
+  .mal-plan-load-error { background: #F3E4E9; border: 1px solid #E3C3D0; border-radius: 5px; padding: 14px 16px; margin-top: 20px; color: var(--red); font-size: 13px; line-height: 1.6; }
+  .mal-plan-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 32px 0 16px; flex-wrap: wrap; }
+  .mal-plan-title-row .mal-section-title { margin: 0; }
+  .mal-plan-block { margin-bottom: 24px; }
+  .mal-plan-block-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--blue-deep, var(--blue)); }
+  .mal-plan-block-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .mal-plan-block-header .mal-plan-block-title { margin-bottom: 0; }
+  .mal-plan-input-category { width: 76px; flex-shrink: 0; text-align: center; }
+  .mal-plan-ai-error { font-size: 12.5px; color: var(--red); background: #F3E4E9; border-radius: 5px; padding: 8px 12px; margin-bottom: 10px; }
+  .mal-plan-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 5px; padding: 14px 16px; margin-bottom: 10px; }
+  .mal-plan-card-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .mal-plan-index { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: var(--ink-soft); flex-shrink: 0; width: 20px; }
+  .mal-plan-input { font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); color: var(--ink); }
+  .mal-plan-input-title { flex: 1; font-weight: 600; }
+  .mal-plan-select { font-family: 'Noto Sans TC', sans-serif; font-size: 12.5px; padding: 7px 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); color: var(--ink); flex-shrink: 0; }
+  .mal-plan-remove { flex-shrink: 0; width: 26px; height: 26px; border-radius: 4px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; font-size: 12px; }
+  .mal-plan-remove:hover { background: #F3E4E9; border-color: var(--red); color: var(--red); }
+  .mal-plan-card-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 8px; }
+  .mal-plan-textarea { width: 100%; font-family: 'Noto Sans TC', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); color: var(--ink); resize: vertical; box-sizing: border-box; line-height: 1.6; }
+  @media (max-width: 560px) {
+    .mal-plan-card-row { flex-wrap: wrap; }
+    .mal-plan-input-title { width: 100%; order: -1; margin-bottom: 4px; }
+  }
   .mal-empty p { color: var(--ink-soft); font-size: 14px; max-width: 440px; margin: 10px auto 20px; line-height: 1.6; }
   .mal-tabs { display: flex; gap: 22px; overflow-x: auto; padding-bottom: 0; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
   .mal-brand-switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -2400,7 +2423,7 @@ function TodayActionPlan({ decisions = [], currentRecord }) {
   );
 }
 
-function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cpaTarget=null,cpcTarget=null,monthlyBudget=null,periodType="week",periodLabel=""}){
+function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cpaTarget=null,cpcTarget=null,monthlyBudget=null,periodType="week",periodLabel="",collapsible=true}){
   const [sectionCollapsed, setSectionCollapsed] = useState(false);
   const result=buildDecisionIntelligence(currentRecord,previousRecord,roasTarget,cpaTarget,monthlyBudget,periodType);
   if(!result) return null;
@@ -2414,17 +2437,21 @@ function DecisionIntelligencePanel({currentRecord,previousRecord,roasTarget=3,cp
     ["頻率",current.frequency!=null?current.frequency.toFixed(2):"—",deltas.frequency,true],
   ];
   return <div style={{margin:"22px 0 26px"}}>
-    <h2
-      className="mal-section-title mal-major-section-title"
-      onClick={() => setSectionCollapsed((v) => !v)}
-      role="button"
-      tabIndex={0}
-      aria-expanded={!sectionCollapsed}
-    >
-      決策分析{periodLabel?` · ${periodLabel}`:""}
-      <span className="mal-major-section-toggle" aria-hidden="true">{sectionCollapsed ? "＋" : "−"}</span>
-    </h2>
-    {!sectionCollapsed && (
+    {collapsible ? (
+      <h2
+        className="mal-section-title mal-major-section-title"
+        onClick={() => setSectionCollapsed((v) => !v)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={!sectionCollapsed}
+      >
+        決策分析{periodLabel?` · ${periodLabel}`:""}
+        <span className="mal-major-section-toggle" aria-hidden="true">{sectionCollapsed ? "＋" : "−"}</span>
+      </h2>
+    ) : (
+      <StaticSectionTitle className="mal-section-title">決策分析{periodLabel?` · ${periodLabel}`:""}</StaticSectionTitle>
+    )}
+    {(!collapsible || !sectionCollapsed) && (
       <div className="mal-owned-collapse-body">
         <div className="mal-cards" style={{marginBottom:14}}>
           <div className="mal-card"><div className="mal-card-label">投放健康度</div><div className="mal-card-value">{score}</div><div style={{fontSize:11.5,color:"var(--ink-soft)"}}>100 分制 · 0 API</div></div>
@@ -2791,7 +2818,7 @@ async function exportAdPerformanceToWord({ rows, totalRevenue, totalSpend, total
 // 加上平台/通路補充明細(SHOPIFY官網、蝦皮、MOMO、門市、經銷…這些「Meta廣告代號對不到」的通路各自的營收/廣告費/帳面利潤)。
 // 跟 AdPerformanceReport(投放成效)不一樣的地方:那邊為了不稀釋ROAS,故意排除沒花費的通路;
 // 這裡要看的是「公司整體做多少生意」,所以不管有沒有花費,全部通路都算進去(用 grandTotalRevenue/grandTotalSpend)。
-function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel, prevPeriodLabel, roasTarget = 3, currencyCode, minSpend = 500 }) {
+function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel, prevPeriodLabel, roasTarget = 3, currencyCode, minSpend = 500, collapsible = true }) {
   const meta = buildProductBreakdown(ads || [], minSpend);
   const merged = mergeChannelBreakdown(meta.rows, meta.totalRevenue, meta.totalSpend, ledgerAgg);
   const { grandTotalRevenue, grandTotalSpend, channelRevenueOnlyRows, rows } = merged;
@@ -2826,7 +2853,11 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
   return (
     <div className="mal-ops-summary">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
-        <CollapsibleSectionTitle className="mal-section-title" style={{ marginBottom: 0 }}>整體營運{periodLabel ? `(${periodLabel})` : ""}</CollapsibleSectionTitle>
+        {collapsible ? (
+          <CollapsibleSectionTitle className="mal-section-title" style={{ marginBottom: 0 }}>整體營運{periodLabel ? `(${periodLabel})` : ""}</CollapsibleSectionTitle>
+        ) : (
+          <StaticSectionTitle className="mal-section-title" style={{ marginBottom: 0 }}>整體營運{periodLabel ? `(${periodLabel})` : ""}</StaticSectionTitle>
+        )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {allTags.map((tag) => (
             <span
@@ -2873,18 +2904,24 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
 
       {allChannelRows.length > 0 && (
         <>
-          <h2
-            className="mal-section-title mal-major-section-title"
-            style={{ fontSize: 15, marginBottom: 10 }}
-            onClick={() => setChannelsCollapsed((v) => !v)}
-            role="button"
-            tabIndex={0}
-            aria-expanded={!channelsCollapsed}
-          >
-            平台／通路補充明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
-            <span className="mal-major-section-toggle" aria-hidden="true">{channelsCollapsed ? "＋" : "−"}</span>
-          </h2>
-          {!channelsCollapsed && (
+          {collapsible ? (
+            <h2
+              className="mal-section-title mal-major-section-title"
+              style={{ fontSize: 15, marginBottom: 10 }}
+              onClick={() => setChannelsCollapsed((v) => !v)}
+              role="button"
+              tabIndex={0}
+              aria-expanded={!channelsCollapsed}
+            >
+              平台／通路補充明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
+              <span className="mal-major-section-toggle" aria-hidden="true">{channelsCollapsed ? "＋" : "−"}</span>
+            </h2>
+          ) : (
+            <StaticSectionTitle className="mal-section-title" style={{ fontSize: 15, marginBottom: 10 }}>
+              平台／通路補充明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
+            </StaticSectionTitle>
+          )}
+          {(!collapsible || !channelsCollapsed) && (
             <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
               <table className="mal-table">
                 <thead>
@@ -2912,7 +2949,7 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
 // 這支元件原本(另一個對話 session)漏掉了函式宣告那一行,只有內文沒有包起來,會直接造成語法錯誤。
 // 補回宣告——這支元件寫在最外層(跟 roasTier/HorizontalBarChart/exportAdPerformanceToWord 同一層),
 // 不在主 App 元件裡面,所以拿不到 brands/activeBrandId 這些畫面狀態,要透過 props 傳進來,不能用 closure 讀。
-function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, monthlyBudget = null, brands, activeBrandId, onEditRoasTarget, onEditMonthlyBudget, minSpend = 500, productNames = {}, onEditProductName, ledgerAgg = null, adRatioThreshold, storageKey }) {
+function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, monthlyBudget = null, brands, activeBrandId, onEditRoasTarget, onEditMonthlyBudget, minSpend = 500, productNames = {}, onEditProductName, ledgerAgg = null, adRatioThreshold, storageKey, collapsible = true }) {
   const displayName = (code) => (productNames[code] ? `${code}(${productNames[code]})` : code);
   const reportRef = useRef(null);
   const [aiInsights, setAiInsights] = useState(null); // null = 還沒生成過(或還在讀取雲端存檔中),顯示規則統計版當預設
@@ -3023,12 +3060,21 @@ function AdPerformanceReport({ ads, currencyCode, periodLabel, roasTarget = 3, m
   return (
     <div ref={reportRef} className="mal-ad-perf-report">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <CollapsibleSectionTitle className="mal-section-title" style={{ marginBottom: 0 }}>
-          投放成效{periodLabel ? `(${periodLabel})` : ""}
-          {aiSaveStatus && (
-            <span className={aiSaveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {aiSaveStatus}</span>
-          )}
-        </CollapsibleSectionTitle>
+        {collapsible ? (
+          <CollapsibleSectionTitle className="mal-section-title" style={{ marginBottom: 0 }}>
+            投放成效{periodLabel ? `(${periodLabel})` : ""}
+            {aiSaveStatus && (
+              <span className={aiSaveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {aiSaveStatus}</span>
+            )}
+          </CollapsibleSectionTitle>
+        ) : (
+          <StaticSectionTitle className="mal-section-title" style={{ marginBottom: 0 }}>
+            投放成效{periodLabel ? `(${periodLabel})` : ""}
+            {aiSaveStatus && (
+              <span className={aiSaveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {aiSaveStatus}</span>
+            )}
+          </StaticSectionTitle>
+        )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button className="mal-icon-btn" onClick={() => onEditRoasTarget && onEditRoasTarget(activeBrandId)}>
             ✎ ROAS目標
@@ -3334,6 +3380,14 @@ function CollapsibleSectionTitle({ children, className = "", style, ...props }) 
     >
       {children}
       <span className="mal-major-section-toggle" aria-hidden="true">{collapsed ? "＋" : "−"}</span>
+    </h2>
+  );
+}
+
+function StaticSectionTitle({ children, className = "", style, ...props }) {
+  return (
+    <h2 {...props} className={className} style={style}>
+      {children}
     </h2>
   );
 }
@@ -4983,6 +5037,306 @@ function MetaAdsLedger() {
   // 依「行銷活動名稱」最前面的括號(例如「【RS】」「【AP】」)自動歸類,統計各產品的營業額/廣告費佔比與利潤。
   // 產品代號完全依實際行銷活動名稱動態產生——新增產品時只要照同一套命名規則建立行銷活動,
   // 不需要在系統裡手動登記新產品,代號就會自動出現在分析裡。
+function MonthlyReportSection({ storageKey, ads, currencyCode, roasTarget, periodLabel, brandName, minSpend }) {
+    const [data, setData] = useState(null); // null = 載入中
+    const [saveStatus, setSaveStatus] = useState("");
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiError, setAiError] = useState("");
+    const [loadError, setLoadError] = useState("");
+    const saveTimerRef = useRef(null);
+    // 待存檔的最新內容——跟 saveTimerRef 分開追蹤,是因為「立即存檔」(flush)要能在計時器
+    // 還沒觸發前,直接把這裡記著的最新資料送出去,不用等900ms。之前的版本只靠setTimeout,
+    // 使用者打完字後如果馬上切換品牌/週期/把App切到背景,計時器根本還沒觸發存檔動作就消失了,
+    // 資料就真的遺失——這是這次修正的根本原因。
+    const pendingSaveRef = useRef(null);
+
+    function flushPendingSave() {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      if (pendingSaveRef.current) {
+        const { key, value } = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        // 頁面即將關閉/離開時的最後嘗試,這裡沒辦法再跳UI提示了(頁面都要關了),
+        // 只能盡量送出去,送不出去也沒有更好的辦法,所以這裡維持吞掉錯誤。
+        storageSetStrict(key, value).catch(() => {});
+      }
+    }
+
+    useEffect(() => {
+      let cancelled = false;
+      setData(null);
+      setLoadError("");
+      (async () => {
+        try {
+          const res = await storageGetStrict(storageKey);
+          if (cancelled) return;
+          if (res && res.value) {
+            try {
+              setData(JSON.parse(res.value));
+              return;
+            } catch {}
+          }
+          setData({ actionItems: [], projects: [], materialIssues: [] });
+        } catch (e) {
+          if (cancelled) return;
+          // 連不上雲端才會走到這裡(key不存在是正常回傳null,不會丟例外)——這時候不能顯示空白表單,
+          // 因為畫面看起來會像「這期沒資料」,但實際上是「不知道有沒有資料,因為根本連不上去查」,
+          // 兩者天差地遠,不能混為一談。
+          setLoadError(e.message || "連不上雲端資料庫,無法確認這期是否已有內容。");
+        }
+      })();
+      return () => { cancelled = true; };
+    }, [storageKey]);
+
+    // 三層保護,確保「還沒等到900ms就離開」的情境一定會把最新內容存下去:
+    // ①頁面被切到背景/分頁不可見(手機切App、鎖螢幕最常見)②使用者關閉分頁/離開網站
+    // ③這個元件本身被卸載(例如切換品牌或週期,key改變導致React整個重新建立元件實例)。
+    useEffect(() => {
+      function handleVisibilityChange() {
+        if (document.visibilityState === "hidden") flushPendingSave();
+      }
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("beforeunload", flushPendingSave);
+      window.addEventListener("pagehide", flushPendingSave);
+      return () => {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        window.removeEventListener("beforeunload", flushPendingSave);
+        window.removeEventListener("pagehide", flushPendingSave);
+        flushPendingSave();
+      };
+    }, []);
+
+    async function performSave(next) {
+      const value = JSON.stringify(next);
+      pendingSaveRef.current = { key: storageKey, value };
+      try {
+        await storageSetStrict(storageKey, value);
+        pendingSaveRef.current = null;
+        setSaveStatus("已儲存 ✓");
+        setTimeout(() => setSaveStatus(""), 2000);
+      } catch (e) {
+        // 特意不清空 pendingSaveRef——存檔失敗時保留這筆待存資料,之後flushPendingSave
+        // (切換分頁/關閉頁面時)還有機會再試一次,不是失敗一次就徹底放棄這筆內容。
+        pendingSaveRef.current = { key: storageKey, value };
+        setSaveStatus(`⚠ 存檔失敗:${e.message || "未知錯誤"}(內容還留在畫面上,但還沒真的存進雲端,請勿關閉頁面,再按一次「立即儲存」重試)`);
+      }
+    }
+
+    function scheduleSave(next) {
+      setData(next);
+      setSaveStatus("編輯中…");
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = null;
+        performSave(next);
+      }, 900);
+    }
+
+    // 明確的「立即儲存」按鈕——跳過900ms的debounce等待,直接存,而且有清楚的成功/失敗畫面回饋。
+    // 自動存檔已經有debounce+分頁切換/關閉時的保護,這顆按鈕是給使用者「我現在就是想親眼確認存到了」
+    // 的明確操作,兩者不衝突,按下這顆的時候就算debounce計時器還在跑,也會被取消、直接用這次的結果。
+    function manualSave() {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      setSaveStatus("儲存中…");
+      performSave(data);
+    }
+
+    // AI分析:沿用「投放成效」同一套 buildProductBreakdown 邏輯算出逐代號數據,
+    // 送去跟「投放成效」共用同一支 OpenAI 金鑰的另一支後端(material-issues.js,職責不同、金鑰共用),
+    // 請AI挑出「值得下週特別調整」的系列,寫成標題+數據佐證+建議方向。是「新增建議草稿」進現有清單,
+    // 不會清掉使用者已經手動寫好/編輯過的項目,AI生成的項目使用者一樣可以編輯或刪除。
+    // 「下週操作方向」「素材調整方向」兩個子區塊的AI按鈕都呼叫這同一個函式——同一份期間數據,
+    // 沒必要因為使用者按了兩個不同按鈕就打兩次OpenAI,拿到回應後兩個子區塊會一起更新。
+    async function runAiMaterialAnalysis() {
+      if (!data) return;
+      setAiLoading(true);
+      setAiError("");
+      try {
+        const { rows, totalRevenue, totalSpend } = buildProductBreakdown(ads || [], minSpend || 500);
+        if (!rows.length) throw new Error("目前沒有足夠的資料可以分析。");
+        const totalConversions = rows.reduce((s, r) => s + r.conversions, 0);
+        const res = await fetch("/api/ai/material-issues", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...teamKeyHeaders() },
+          body: JSON.stringify({
+            brandName: brandName || "",
+            periodLabel,
+            roasTarget: roasTarget || 3,
+            totals: { spend: totalSpend, revenue: totalRevenue, conversions: totalConversions, roas: totalSpend > 0 ? totalRevenue / totalSpend : null },
+            rows: rows.map((r) => ({
+              code: r.code,
+              spend: r.spend,
+              revenue: r.revenue,
+              roas: r.spend > 0 && r.revenue > 0 ? r.revenue / r.spend : null,
+              conversions: r.conversions,
+              spendShare: totalSpend > 0 ? (r.spend / totalSpend) * 100 : 0,
+            })),
+          }),
+        });
+        const resData = await res.json().catch(() => null);
+        if (!res.ok || !resData || resData.error) throw new Error((resData && resData.error) || `狀態碼 ${res.status}`);
+        const newActionItems = Array.isArray(resData.actionItems)
+          ? resData.actionItems.map((it) => ({ id: Date.now() + Math.random(), title: it.title || "", description: it.description || "" }))
+          : [];
+        const newMaterialIssues = Array.isArray(resData.materialIssues)
+          ? resData.materialIssues.map((it) => ({
+              id: Date.now() + Math.random(),
+              title: it.title || "",
+              status: it.status === "red" || it.status === "yellow" || it.status === "green" ? it.status : "red",
+              category: it.category || "",
+              content: it.content || "",
+            }))
+          : [];
+        if (!newActionItems.length && !newMaterialIssues.length) {
+          setAiError("AI 沒有回傳有效的分析內容,可能是資料量不足,可以稍後再試。");
+          return;
+        }
+        scheduleSave({
+          ...data,
+          actionItems: [...data.actionItems, ...newActionItems],
+          materialIssues: [...data.materialIssues, ...newMaterialIssues],
+        });
+        if (!newMaterialIssues.length) {
+          setAiError("這段期間沒有挑出特別需要調整的系列(素材調整方向沒有新增項目),可能整體表現都還算健康——下週操作方向已經正常生成。");
+        }
+      } catch (e) {
+        setAiError(e.message || String(e));
+      } finally {
+        setAiLoading(false);
+      }
+    }
+
+    // 沒有依賴陣列,每次render都重新指定,理由跟AdPerformanceReport那邊一樣——確保外部觸發時
+    // 拿到的一定是包著最新ads/props的版本。
+    if (loadError) {
+      return (
+        <div className="mal-plan-load-error">
+          <p>⚠ 月報告讀取失敗:{loadError}</p>
+          <p style={{ fontSize: 12, marginTop: 4 }}>這不代表資料不存在,是暫時連不上雲端資料庫確認——請勿在這個狀態下新增內容,以免蓋掉原本已經存在雲端的資料。稍後重新整理再試一次。</p>
+        </div>
+      );
+    }
+    if (!data) return <p style={{ color: "var(--ink-soft)", fontSize: 13, marginTop: 32 }}>載入報告中…</p>;
+
+    const STATUS_OPTIONS = [
+      { value: "green", label: "🟢 照計畫" },
+      { value: "yellow", label: "🟡 有風險" },
+      { value: "red", label: "🔴 已落後/卡住" },
+    ];
+
+    function addActionItem() {
+      scheduleSave({ ...data, actionItems: [...data.actionItems, { id: Date.now(), title: "", description: "" }] });
+    }
+    function updateActionItem(id, field, value) {
+      scheduleSave({ ...data, actionItems: data.actionItems.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
+    }
+    function removeActionItem(id) {
+      scheduleSave({ ...data, actionItems: data.actionItems.filter((it) => it.id !== id) });
+    }
+    function addProject() {
+      scheduleSave({ ...data, projects: [...data.projects, { id: Date.now(), name: "", owner: "", dueDate: "", progress: "", status: "green", description: "" }] });
+    }
+    function updateProject(id, field, value) {
+      scheduleSave({ ...data, projects: data.projects.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
+    }
+    function removeProject(id) {
+      scheduleSave({ ...data, projects: data.projects.filter((it) => it.id !== id) });
+    }
+    function addMaterialIssue() {
+      scheduleSave({ ...data, materialIssues: [...data.materialIssues, { id: Date.now(), title: "", status: "red", category: "", content: "" }] });
+    }
+    function updateMaterialIssue(id, field, value) {
+      scheduleSave({ ...data, materialIssues: data.materialIssues.map((it) => (it.id === id ? { ...it, [field]: value } : it)) });
+    }
+    function removeMaterialIssue(id) {
+      scheduleSave({ ...data, materialIssues: data.materialIssues.filter((it) => it.id !== id) });
+    }
+
+    return (
+      <>
+        <div className="mal-plan-title-row">
+          <h2 className="mal-section-title" style={{ margin: 0 }}>
+            📋 月報告{saveStatus && (
+              <span className={saveStatus.startsWith("⚠") ? "mal-plan-savestatus mal-plan-savestatus-error" : "mal-plan-savestatus"}> · {saveStatus}</span>
+            )}
+          </h2>
+          <button className="mal-btn" onClick={manualSave}>💾 立即儲存</button>
+        </div>
+        {aiError && <p className="mal-plan-ai-error">⚠ {aiError}</p>}
+
+        <div className="mal-plan-block">
+          <div className="mal-plan-block-header">
+            <div className="mal-plan-block-title">素材調整方向</div>
+            <button className="mal-icon-btn" onClick={runAiMaterialAnalysis} disabled={aiLoading || !ads}>
+              {aiLoading ? "🤖 分析中…" : "🤖 AI 分析"}
+            </button>
+          </div>
+          {data.materialIssues.map((m) => (
+            <div className="mal-plan-card" key={m.id}>
+              <div className="mal-plan-card-row">
+                <select className="mal-plan-select" value={m.status} onChange={(e) => updateMaterialIssue(m.id, "status", e.target.value)}>
+                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+                <input className="mal-plan-input mal-plan-input-category" placeholder="分類" value={m.category || ""} onChange={(e) => updateMaterialIssue(m.id, "category", e.target.value)} />
+                <input className="mal-plan-input mal-plan-input-title" placeholder="標題(例如:SR涼感衣吃掉最大預算,CPA偏高)" value={m.title} onChange={(e) => updateMaterialIssue(m.id, "title", e.target.value)} />
+                <button className="mal-plan-remove" onClick={() => removeMaterialIssue(m.id)} title="刪除">✕</button>
+              </div>
+              <textarea className="mal-plan-textarea" placeholder="數據、問題點、建議方向…(可以換行分段)" rows={4} value={m.content} onChange={(e) => updateMaterialIssue(m.id, "content", e.target.value)} />
+            </div>
+          ))}
+          <button className="mal-btn" onClick={addMaterialIssue}>+ 新增素材問題</button>
+        </div>
+
+        <div className="mal-plan-block">
+          <div className="mal-plan-block-header">
+            <div className="mal-plan-block-title">下週操作方向</div>
+            <button className="mal-icon-btn" onClick={runAiMaterialAnalysis} disabled={aiLoading || !ads}>
+              {aiLoading ? "🤖 分析中…" : "🤖 AI 分析"}
+            </button>
+          </div>
+          {data.actionItems.map((item, i) => (
+            <div className="mal-plan-card" key={item.id}>
+              <div className="mal-plan-card-row">
+                <span className="mal-plan-index">{String(i + 1).padStart(2, "0")}</span>
+                <input className="mal-plan-input mal-plan-input-title" placeholder="標題(例如:預算優先轉往價值型)" value={item.title} onChange={(e) => updateActionItem(item.id, "title", e.target.value)} />
+                <button className="mal-plan-remove" onClick={() => removeActionItem(item.id)} title="刪除">✕</button>
+              </div>
+              <textarea className="mal-plan-textarea" placeholder="說明…" rows={2} value={item.description} onChange={(e) => updateActionItem(item.id, "description", e.target.value)} />
+            </div>
+          ))}
+          <button className="mal-btn" onClick={addActionItem}>+ 新增方向</button>
+        </div>
+
+        <div className="mal-plan-block">
+          <div className="mal-plan-block-title">專案進度</div>
+          {data.projects.map((p, i) => (
+            <div className="mal-plan-card" key={p.id}>
+              <div className="mal-plan-card-row">
+                <input className="mal-plan-input mal-plan-input-title" placeholder={`項目 ${i + 1}｜例如:廣告投放重新調整`} value={p.name} onChange={(e) => updateProject(p.id, "name", e.target.value)} />
+                <select className="mal-plan-select" value={p.status} onChange={(e) => updateProject(p.id, "status", e.target.value)}>
+                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+                <button className="mal-plan-remove" onClick={() => removeProject(p.id)} title="刪除">✕</button>
+              </div>
+              <div className="mal-plan-card-fields">
+                <input className="mal-plan-input" placeholder="負責人" value={p.owner} onChange={(e) => updateProject(p.id, "owner", e.target.value)} />
+                <input className="mal-plan-input" placeholder="預定完成日" value={p.dueDate} onChange={(e) => updateProject(p.id, "dueDate", e.target.value)} />
+                <input className="mal-plan-input" placeholder="目前進度(例如:100% 或 第一階段完成)" value={p.progress} onChange={(e) => updateProject(p.id, "progress", e.target.value)} />
+              </div>
+              <textarea className="mal-plan-textarea" placeholder="說明…" rows={2} value={p.description} onChange={(e) => updateProject(p.id, "description", e.target.value)} />
+            </div>
+          ))}
+          <button className="mal-btn" onClick={addProject}>+ 新增專案項目</button>
+        </div>
+      </>
+    );
+  }
+
   function LedgerVsMetaComparison({ ads, currencyCode, ledgerAgg, onOpenImport, periodLabel }) {
     if (!ledgerAgg) {
       return (
@@ -5224,15 +5578,21 @@ function MetaAdsLedger() {
     );
   }
 
-  function CampaignAnalysis({ ads, currencyCode }) {
+  function CampaignAnalysis({ ads, currencyCode, collapsible = true }) {
     const campaignStats = computeCampaignStats(ads);
     if (!campaignStats.length) return null;
     const insights = computeCampaignInsights(campaignStats, currencyCode);
     return (
       <>
-        <CollapsibleSectionTitle className="mal-section-title">
-          行銷活動整體成效分析<span className="mal-section-count">({campaignStats.length} 個投放中活動)</span>
-        </CollapsibleSectionTitle>
+        {collapsible ? (
+          <CollapsibleSectionTitle className="mal-section-title">
+            行銷活動整體成效分析<span className="mal-section-count">({campaignStats.length} 個投放中活動)</span>
+          </CollapsibleSectionTitle>
+        ) : (
+          <StaticSectionTitle className="mal-section-title">
+            行銷活動整體成效分析<span className="mal-section-count">({campaignStats.length} 個投放中活動)</span>
+          </StaticSectionTitle>
+        )}
         <div className="mal-week-analysis">
           <div className="mal-week-analysis-title">整體分析</div>
           <ul>
@@ -6329,6 +6689,7 @@ function MetaAdsLedger() {
                 ledgerAgg={activeBrandId === OFFICIAL_SITE_BRAND_ID ? null : aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
                 prevAds={prevData ? prevData.ads : null}
                 prevPeriodLabel={focusIdx > 0 ? monthLabel(sortedKeys[focusIdx - 1]) : ""}
+                collapsible={false}
                 prevLedgerAgg={
                   activeBrandId === OFFICIAL_SITE_BRAND_ID || focusIdx <= 0
                     ? null
@@ -6372,63 +6733,11 @@ function MetaAdsLedger() {
             </>
           )}
 
-          {sortedKeys.length > 1 && (
-            <div className="mal-trend-grid">
-              <span className="mal-trend-grid-anchor" aria-hidden="true"></span>
-              <CollapsibleSectionTitle className="mal-section-title mal-trend-title mal-trend-title-a">廣告費 / 轉單 趨勢</CollapsibleSectionTitle>
-              <div className="mal-chart-box mal-trend-chart mal-trend-chart-a">
-                <SimpleBarChart data={chartData} seriesA="廣告費" seriesB="轉單" colorA="#6E8577" colorB="#BFA054"
-                  labelA="廣告費" labelB="轉單" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v} />
-              </div>
-              <CollapsibleSectionTitle className="mal-section-title mal-trend-title mal-trend-title-b">CPA / ROAS 趨勢</CollapsibleSectionTitle>
-              <div className="mal-chart-box mal-trend-chart mal-trend-chart-b">
-                <SimpleLineChart data={chartData} seriesA="CPA" seriesB="ROAS" colorA="#A8607A" colorB="#7C8B54"
-                  labelA={`CPA (${currency})`} labelB="ROAS (x)" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v + "x"} />
-              </div>
-            </div>
-          )}
-
-          {focusData && (
-            <DecisionIntelligencePanel
-              currentRecord={focusData}
-              previousRecord={prevData}
-              roasTarget={roasTargets[activeBrandId]}
-              cpaTarget={cpaThresholds[activeBrandId]}
-              cpcTarget={cpcThresholds[activeBrandId]}
-              monthlyBudget={monthlyBudgets[activeBrandId]}
-              periodType="month"
-              periodLabel={monthLabel(focusMonth)}
-            />
-          )}
-
-          {focusData && (
-            <AdPerformanceReport
-              key={`${activeBrandId}::${focusMonth}`}
-              ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
-              currencyCode={focusData.currency}
-              periodLabel={monthLabel(focusMonth)}
-              roasTarget={roasTargets[activeBrandId]}
-              monthlyBudget={monthlyBudgets[activeBrandId]}
-              brands={brands}
-              activeBrandId={activeBrandId}
-              onEditRoasTarget={editRoasTarget}
-              onEditMonthlyBudget={editMonthlyBudget}
-              productNames={productNames[activeBrandId] || {}}
-              onEditProductName={editProductName}
-              minSpend={MIN_AD_SPEND}
-              ledgerAgg={activeBrandId === OFFICIAL_SITE_BRAND_ID ? null : aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
-              adRatioThreshold={adRatioThresholds[activeBrandId]}
-              storageKey={`adperf-ai-month:${activeBrandId}::${focusMonth}`}
-            />
-          )}
-
-          {focusData && <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} />}
-
           {focusData && (
             <div className="mal-chart-box" style={{ marginBottom: 18 }}>
               <div className="mal-ad-header-row" style={{ marginBottom: 12 }}>
                 <div>
-                  <CollapsibleSectionTitle className="mal-section-title" style={{ marginBottom: 4 }}>本月新投放摘要</CollapsibleSectionTitle>
+                  <StaticSectionTitle className="mal-section-title" style={{ marginBottom: 4 }}>本月新投放摘要</StaticSectionTitle>
                   <div style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
                     只計算 {focusMonth} 才開始投放的廣告；上月以前已開始投放者不列入。共 {monthStartedAds.length} 支，花費 {fmtMoney(monthStartedSpend, focusData.currency)}。
                   </div>
@@ -6461,12 +6770,82 @@ function MetaAdsLedger() {
             </div>
           )}
 
+
+          {sortedKeys.length > 1 && (
+            <div className="mal-trend-grid">
+              <span className="mal-trend-grid-anchor" aria-hidden="true"></span>
+              <StaticSectionTitle className="mal-section-title mal-trend-title mal-trend-title-a">廣告費 / 轉單 趨勢</StaticSectionTitle>
+              <div className="mal-chart-box mal-trend-chart mal-trend-chart-a">
+                <SimpleBarChart data={chartData} seriesA="廣告費" seriesB="轉單" colorA="#6E8577" colorB="#BFA054"
+                  labelA="廣告費" labelB="轉單" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v} />
+              </div>
+              <StaticSectionTitle className="mal-section-title mal-trend-title mal-trend-title-b">CPA / ROAS 趨勢</StaticSectionTitle>
+              <div className="mal-chart-box mal-trend-chart mal-trend-chart-b">
+                <SimpleLineChart data={chartData} seriesA="CPA" seriesB="ROAS" colorA="#A8607A" colorB="#7C8B54"
+                  labelA={`CPA (${currency})`} labelB="ROAS (x)" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v + "x"} />
+              </div>
+            </div>
+          )}
+
+          {focusData && (
+            <DecisionIntelligencePanel
+              currentRecord={focusData}
+              previousRecord={prevData}
+              roasTarget={roasTargets[activeBrandId]}
+              cpaTarget={cpaThresholds[activeBrandId]}
+              cpcTarget={cpcThresholds[activeBrandId]}
+              monthlyBudget={monthlyBudgets[activeBrandId]}
+              periodType="month"
+              periodLabel={monthLabel(focusMonth)}
+              collapsible={false}
+            />
+          )}
+
+          {focusData && (
+            <AdPerformanceReport
+              key={`${activeBrandId}::${focusMonth}`}
+              ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
+              currencyCode={focusData.currency}
+              periodLabel={monthLabel(focusMonth)}
+              roasTarget={roasTargets[activeBrandId]}
+              monthlyBudget={monthlyBudgets[activeBrandId]}
+              brands={brands}
+              activeBrandId={activeBrandId}
+              onEditRoasTarget={editRoasTarget}
+              onEditMonthlyBudget={editMonthlyBudget}
+              productNames={productNames[activeBrandId] || {}}
+              onEditProductName={editProductName}
+              minSpend={MIN_AD_SPEND}
+              ledgerAgg={activeBrandId === OFFICIAL_SITE_BRAND_ID ? null : aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+              adRatioThreshold={adRatioThresholds[activeBrandId]}
+              storageKey={`adperf-ai-month:${activeBrandId}::${focusMonth}`}
+              collapsible={false}
+            />
+          )}
+
+          {focusData && <CampaignAnalysis ads={focusData.ads} currencyCode={focusData.currency} collapsible={false} />}
+
+          {focusData && (
+            <MonthlyReportSection
+              storageKey={`monthly-plan:${activeBrandId}::${focusMonth}`}
+              key={`monthreport::${activeBrandId}::${focusMonth}`}
+              ads={focusData.ads}
+              currencyCode={focusData.currency}
+              roasTarget={roasTargets[activeBrandId]}
+              periodLabel={monthLabel(focusMonth)}
+              brandName={(brands.find((b) => b.id === activeBrandId) || {}).name || ""}
+              minSpend={MIN_AD_SPEND}
+            />
+          )}
+
+
+
           {focusData && (
             activeBrandId === OFFICIAL_SITE_BRAND_ID ? (
               <>
-                <CollapsibleSectionTitle className="mal-section-title">
+                <StaticSectionTitle className="mal-section-title">
                   {monthLabel(focusMonth)} Shopline 對照(官網實際 vs Meta 回報)
-                </CollapsibleSectionTitle>
+                </StaticSectionTitle>
                 {shoplineMonthsData[focusMonth] ? (
                   <ShoplineComparisonView
                     record={shoplineMonthsData[focusMonth]}
@@ -6484,9 +6863,9 @@ function MetaAdsLedger() {
               </>
             ) : (
               <>
-                <CollapsibleSectionTitle className="mal-section-title">
+                <StaticSectionTitle className="mal-section-title">
                   {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
-                </CollapsibleSectionTitle>
+                </StaticSectionTitle>
                 <LedgerVsMetaComparison
                   ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
                   currencyCode={focusData.currency}
@@ -6497,7 +6876,7 @@ function MetaAdsLedger() {
             )
           )}
 
-          <CollapsibleSectionTitle className="mal-section-title">每月明細</CollapsibleSectionTitle>
+          <StaticSectionTitle className="mal-section-title">每月明細</StaticSectionTitle>
           <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
             <table className="mal-table">
               <thead><tr><th>月份</th><th>廣告費</th><th>轉單</th><th>轉單金額</th><th>CPA</th><th>ROAS</th><th></th></tr></thead>
