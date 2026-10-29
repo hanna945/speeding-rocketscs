@@ -281,6 +281,10 @@ def meta_key(account_id: str) -> str:
     return f"airbyte-meta:{account_id}"
 
 
+def day_baseline_key(account_id: str, day: date) -> str:
+    return f"airbyte-day-baseline:{account_id}::{day.isoformat()}"
+
+
 def month_report_key(account_id: str, mk: str) -> str:
     return f"metaads-month:{account_id}::{mk}"
 
@@ -357,18 +361,34 @@ async def refresh_metadata(
     }
 
 
+async def fetch_active_campaigns(
+    connector: FacebookMarketingConnector,
+    account_id: str,
+) -> dict[str, dict[str, Any]]:
+    """Read only lightweight campaign status metadata and keep campaigns delivering now."""
+    campaigns = await paged(
+        connector.campaigns.list,
+        account_id=account_id,
+        fields="id,name,objective,effective_status,status,start_time,created_time",
+        limit=500,
+    )
+    return {
+        str(row.get("id")): row
+        for row in campaigns
+        if row.get("id") and str(row.get("effective_status") or "").upper() == "ACTIVE"
+    }
+
+
 async def fetch_daily_insights(
     connector: FacebookMarketingConnector,
     account_id: str,
     since: date,
     until: date,
+    active_campaign_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     if since > until:
         return []
 
-    # Meta can reject or time out on high-volume accounts when a whole month of ad-level
-    # actions/action_values is requested in one call. Keep the same daily grain, but request
-    # at most 2 calendar days per API window and merge the rows client-side.
     rows: list[dict[str, Any]] = []
     cursor = since
     while cursor <= until:
@@ -382,12 +402,16 @@ async def fetch_daily_insights(
             time_increment="1",
             limit=500,
         )
+        if active_campaign_ids is not None:
+            chunk = [
+                row for row in chunk
+                if str(row.get("campaign_id") or "") in active_campaign_ids
+            ]
         rows.extend(chunk)
         cursor = chunk_until + timedelta(days=1)
         if cursor <= until:
-            await asyncio.sleep(0.7)
+            await asyncio.sleep(0.5)
     return rows
-
 
 async def fetch_period_reach(
     connector: FacebookMarketingConnector,
@@ -448,6 +472,7 @@ def build_report_record(
     since: date,
     until: date,
     relax_threshold: bool,
+    include_all_ads: bool = False,
 ) -> dict[str, Any]:
     campaigns = metadata.get("campaigns") or {}
     adsets = metadata.get("adsets") or {}
@@ -520,7 +545,7 @@ def build_report_record(
         effective_status = str(ad_meta.get("effective_status") or legacy_meta.get("effectiveStatus") or "UNKNOWN")
         campaign_status = str(campaign_meta.get("effective_status") or legacy_meta.get("campaignEffectiveStatus") or "UNKNOWN")
         active = effective_status == "ACTIVE"
-        if not (item["spend"] >= MIN_FETCH_SPEND or (relax_threshold and active)):
+        if not include_all_ads and not (item["spend"] >= MIN_FETCH_SPEND or (relax_threshold and active)):
             continue
 
         raw_ads.append({
@@ -620,6 +645,144 @@ def build_report_record(
     }
 
 
+NUMERIC_AD_FIELDS = ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks", "landingPageViews")
+
+
+def merge_month_with_today(
+    baseline: dict[str, Any] | None,
+    today_record: dict[str, Any],
+    account_id: str,
+    currency: str,
+    local_today: date,
+    active_campaign_count: int,
+) -> dict[str, Any]:
+    """Merge today's latest ACTIVE-campaign snapshot onto a frozen start-of-day month record."""
+    baseline = baseline if isinstance(baseline, dict) else {}
+
+    merged_by_ad: dict[str, dict[str, Any]] = {}
+    for row in baseline.get("rawAds") or []:
+        if isinstance(row, dict) and row.get("adId"):
+            merged_by_ad[str(row["adId"])] = dict(row)
+
+    for row in today_record.get("rawAds") or []:
+        if not isinstance(row, dict) or not row.get("adId"):
+            continue
+        ad_id = str(row["adId"])
+        target = merged_by_ad.get(ad_id)
+        if target is None:
+            merged_by_ad[ad_id] = dict(row)
+            continue
+        for field in NUMERIC_AD_FIELDS:
+            target[field] = as_float(target.get(field)) + as_float(row.get(field))
+        # Reach is non-additive. Preserve the historical month value; use today's value only
+        # when this ad had no previous reach snapshot.
+        if not as_float(target.get("reach")) and as_float(row.get("reach")):
+            target["reach"] = as_float(row.get("reach"))
+        for field in (
+            "name", "campaignId", "campaign", "adSetId", "adSet", "objective",
+            "campaignEffectiveStatus", "optimizationGoal", "creativeId", "postId",
+            "utm", "image", "startDate", "postPublishDate"
+        ):
+            if row.get(field):
+                target[field] = row.get(field)
+        target["campaignActive"] = bool(row.get("campaignActive", True))
+        target["active"] = bool(row.get("active", target.get("active", False)))
+
+    raw_ads = [row for row in merged_by_ad.values() if as_float(row.get("spend")) > 0 or as_float(row.get("revenue")) > 0]
+    raw_ads.sort(key=lambda row: as_float(row.get("spend")), reverse=True)
+
+    grouped: dict[str, dict[str, Any]] = {}
+    sponsor: dict[str, dict[str, Any]] = {}
+    for ad in raw_ads:
+        key = (
+            ("utm:" + str(ad.get("utm")) if ad.get("utm") else "ad:" + str(ad.get("adId") or ""))
+            + "::campaign:" + str(ad.get("campaign") or "")
+            + "::adset:" + str(ad.get("adSet") or "")
+            + "::" + ("on" if ad.get("active") else "off")
+        )
+        g = grouped.setdefault(key, {
+            "utm": ad.get("utm") or "",
+            "names": set(), "image": "", "postId": "",
+            "spend": 0.0, "conversions": 0.0, "revenue": 0.0,
+            "impressions": 0, "clicks": 0, "linkClicks": 0, "reach": 0.0,
+            "active": bool(ad.get("active")), "campaigns": set(), "adSets": set(),
+            "adSetIds": set(), "adIds": set(), "startDate": None, "postPublishDate": None,
+        })
+        g["names"].add(ad.get("name") or "(未命名廣告)")
+        for field in ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks"):
+            g[field] += as_float(ad.get(field))
+        g["reach"] += as_float(ad.get("reach"))
+        g["campaigns"].add(ad.get("campaign") or "(未分類活動)")
+        g["adSets"].add(ad.get("adSet") or "(未分類廣告組合)")
+        if ad.get("adSetId"):
+            g["adSetIds"].add(ad["adSetId"])
+        if ad.get("adId"):
+            g["adIds"].add(ad["adId"])
+        if not g["image"] and ad.get("image"):
+            g["image"] = ad["image"]
+        if not g["postId"] and ad.get("postId"):
+            g["postId"] = ad["postId"]
+        for field in ("startDate", "postPublishDate"):
+            value = ad.get(field)
+            if value and (not g[field] or value < g[field]):
+                g[field] = value
+
+        campaign_name = str(ad.get("campaign") or "")
+        ad_name = str(ad.get("name") or "")
+        if "業配" in campaign_name or "業配" in ad_name:
+            sponsor[str(ad.get("adId") or key)] = {
+                "name": ad_name or "(未命名廣告)",
+                "adId": str(ad.get("adId") or ""),
+                "campaign": campaign_name or "(未分類活動)",
+                "spend": as_float(ad.get("spend")),
+                "conversions": as_float(ad.get("conversions")),
+                "revenue": as_float(ad.get("revenue")),
+            }
+
+    ads = []
+    for g in grouped.values():
+        names = sorted(g.pop("names"))
+        campaigns = sorted(g.pop("campaigns"))
+        adsets = sorted(g.pop("adSets"))
+        ad_ids = sorted(g.pop("adIds"))
+        adset_ids = sorted(g.pop("adSetIds"))
+        ads.append({
+            **g,
+            "name": names[0] if len(names) == 1 else (f"{names[0]} 等 {len(names)} 支廣告" if names else "未命名廣告"),
+            "rawNames": names,
+            "campaign": campaigns[0] if len(campaigns) == 1 else (f"{campaigns[0]} 等 {len(campaigns)} 個活動" if campaigns else "(未分類活動)"),
+            "adSet": adsets[0] if len(adsets) == 1 else (f"{adsets[0]} 等 {len(adsets)} 個廣告組合" if adsets else "(未分類廣告組合)"),
+            "adIds": ad_ids,
+            "adSetIds": adset_ids,
+            "adCount": len(ad_ids) or len(names) or 1,
+        })
+    ads.sort(key=lambda row: as_float(row.get("spend")), reverse=True)
+
+    merged = dict(baseline)
+    for field in ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks"):
+        merged[field] = as_float(baseline.get(field)) + as_float(today_record.get(field))
+
+    # Monthly unique reach cannot be safely added from daily reach because audiences overlap.
+    # Keep yesterday's correct month-level reach until a deliberate backfill/full refresh.
+    merged["reach"] = as_float(baseline.get("reach"))
+    merged["currency"] = currency or baseline.get("currency") or "TWD"
+    merged["accountId"] = account_id
+    merged["ads"] = ads
+    merged["rawAds"] = raw_ads
+    merged["sponsorAds"] = sorted(sponsor.values(), key=lambda row: row["spend"], reverse=True)
+    merged["campaigns"] = baseline.get("campaigns", 0)
+    merged["activeCampaigns"] = active_campaign_count
+    merged["todayActiveSpend"] = as_float(today_record.get("spend"))
+    merged["todayActiveConversions"] = as_float(today_record.get("conversions"))
+    merged["todayActiveRevenue"] = as_float(today_record.get("revenue"))
+    merged["syncedAt"] = datetime.now(timezone.utc).isoformat()
+    merged["source"] = "airbyte"
+    merged["syncMode"] = "today_active_only"
+    merged["requestedUntil"] = local_today.isoformat()
+    merged["effectiveUntil"] = local_today.isoformat()
+    return merged
+
+
 async def sync_brand(
     connector: FacebookMarketingConnector,
     base_url: str,
@@ -637,67 +800,105 @@ async def sync_brand(
     local_today = (datetime.now(timezone.utc) + timedelta(hours=offset)).date()
     currency = str(account.get("currency") or "TWD")
     current_month_start = local_today.replace(day=1)
-    last_week_start, last_week_end = last_completed_week(local_today)
 
-    needed_months = {month_key(current_month_start), month_key(last_week_start), month_key(last_week_end)}
-    caches: dict[str, dict[str, Any]] = {}
-    for mk in needed_months:
-        cached = kv_get(base_url, cache_key(account_id, mk))
-        caches[mk] = cached if isinstance(cached, dict) else {"version": 1, "accountId": account_id, "month": mk, "days": {}}
-
-    current_cache = caches[month_key(current_month_start)]
-    current_days = current_cache.get("days") if isinstance(current_cache.get("days"), dict) else {}
-    if force_backfill_days > 0:
-        query_since = max(current_month_start, local_today - timedelta(days=force_backfill_days - 1))
-    elif current_days:
-        query_since = max(current_month_start, local_today - timedelta(days=max(1, lookback_days) - 1))
-    else:
-        query_since = current_month_start
-
-    print(f"[{brand['name']}] Airbyte insights {query_since} -> {local_today}")
-    daily_rows = await fetch_daily_insights(connector, account_id, query_since, local_today)
-    update_cache_rows(caches, account_id, query_since, local_today, daily_rows)
-
-    missing_week_days = [
-        d for d in days_between(last_week_start, last_week_end)
-        if d.isoformat() not in ((caches.get(month_key(d), {}).get("days") or {}))
-    ]
-    if missing_week_days:
-        week_rows = await fetch_daily_insights(connector, account_id, last_week_start, last_week_end)
-        update_cache_rows(caches, account_id, last_week_start, last_week_end, week_rows)
+    active_campaigns = await fetch_active_campaigns(connector, account_id)
+    active_campaign_ids = set(active_campaigns.keys())
+    print(f"[{brand['name']}] active campaigns={len(active_campaign_ids)}")
 
     old_meta = kv_get(base_url, meta_key(account_id))
-    metadata = await refresh_metadata(connector, account_id, old_meta, metadata_max_age_hours)
-    if metadata is not old_meta:
+    if force_backfill_days > 0:
+        # Manual recovery mode: explicitly requested historical backfill.
+        query_since = max(current_month_start, local_today - timedelta(days=force_backfill_days - 1))
+        print(f"[{brand['name']}] MANUAL BACKFILL {query_since} -> {local_today}, active campaigns only")
+        rows = await fetch_daily_insights(
+            connector, account_id, query_since, local_today, active_campaign_ids
+        )
+        caches = {
+            month_key(local_today): kv_get(base_url, cache_key(account_id, month_key(local_today)))
+            or {"version": 1, "accountId": account_id, "month": month_key(local_today), "days": {}}
+        }
+        update_cache_rows(caches, account_id, query_since, local_today, rows)
+        kv_put(base_url, cache_key(account_id, month_key(local_today)), caches[month_key(local_today)])
+
+        metadata = await refresh_metadata(connector, account_id, old_meta, metadata_max_age_hours)
+        metadata["campaigns"] = {**(metadata.get("campaigns") or {}), **active_campaigns}
         kv_put(base_url, meta_key(account_id), metadata)
 
-    for mk, cache in caches.items():
-        kv_put(base_url, cache_key(account_id, mk), cache)
-
-    month_existing = kv_get(base_url, month_report_key(account_id, month_key(local_today)))
-    legacy = legacy_ad_meta(month_existing)
-    month_rows = rows_for_period(caches, current_month_start, local_today)
-    month_reach = await fetch_period_reach(connector, account_id, current_month_start, local_today)
-    month_record = build_report_record(
-        month_rows, month_reach, metadata, legacy, account_id, currency,
-        current_month_start, local_today, relax_threshold=False,
-    )
-    kv_put(base_url, month_report_key(account_id, month_key(local_today)), month_record)
-
-    week_key = week_report_key(account_id, last_week_start.isoformat())
-    week_existing = kv_get(base_url, week_key)
-    if not isinstance(week_existing, dict) or week_existing.get("source") != "airbyte":
-        week_rows = rows_for_period(caches, last_week_start, last_week_end)
-        week_reach = await fetch_period_reach(connector, account_id, last_week_start, last_week_end)
-        week_record = build_report_record(
-            week_rows, week_reach, metadata, legacy_ad_meta(week_existing), account_id, currency,
-            last_week_start, last_week_end, relax_threshold=True,
+        month_rows = rows_for_period(caches, current_month_start, local_today)
+        month_reach = await fetch_period_reach(connector, account_id, current_month_start, local_today)
+        existing = kv_get(base_url, month_report_key(account_id, month_key(local_today)))
+        record = build_report_record(
+            month_rows, month_reach, metadata, legacy_ad_meta(existing), account_id, currency,
+            current_month_start, local_today, relax_threshold=False,
         )
-        kv_put(base_url, week_key, week_record)
+        record["activeCampaigns"] = len(active_campaign_ids)
+        record["syncMode"] = "manual_backfill_active_only"
+        kv_put(base_url, month_report_key(account_id, month_key(local_today)), record)
+        print(f"[{brand['name']}] backfill done: active campaigns={len(active_campaign_ids)}, spend={record['spend']:.2f}")
+        return
+
+    # Normal scheduled mode: yesterday already exists, so only read TODAY.
+    # Freeze the month record at the start of this day. Every later run today rebuilds from
+    # the same baseline + latest today snapshot, so repeated syncs never double-count today.
+    month_key_value = month_report_key(account_id, month_key(local_today))
+    existing_month = kv_get(base_url, month_key_value)
+    baseline_key = day_baseline_key(account_id, local_today)
+    baseline = kv_get(base_url, baseline_key)
+    if not isinstance(baseline, dict):
+        baseline = existing_month if isinstance(existing_month, dict) else {}
+        kv_put(base_url, baseline_key, baseline)
+
+    print(f"[{brand['name']}] TODAY ONLY {local_today}, active campaigns={len(active_campaign_ids)}")
+    today_rows = await fetch_daily_insights(
+        connector, account_id, local_today, local_today, active_campaign_ids
+    )
+
+    # Keep only today's rows in the incremental cache. Historical days are not re-read.
+    current_cache = kv_get(base_url, cache_key(account_id, month_key(local_today)))
+    if not isinstance(current_cache, dict):
+        current_cache = {"version": 2, "accountId": account_id, "month": month_key(local_today), "days": {}}
+    caches = {month_key(local_today): current_cache}
+    update_cache_rows(caches, account_id, local_today, local_today, today_rows)
+    kv_put(base_url, cache_key(account_id, month_key(local_today)), caches[month_key(local_today)])
+
+    # Reuse yesterday's metadata. Normal daily sync does not enumerate every ad/adset/creative.
+    metadata = old_meta if isinstance(old_meta, dict) else {"adsets": {}, "ads": {}, "creatives": {}}
+    metadata = dict(metadata)
+    metadata["campaigns"] = active_campaigns
+    metadata["syncedAt"] = datetime.now(timezone.utc).isoformat()
+    metadata["syncMode"] = "active_campaign_status_only"
+    kv_put(base_url, meta_key(account_id), metadata)
+
+    today_reach = {
+        str(row.get("ad_id")): as_float(row.get("reach"))
+        for row in today_rows
+        if row.get("ad_id")
+    }
+    today_record = build_report_record(
+        today_rows,
+        today_reach,
+        metadata,
+        legacy_ad_meta(baseline),
+        account_id,
+        currency,
+        local_today,
+        local_today,
+        relax_threshold=True,
+        include_all_ads=True,
+    )
+    month_record = merge_month_with_today(
+        baseline,
+        today_record,
+        account_id,
+        currency,
+        local_today,
+        len(active_campaign_ids),
+    )
+    kv_put(base_url, month_key_value, month_record)
 
     print(
-        f"[{brand['name']}] done: month ads={len(month_record['ads'])}, "
-        f"spend={month_record['spend']:.2f}, source=airbyte"
+        f"[{brand['name']}] done: today-active spend={today_record['spend']:.2f}, "
+        f"month spend={month_record['spend']:.2f}, active campaigns={len(active_campaign_ids)}"
     )
 
 
@@ -745,7 +946,7 @@ async def amain(args: argparse.Namespace) -> int:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lookback-days", type=int, default=8, help="Refresh this many recent days for attribution changes.")
+    parser.add_argument("--lookback-days", type=int, default=1, help="Compatibility option. Scheduled sync reads today only; use --backfill-days for history.")
     parser.add_argument("--metadata-max-age-hours", type=int, default=24)
     parser.add_argument("--backfill-days", type=int, default=0, help="Manual override for current-month backfill window.")
     parser.add_argument("--brand-id", default="", help="Optional single account ID for manual debugging.")
