@@ -726,6 +726,10 @@ def build_report_record(
         effective_status = str(ad_meta.get("effective_status") or legacy_meta.get("effectiveStatus") or "UNKNOWN")
         campaign_status = str(campaign_meta.get("effective_status") or legacy_meta.get("campaignEffectiveStatus") or "UNKNOWN")
         active = effective_status == "ACTIVE"
+        if ad_id in sponsor:
+            sponsor[ad_id]["effectiveStatus"] = effective_status
+            sponsor[ad_id]["active"] = active
+            sponsor[ad_id]["campaignEffectiveStatus"] = campaign_status
         if not include_all_ads and not (item["spend"] >= MIN_FETCH_SPEND or (relax_threshold and active)):
             continue
 
@@ -734,6 +738,7 @@ def build_report_record(
             "campaign": item.get("campaign") or campaign_meta.get("name") or "(未分類活動)",
             "adSet": item.get("adSet") or adset_meta.get("name") or "(未分類廣告組合)",
             "objective": campaign_meta.get("objective") or legacy_meta.get("objective") or "",
+            "effectiveStatus": effective_status,
             "campaignEffectiveStatus": campaign_status,
             "campaignActive": campaign_status == "ACTIVE",
             "optimizationGoal": adset_meta.get("optimization_goal") or legacy_meta.get("optimizationGoal") or "",
@@ -753,13 +758,14 @@ def build_report_record(
             ("utm:" + ad["utm"] if ad.get("utm") else "ad:" + ad["adId"])
             + "::campaign:" + str(ad.get("campaign") or "")
             + "::adset:" + str(ad.get("adSet") or "")
-            + "::" + ("on" if ad.get("active") else "off")
+            + "::status:" + str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN"))
         )
         g = grouped.setdefault(key, {
             "utm": ad.get("utm") or "",
             "names": set(), "image": "", "postId": "",
             "spend": 0.0, "conversions": 0.0, "revenue": 0.0,
             "impressions": 0, "clicks": 0, "linkClicks": 0, "reach": 0.0,
+            "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
             "active": bool(ad.get("active")), "campaigns": set(), "adSets": set(),
             "adSetIds": set(), "adIds": set(), "startDate": None, "postPublishDate": None,
         })
