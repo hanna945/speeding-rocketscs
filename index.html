@@ -247,6 +247,126 @@
     font-family: 'Cormorant Garamond', serif; font-weight: 500; font-size: 42px; color: var(--section-num);
     position: absolute; left: -4px; top: -20px; line-height: 1; z-index: 0;
   }
+
+  /* Evidence-style executive report layer */
+  .mal-evidence-report {
+    margin: 18px 0 22px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--paper-raised);
+    overflow: hidden;
+  }
+  .mal-evidence-hero {
+    padding: 20px 22px 18px;
+    border-bottom: 1px solid var(--rule-soft);
+    background: linear-gradient(180deg, rgba(169,116,74,.06), rgba(255,255,255,0));
+  }
+  .mal-evidence-kicker {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 7px;
+  }
+  .mal-evidence-headline {
+    font-family: 'Noto Serif TC', serif;
+    font-size: 22px;
+    line-height: 1.45;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: var(--ink);
+  }
+  .mal-evidence-deck {
+    font-size: 13px;
+    line-height: 1.75;
+    color: var(--ink-secondary);
+    max-width: 760px;
+  }
+  .mal-evidence-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 700;
+    margin-top: 10px;
+    border: 1px solid var(--rule-soft);
+    background: var(--paper);
+  }
+  .mal-evidence-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+  }
+  .mal-evidence-block {
+    padding: 16px 18px;
+    border-right: 1px solid var(--rule-soft);
+  }
+  .mal-evidence-block:last-child { border-right: 0; }
+  .mal-evidence-block-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .mal-evidence-block p,
+  .mal-evidence-block li {
+    font-size: 12.5px;
+    line-height: 1.65;
+    margin: 0;
+  }
+  .mal-evidence-block ul { margin: 0; padding-left: 18px; }
+  .mal-evidence-source {
+    padding: 10px 18px;
+    border-top: 1px solid var(--rule-soft);
+    font-size: 10.8px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+  }
+  .mal-evidence-nav {
+    position: sticky;
+    top: 8px;
+    z-index: 18;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    overflow-x: auto;
+    padding: 9px 10px;
+    margin: 0 0 20px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--paper-raised);
+    scrollbar-width: thin;
+  }
+  .mal-evidence-nav-label {
+    flex: 0 0 auto;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    padding: 0 3px;
+  }
+  .mal-evidence-nav button {
+    flex: 0 0 auto;
+    border: 1px solid var(--rule-soft);
+    background: var(--paper-raised);
+    color: var(--ink-secondary);
+    border-radius: 999px;
+    padding: 5px 9px;
+    font: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .mal-evidence-nav button:hover { border-color: var(--blue); color: var(--blue-deep); }
+  @media (max-width: 720px) {
+    .mal-evidence-grid { grid-template-columns: 1fr; }
+    .mal-evidence-block { border-right: 0; border-bottom: 1px solid var(--rule-soft); }
+    .mal-evidence-block:last-child { border-bottom: 0; }
+  }
+
   .mal-section-title::after { content: ""; flex: 0 1 60px; min-width: 24px; height: 1px; background: var(--rule); align-self: center; }
   .mal-major-section-title { cursor: pointer; user-select: none; padding-right: 34px; }
   .mal-major-section-title:hover { color: var(--blue-deep); }
@@ -550,6 +670,7 @@
     .mal-perf-card:hover { transform: none !important; }
     .mal-perf-section-header { cursor: default; }
     .mal-section-title { break-after: avoid; }
+    .mal-evidence-nav { display: none !important; }
     .mal-major-collapsed-body { display: block !important; }
     .mal-major-section-toggle { display: none !important; }
     .mal-print-excluded { display: none !important; }
@@ -2026,6 +2147,154 @@ function buildDecisionIntelligence(currentRecord, previousRecord, roasTarget, cp
   if (!actions.length) actions.push({ icon: "🟡", title: "目前以維持與觀察為主", detail: "沒有出現需要立刻大幅調整的訊號，先累積更多樣本。" });
 
   return { current, previous, deltas, anomalies, decisions, actions, score };
+}
+
+
+function EvidenceExecutiveSummary({
+  currentRecord,
+  previousRecord,
+  roasTarget = 3,
+  cpaTarget = null,
+  monthlyBudget = null,
+  periodType = "month",
+  periodLabel = "",
+  brandName = "品牌",
+  syncedAt = "",
+  sourceLabel = "Meta Ads / 品牌報表",
+}) {
+  const result = buildDecisionIntelligence(currentRecord, previousRecord, roasTarget, cpaTarget, monthlyBudget, periodType);
+  if (!result) return null;
+
+  const { current, previous, deltas, anomalies, decisions, score } = result;
+  const target = roasTarget > 0 ? roasTarget : 3;
+  const activeDecisions = (decisions || []).filter((x) => x && x.ad && x.ad.active !== false);
+  const count = (code) => activeDecisions.filter((x) => x.decision && x.decision.code === code).length;
+  const reduceCount = count("REDUCE");
+  const refreshCount = count("REFRESH");
+  const scaleCount = count("SCALE");
+  const monitorCount = count("MONITOR");
+  const keepCount = count("KEEP");
+  const urgentCount = reduceCount + refreshCount;
+  const topRisk = anomalies.find((a) => a.level === "red") || anomalies[0] || null;
+
+  const pctText = (value, goodWhenUp = true) => {
+    if (value == null || !Number.isFinite(value)) return "前期無可比資料";
+    const direction = value > 0 ? "增加" : value < 0 ? "下降" : "持平";
+    const good = value === 0 ? null : (value > 0) === goodWhenUp;
+    return direction + " " + Math.abs(value).toFixed(1) + "%" + (good === true ? "，方向正向" : good === false ? "，需要留意" : "");
+  };
+
+  let headline = brandName + " " + (periodLabel || "本期") + "投放表現";
+  if (topRisk) headline = "本期優先處理：" + topRisk.title;
+  else if (current.roas != null && current.roas >= target && score >= 80) headline = "本期投放整體穩定，ROAS 已達目標";
+  else if (current.roas != null && current.roas < target) headline = "本期效率低於目標，先守住成本再擴量";
+
+  const deckParts = [];
+  if (current.roas != null) deckParts.push("ROAS " + current.roas.toFixed(2) + "x，目標 " + target + "x");
+  if (current.cpa != null) deckParts.push("CPA " + fmtMoney(current.cpa, currentRecord.currency));
+  if (previous && deltas.roas != null) deckParts.push("ROAS 較前期" + (deltas.roas >= 0 ? "增加" : "下降") + " " + Math.abs(deltas.roas).toFixed(1) + "%");
+  if (urgentCount > 0) deckParts.push("目前有 " + urgentCount + " 支廣告需要優先處理");
+  else if (scaleCount > 0) deckParts.push("目前有 " + scaleCount + " 支廣告具擴量條件");
+  const deck = deckParts.join("；") + "。";
+
+  const healthLabel = score >= 80 ? "健康" : score >= 65 ? "需留意" : "需處理";
+  const healthIcon = score >= 80 ? "🟢" : score >= 65 ? "🟡" : "🔴";
+
+  const nextSteps = [];
+  if (reduceCount) nextSteps.push("降量 / 停低效：" + reduceCount + " 支");
+  if (refreshCount) nextSteps.push("優先換素材：" + refreshCount + " 支");
+  if (scaleCount) nextSteps.push("可小幅加預算：" + scaleCount + " 支");
+  if (monitorCount) nextSteps.push("持續觀察：" + monitorCount + " 支");
+  if (keepCount) nextSteps.push("維持現況：" + keepCount + " 支");
+  if (!nextSteps.length) nextSteps.push("目前沒有需要立即調整的廣告");
+
+  let syncedText = "未提供更新時間";
+  if (syncedAt) {
+    try {
+      syncedText = new Date(syncedAt).toLocaleString("zh-TW", { hour12: false });
+    } catch {}
+  }
+
+  return (
+    <div className="mal-evidence-report">
+      <div className="mal-evidence-hero">
+        <div className="mal-evidence-kicker">Executive Summary · {periodType === "week" ? "Weekly" : "Monthly"} Report</div>
+        <h2 className="mal-evidence-headline">{headline}</h2>
+        <div className="mal-evidence-deck">{deck}</div>
+        <div className="mal-evidence-status">{healthIcon} 投放健康度 {score}/100 · {healthLabel}</div>
+      </div>
+
+      <div className="mal-evidence-grid">
+        <div className="mal-evidence-block">
+          <div className="mal-evidence-block-title">本期表現</div>
+          <p>廣告費 {fmtMoney(current.spend, currentRecord.currency)}，轉單 {fmtInt(current.conversions)}。</p>
+          <p>ROAS：{current.roas != null ? current.roas.toFixed(2) + "x" : "—"}；CPA：{current.cpa != null ? fmtMoney(current.cpa, currentRecord.currency) : "—"}。</p>
+          {previous && <p>花費較前期 {pctText(deltas.spend, false)}；轉單較前期 {pctText(deltas.conversions, true)}。</p>}
+        </div>
+
+        <div className="mal-evidence-block">
+          <div className="mal-evidence-block-title">主要風險</div>
+          {anomalies.length ? (
+            <ul>
+              {anomalies.slice(0, 3).map((a, i) => <li key={i}>{a.level === "red" ? "🔴" : "🟡"} {a.title}：{a.detail}</li>)}
+            </ul>
+          ) : (
+            <p>目前沒有偵測到超出門檻的異常，維持監控即可。</p>
+          )}
+        </div>
+
+        <div className="mal-evidence-block">
+          <div className="mal-evidence-block-title">下一步</div>
+          <ul>{nextSteps.slice(0, 4).map((x, i) => <li key={i}>{x}</li>)}</ul>
+        </div>
+      </div>
+
+      <div className="mal-evidence-source">
+        資料來源：{sourceLabel} · 更新時間：{syncedText} · 本摘要由現有報表數據與 Shadow 規則即時計算，不會自動修改 Meta 廣告。
+      </div>
+    </div>
+  );
+}
+
+function EvidenceSectionNavigator({ refreshKey = "" }) {
+  const [sections, setSections] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const collect = () => {
+      const titles = Array.from(document.querySelectorAll(".mal-major-section-title"))
+        .filter((el) => el.offsetParent !== null)
+        .map((el, index) => {
+          if (!el.id) el.id = "report-section-" + index;
+          const toggle = el.querySelector(".mal-major-section-toggle");
+          const label = String(el.textContent || "")
+            .replace(toggle ? String(toggle.textContent || "") : "", "")
+            .replace(/\s+/g, " ")
+            .trim();
+          return { id: el.id, label };
+        })
+        .filter((x) => x.label);
+      if (!cancelled) setSections(titles);
+    };
+    const timer = setTimeout(collect, 120);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [refreshKey]);
+
+  if (!sections.length) return null;
+
+  const jump = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.getAttribute("aria-expanded") === "false") el.click();
+    setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+  };
+
+  return (
+    <div className="mal-evidence-nav">
+      <span className="mal-evidence-nav-label">章節</span>
+      {sections.map((s) => <button key={s.id} onClick={() => jump(s.id)}>{s.label}</button>)}
+    </div>
+  );
 }
 
 function DecisionIntelligencePanel({ currentRecord, previousRecord, roasTarget = 3, cpaTarget = null, monthlyBudget = null, periodType = "week", periodLabel = "" }) {
