@@ -854,13 +854,14 @@ def _group_views(raw_ads: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
             ("utm:" + str(ad.get("utm")) if ad.get("utm") else "ad:" + str(ad.get("adId") or ""))
             + "::campaign:" + str(ad.get("campaign") or "")
             + "::adset:" + str(ad.get("adSet") or "")
-            + "::" + ("on" if ad.get("active") else "off")
+            + "::status:" + str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN"))
         )
         g = grouped.setdefault(key, {
             "utm": ad.get("utm") or "",
             "names": set(), "image": "", "postId": "",
             "spend": 0.0, "conversions": 0.0, "revenue": 0.0,
             "impressions": 0.0, "clicks": 0.0, "linkClicks": 0.0, "reach": 0.0,
+            "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
             "active": bool(ad.get("active")), "campaigns": set(), "adSets": set(),
             "adSetIds": set(), "adIds": set(), "startDate": None, "postPublishDate": None,
         })
@@ -890,6 +891,9 @@ def _group_views(raw_ads: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
                 "name": ad_name or "(未命名廣告)",
                 "adId": str(ad.get("adId") or ""),
                 "campaign": campaign_name or "(未分類活動)",
+                "effectiveStatus": str(ad.get("effectiveStatus") or ("ACTIVE" if ad.get("active") else "UNKNOWN")),
+                "active": bool(ad.get("active")),
+                "campaignEffectiveStatus": str(ad.get("campaignEffectiveStatus") or "UNKNOWN"),
                 "spend": as_float(ad.get("spend")),
                 "conversions": as_float(ad.get("conversions")),
                 "revenue": as_float(ad.get("revenue")),
