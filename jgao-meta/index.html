@@ -1029,17 +1029,7 @@ const LEDGER_PRODUCT_BLOCK_WIDTH = 8;
 const LEDGER_PRODUCT_BLOCK_START_COL = 19; // 從 T 欄(0-indexed 19)開始才是「產品代號」區塊,前面 A-R 欄是總表與 FB 總花費
 const LEDGER_MONTH_SHEET_RE = /^(\d{1,2})\s*月/;
 
-function excelDateToISO(v) {
-  if (v instanceof Date) {
-    return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, "0")}-${String(v.getUTCDate()).padStart(2, "0")}`;
-  }
-  return null;
-}
 
-function toNum(v) {
-  const n = typeof v === "number" ? v : parseFloat(v);
-  return isFinite(n) ? n : 0;
-}
 
 // 解析單一分頁(一個月份)成 { monthKey, days: [...], productCodes: [...] }。
 // year 由匯入時使用者指定(表單裡沒有年份資訊,只有分頁月份)。
@@ -1097,9 +1087,6 @@ SHARED_PREFIXES.push(ADPERF_AI_MONTH_PREFIX);
 // 不會重複對同一個廣告帳號打 Meta API——在 Meta App 目前是 Dev Tier(每帳號每小時300次請求)
 // 這種嚴格額度下,這是真正能大幅降低同一帳號總請求量的做法,而不是只優化單次查詢本身。
 SHARED_PREFIXES.push(STORAGE_PREFIX);
-function shoplineMonthKey(monthKey) {
-  return SHOPLINE_MONTH_PREFIX + monthKey;
-}
 
 // 把 Date 物件格式化成 "YYYY-MM-DD"(用日曆上的年月日,不轉時區)
 function fmtYmd(d) {
@@ -1107,12 +1094,6 @@ function fmtYmd(d) {
 }
 
 // 一個月的起訖日期字串,給 Shopline Worker 用
-function monthRangeForShopline(monthKey) {
-  const [y, m] = monthKey.split("-").map(Number);
-  const start = new Date(y, m - 1, 1);
-  const end = new Date(y, m, 0); // 該月最後一天
-  return { since: fmtYmd(start), until: fmtYmd(end) };
-}
 
 // 把 Shopline 訂單依「utm_content(通常是 Meta 廣告 ID)」比對到對應的廣告,
 // 比對不到的訂單(例如自然流量、直接輸入網址、UTM 是空的)歸到「unmatched」。
@@ -3810,32 +3791,7 @@ function MetaAdsLedger() {
   }, []);
 
   async 
-  async function fetchShoplineData(since, until, storageKey, applyFn) {
-    if (!shoplineWorkerUrl) {
-      setShoplineError("請先貼上並儲存你的 Cloudflare Worker 網址。");
-      return;
-    }
-    setShoplineLoading(true);
-    setShoplineError(null);
-    setShoplineNotice(null);
-    try {
-      const res = await fetch(`${shoplineWorkerUrl}/api/orders?since=${since}&until=${until}`, {
-        headers: { "X-Proxy-Auth": SHOPLINE_PROXY_SECRET },
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || `Worker 回應錯誤 (status ${res.status})`);
-      }
-      await storage.set(storageKey, JSON.stringify(data));
-      applyFn(data);
-      setShoplineNotice(`已抓取 ${data.meta && data.meta.totalOrders != null ? data.meta.totalOrders : "0"} 筆 Shopline 訂單(${since} ~ ${until})。`);
-    } catch (e) {
-      setShoplineError("抓取 Shopline 資料失敗:" + e.message);
-    } finally {
-      setShoplineLoading(false);
-    }
-  }
-
+  async 
   
   // 折價券查詢:自訂時間範圍(日曆選的起訖日),不綁定既有的週/月固定區間,查詢結果只放在畫面上,不存進共用/本機儲存空間
   // (跟月報表的 Shopline 資料是分開的兩份,避免互相覆蓋)。
