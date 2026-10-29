@@ -61,6 +61,7 @@ jobs:
         run: |
           python -m py_compile tools/airbyte_meta_sync.py
           node --check functions/api/airbyte/brands.js
+          node --check functions/api/airbyte/sync.js
           node --check functions/_shared/githubOidc.js
           node --check 'functions/api/airbyte/kv/item/[key].js'
 
