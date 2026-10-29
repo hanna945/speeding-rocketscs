@@ -1,11 +1,6 @@
-# post-cleanup verification
 name: Cloudflare Account Audit
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/cloudflare-account-audit.yml"
   workflow_dispatch:
 
 permissions:
@@ -54,7 +49,7 @@ jobs:
 
           echo
           echo "=== PAGE PROJECT DETAILS ==="
-          for project in hj-brand-report hj-shopline-report rocket speeding-rocket speedingrocket speedingscs; do
+          for project in hj-brand-report speedingscs; do
             echo "--- $project ---"
             project_json="$(cf_get "/pages/projects/$project")"
             if echo "$project_json" | show_error_or_pass; then
@@ -134,7 +129,7 @@ jobs:
 
           echo
           echo "=== KV KEY COUNTS ==="
-          for ns in d283e1d9fa8f4ec1b1a64f2818649cb0 d1c488eadc704d319ee762138f718b08; do
+          for ns in d283e1d9fa8f4ec1b1a64f2818649cb0; do
             echo "--- $ns ---"
             cursor=""
             total=0
