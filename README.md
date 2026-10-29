@@ -181,3 +181,20 @@ GitHub → Actions → **Airbyte Meta Central Sync** → Run workflow。
 
 **Q:同事不小心把 URL 傳到外部**
 建議把 `TEAM_SECRET` 定期更換,或改用步驟 9 的 Cloudflare Access 幫整個網站加一層登入驗證。
+
+
+## Meta 手動同步改走中央 Airbyte
+
+品牌成效分析頁面的「立即同步 Meta」不再由瀏覽器直接呼叫 Meta Graph API。
+
+手動同步流程：
+
+1. Cloudflare Pages Function 把同步請求寫入既有 `REPORT_KV`。
+2. `.github/workflows/airbyte-manual-sync-poll.yml` 每 5 分鐘檢查一次待同步請求。
+3. 發現請求後，以 GitHub Actions 內建 `GITHUB_TOKEN` 觸發 `.github/workflows/airbyte-meta-sync.yml`。
+4. Airbyte 以 `brand_id=""` 同步中央品牌名單內全部品牌。
+5. 完成狀態寫回 `REPORT_KV`，前端自動顯示成功或失敗。
+
+這條路徑不需要額外設定 `GITHUB_WORKFLOW_TOKEN`，也不會把 GitHub 或 Meta 憑證暴露到瀏覽器。
+
+原本每 6 小時的自動排程不變：台灣時間約 **02:23 / 08:23 / 14:23 / 20:23**。手動請求通常會在 **5 分鐘內**被 GitHub Actions 接手。
