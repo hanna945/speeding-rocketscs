@@ -3628,9 +3628,135 @@ function CollapsibleSectionTitle({ children, className = "", style, ...props }) 
   );
 }
 
-function StaticSectionTitle({ children, className = "", style, ...props }
+function StaticSectionTitle({ children, className = "", style, ...props }) { return (<h2 {...props} className={className} style={style}>{children}</h2>); }
 
-function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel, prevPeriodLabel, roasTarget = 3, currencyCode, minSpend = 500, collapsible = true }
+function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel, prevPeriodLabel, roasTarget = 3, currencyCode, minSpend = 500, collapsible = true }) {
+  const meta = buildProductBreakdown(ads || [], minSpend);
+  const merged = mergeChannelBreakdown(meta.rows, meta.totalRevenue, meta.totalSpend, ledgerAgg);
+  const { grandTotalRevenue, grandTotalSpend, channelRevenueOnlyRows, rows } = merged;
+
+  if (grandTotalRevenue === 0 && grandTotalSpend === 0) return null; // 這期完全沒資料,不顯示整個區塊
+
+  const netProfit = grandTotalRevenue - grandTotalSpend;
+
+  let prevGrandTotalRevenue = null;
+  if (prevAds || prevLedgerAgg) {
+    const prevMeta = buildProductBreakdown(prevAds || [], minSpend);
+    const prevMerged = mergeChannelBreakdown(prevMeta.rows, prevMeta.totalRevenue, prevMeta.totalSpend, prevLedgerAgg);
+    if (prevMerged.grandTotalRevenue > 0 || prevMerged.grandTotalSpend > 0) prevGrandTotalRevenue = prevMerged.grandTotalRevenue;
+  }
+  const growthAmount = prevGrandTotalRevenue !== null ? grandTotalRevenue - prevGrandTotalRevenue : null;
+  const growthPct = prevGrandTotalRevenue !== null && prevGrandTotalRevenue > 0 ? (growthAmount / prevGrandTotalRevenue) * 100 : null;
+
+  // 狀態標籤:跟投放成效同一套邏輯(整體ROAS對目標的比例),維持全站判定方式一致。
+  const overallRoas = grandTotalSpend > 0 ? grandTotalRevenue / grandTotalSpend : null;
+  const ratio = overallRoas !== null && roasTarget > 0 ? overallRoas / roasTarget : null;
+  const status = ratio === null ? null : ratio >= 1.5 ? "超標" : ratio >= 1 ? "優於目標" : "未達標";
+  const statusColor = { 超標: "var(--blue)", 優於目標: "var(--green)", 未達標: "var(--red)" };
+  const allTags = ["超出預算", "超標", "未達標", "優於目標"];
+
+  // 平台/通路清單:Meta對不到代號的所有通路(有花費的+沒花費的合在一起),依營收排序。
+  const allChannelRows = [
+    ...rows.filter((r) => r.isChannel),
+    ...channelRevenueOnlyRows,
+  ].sort((a, b) => b.revenue - a.revenue);
+  const [channelsCollapsed, setChannelsCollapsed] = useState(false);
+
+  return (
+    <div className="mal-ops-summary">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
+        {collapsible ? (
+          <CollapsibleSectionTitle className="mal-section-title" style={{ marginBottom: 0 }}>整體營運{periodLabel ? `(${periodLabel})` : ""}</CollapsibleSectionTitle>
+        ) : (
+          <StaticSectionTitle className="mal-section-title" style={{ marginBottom: 0 }}>整體營運{periodLabel ? `(${periodLabel})` : ""}</StaticSectionTitle>
+        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {allTags.map((tag) => (
+            <span
+              key={tag}
+              style={{
+                fontSize: 12.5, padding: "2px 10px", borderRadius: 999,
+                fontWeight: tag === status ? 700 : 400,
+                background: tag === status ? statusColor[tag] : "transparent",
+                color: tag === status ? "#fff" : "var(--ink-soft)",
+              }}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="mal-cards" style={{ marginBottom: 18 }}>
+        <div className="mal-card">
+          <div className="mal-card-label">總營收{periodLabel ? `(${periodLabel})` : ""}</div>
+          <div className="mal-card-value">{fmtMoney(grandTotalRevenue, currencyCode)}</div>
+        </div>
+        {prevGrandTotalRevenue !== null && (
+          <div className="mal-card">
+            <div className="mal-card-label">上期總營收{prevPeriodLabel ? `(${prevPeriodLabel})` : ""}</div>
+            <div className="mal-card-value">{fmtMoney(prevGrandTotalRevenue, currencyCode)}</div>
+            {growthPct !== null && (
+              <div style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 4 }}>
+                較上期{growthPct >= 0 ? "成長約" : "下降約"}{" "}
+                <span style={{ color: growthPct >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700 }}>{Math.abs(growthPct).toFixed(1)}%</span>
+                ,{growthAmount >= 0 ? "增加了" : "減少了"} {fmtMoney(Math.abs(growthAmount), currencyCode)}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="mal-card">
+          <div className="mal-card-label">總廣告費</div>
+          <div className="mal-card-value">{fmtMoney(grandTotalSpend, currencyCode)}</div>
+        </div>
+        <div className={`mal-card ${netProfit >= 0 ? "mal-card-highlight-good" : ""}`}>
+          <div className="mal-card-label">總淨利(扣除廣告費後)</div>
+          <div className="mal-card-value">{fmtMoney(netProfit, currencyCode)}</div>
+        </div>
+      </div>
+
+      {allChannelRows.length > 0 && (
+        <>
+          {collapsible ? (
+            <h2
+              className="mal-section-title mal-major-section-title"
+              style={{ fontSize: 15, marginBottom: 10 }}
+              onClick={() => setChannelsCollapsed((v) => !v)}
+              role="button"
+              tabIndex={0}
+              aria-expanded={!channelsCollapsed}
+            >
+              平台／通路明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
+              <span className="mal-major-section-toggle" aria-hidden="true">{channelsCollapsed ? "＋" : "−"}</span>
+            </h2>
+          ) : (
+            <StaticSectionTitle className="mal-section-title" style={{ fontSize: 15, marginBottom: 10 }}>
+              平台／通路明細<span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-soft)", marginLeft: 6 }}>(後台帳本裡Meta廣告代號對不到的通路)</span>
+            </StaticSectionTitle>
+          )}
+          {(!collapsible || !channelsCollapsed) && (
+            <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+              <table className="mal-table">
+                <thead>
+                  <tr><th>平台/通路</th><th>營收</th><th>廣告費</th><th>帳面利潤</th></tr>
+                </thead>
+                <tbody>
+                  {allChannelRows.map((r) => (
+                    <tr key={r.code}>
+                      <td>{r.code}</td>
+                      <td>{fmtMoney(r.revenue, currencyCode)}</td>
+                      <td>{r.spend > 0 ? fmtMoney(r.spend, currencyCode) : "—"}</td>
+                      <td>{r.profit !== null && r.profit !== undefined ? fmtMoney(r.profit, currencyCode) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 function MetaAdsLedger() {
   const [months, setMonths] = useState({});
@@ -5319,7 +5445,152 @@ function MetaAdsLedger() {
   });
 
 
-  function LedgerVsMetaComparison({ ads, currencyCode, ledgerAgg, onOpenImport, periodLabel }
+  function LedgerVsMetaComparison({ ads, currencyCode, ledgerAgg, onOpenImport, periodLabel }) {
+    if (!ledgerAgg) {
+      return (
+        <div className="mal-empty">
+          {onOpenImport ? (
+            <>
+              <p>這個{periodLabel}還沒有匯入後台的「每日收益表」,沒辦法比對後台實際業績跟 Meta 回報的落差。</p>
+              <button className="mal-btn mal-btn-primary" onClick={onOpenImport}>📥 匯入後台每日收益表</button>
+            </>
+          ) : (
+            <p>這個{periodLabel}的後台業績資料還沒同步完成,稍後重新整理再看一次。</p>
+          )}
+        </div>
+      );
+    }
+    const metaBreak = buildProductBreakdown(ads || [], MIN_AD_SPEND);
+    const metaByCode = {};
+    metaBreak.rows.forEach((r) => { metaByCode[r.code] = r; });
+    const codes = Array.from(new Set([...Object.keys(ledgerAgg.byCode), ...Object.keys(metaByCode)])).sort();
+    let totalBackendRevenue = 0, totalMetaRevenue = 0, totalBackendSpend = 0, totalMetaSpend = 0;
+    const rows = codes.map((code) => {
+      const b = ledgerAgg.byCode[code];
+      const m = metaByCode[code];
+      const backendRevenue = b ? b.revenue : 0;
+      const metaRevenue = m ? m.revenue : 0;
+      const backendSpend = b ? b.spend : 0;
+      const metaSpend = m ? m.spend : 0;
+      totalBackendRevenue += backendRevenue; totalMetaRevenue += metaRevenue;
+      totalBackendSpend += backendSpend; totalMetaSpend += metaSpend;
+      const revGap = metaRevenue - backendRevenue;
+      const revGapPct = backendRevenue > 0 ? (revGap / backendRevenue) * 100 : null;
+      const spendGap = metaSpend - backendSpend;
+      const spendGapPct = backendSpend > 0 ? (spendGap / backendSpend) * 100 : null;
+      return { code, backendRevenue, metaRevenue, revGap, revGapPct, backendSpend, metaSpend, spendGap, spendGapPct, onlyBackend: !!b && !m, onlyMeta: !!m && !b };
+    });
+    const totalRevGap = totalMetaRevenue - totalBackendRevenue;
+    const totalRevGapPct = totalBackendRevenue > 0 ? (totalRevGap / totalBackendRevenue) * 100 : null;
+    const totalSpendGap = totalMetaSpend - totalBackendSpend;
+    const totalSpendGapPct = totalBackendSpend > 0 ? (totalSpendGap / totalBackendSpend) * 100 : null;
+    const onlyBackendCodes = rows.filter((r) => r.onlyBackend).map((r) => r.code);
+    const onlyMetaCodes = rows.filter((r) => r.onlyMeta).map((r) => r.code);
+    return (
+      <>
+        <div className="mal-cards" style={{ marginBottom: 18 }}>
+          <div className="mal-card">
+            <div className="mal-card-label">後台實際營收</div>
+            <div className="mal-card-value">{fmtMoney(totalBackendRevenue, currencyCode)}</div>
+          </div>
+          <div className="mal-card">
+            <div className="mal-card-label">Meta 回報營收</div>
+            <div className="mal-card-value">{fmtMoney(totalMetaRevenue, currencyCode)}</div>
+          </div>
+          <div className="mal-card">
+            <div className="mal-card-label">營收落差</div>
+            <div className="mal-card-value">{fmtMoney(totalRevGap, currencyCode)}</div>
+            {totalRevGapPct !== null && <DeltaBadge value={totalRevGapPct} />}
+          </div>
+          <div className="mal-card">
+            <div className="mal-card-label">廣告費落差</div>
+            <div className="mal-card-value">{fmtMoney(totalSpendGap, currencyCode)}</div>
+            {totalSpendGapPct !== null && <DeltaBadge value={totalSpendGapPct} invert />}
+          </div>
+        </div>
+        <div className="mal-scroll-wrap mal-ledger-compare-wrap" style={{ overflowX: "auto" }}>
+          <table className="mal-table mal-ledger-table mal-ledger-compare-table">
+            <colgroup>
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th rowSpan={2} style={{ verticalAlign: "bottom" }}>產品代號</th>
+                <th colSpan={3} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🟩 後台實際業績</th>
+                <th colSpan={2} className="mal-ledger-group-meta mal-ledger-group-label-meta" style={{ textAlign: "center" }}>🟧 Meta 回報業績</th>
+                <th colSpan={2} className="mal-ledger-group-gap" style={{ textAlign: "center" }}>落差</th>
+              </tr>
+              <tr>
+                <th className="mal-ledger-group-backend">營收</th>
+                <th className="mal-ledger-group-backend">廣告費</th>
+                <th className="mal-ledger-group-backend">廣告費佔比</th>
+                <th className="mal-ledger-group-meta">營收</th>
+                <th className="mal-ledger-group-meta">廣告費</th>
+                <th className="mal-ledger-group-gap">營收落差%</th>
+                <th className="mal-ledger-group-gap">廣告費落差%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.code}>
+                  <td>
+                    {r.code}
+                    {r.onlyBackend && <span style={{ fontSize: 10, color: "var(--red)", marginLeft: 4 }}>僅後台</span>}
+                    {r.onlyMeta && <span style={{ fontSize: 10, color: "var(--red)", marginLeft: 4 }}>僅Meta</span>}
+                  </td>
+                  <td className="mal-ledger-group-backend">{fmtMoney(r.backendRevenue, currencyCode)}</td>
+                  <td className="mal-ledger-group-backend">{fmtMoney(r.backendSpend, currencyCode)}</td>
+                  <td className="mal-ledger-group-backend">{adPct(r.backendSpend, r.backendRevenue, adRatioThresholds[activeBrandId])}</td>
+                  <td className="mal-ledger-group-meta">{fmtMoney(r.metaRevenue, currencyCode)}</td>
+                  <td className="mal-ledger-group-meta">{fmtMoney(r.metaSpend, currencyCode)}</td>
+                  <td className="mal-ledger-group-gap">{r.revGapPct !== null ? <DeltaBadge value={r.revGapPct} /> : "—"}</td>
+                  <td className="mal-ledger-group-gap">{r.spendGapPct !== null ? `${r.spendGapPct >= 0 ? "+" : ""}${r.spendGapPct.toFixed(0)}%` : "—"}</td>
+                </tr>
+              ))}
+              <tr>
+                <td className="mal-row-month">合計</td>
+                <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(totalBackendRevenue, currencyCode)}</td>
+                <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(totalBackendSpend, currencyCode)}</td>
+                <td className="mal-ledger-group-backend mal-row-month">{adPct(totalBackendSpend, totalBackendRevenue, adRatioThresholds[activeBrandId])}</td>
+                <td className="mal-ledger-group-meta mal-row-month">{fmtMoney(totalMetaRevenue, currencyCode)}</td>
+                <td className="mal-ledger-group-meta mal-row-month">{fmtMoney(totalMetaSpend, currencyCode)}</td>
+                <td className="mal-ledger-group-gap mal-row-month">{totalRevGapPct !== null ? <DeltaBadge value={totalRevGapPct} /> : "—"}</td>
+                <td className="mal-ledger-group-gap mal-row-month">{totalSpendGapPct !== null ? `${totalSpendGapPct >= 0 ? "+" : ""}${totalSpendGapPct.toFixed(0)}%` : "—"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "8px 0 0" }}>
+          🟩 後台實際業績 = 匯入的每日收益表(以下單日期為準,已扣退換貨);🟧 Meta 回報業績 = Meta 廣告後台回報的轉換金額(以歸因時間為準)。落差% = (Meta − 後台) ÷ 後台。
+        </p>
+        <div className="mal-analysis">
+          <div className="mal-analysis-title">基礎分析:為什麼會有落差</div>
+          <ul>
+            <li>歸因時間差:Meta 依廣告帳戶時區、點擊或瀏覽後 1~7 天內成立的轉換計算,後台則依「實際下單日期」計算,同一筆訂單可能被算進不同天,尤其影響跨月邊界。</li>
+            <li>非 Meta 廣告帶來的訂單:自然流量、Google、社團、業配連結等其他渠道的訂單只會出現在後台,不會算進 Meta 回報的營收。</li>
+            <li>退換貨與訂單取消:後台營收通常已扣除退貨/取消,Meta 的轉換數字多半不會事後修正,會讓 Meta 端顯示比實際偏高。</li>
+            <li>轉換去重估算方式不同:Meta 用像素/CAPI 綜合估算轉換金額,與後台實際成立訂單金額本來就存在估算誤差。</li>
+            {onlyBackendCodes.length > 0 && (
+              <li>「{onlyBackendCodes.join("、")}」只有後台資料、Meta 端找不到對應代號,可能是這些商品目前沒有投放 Meta 廣告,或廣告活動命名沒有加上一致的產品代號。</li>
+            )}
+            {onlyMetaCodes.length > 0 && (
+              <li>「{onlyMetaCodes.join("、")}」只有 Meta 資料、後台找不到對應,請確認是否已匯入這個{periodLabel}的後台報表,或後台的產品代號拼法是否一致。</li>
+            )}
+            {metaBreak.unresolved > 0 && (
+              <li>Meta 端另有 {metaBreak.unresolved} 支廣告的行銷活動名稱沒有加上「【產品代號】」,沒有被算進上表,可能讓 Meta 端的營收被低估。</li>
+            )}
+          </ul>
+        </div>
+      </>
+    );
+  }
 
 function PerformanceBreakdown({ ads, currencyCode, accountId }) {
     const { qualifyingAds, buckets } = groupAdsByPerformance(ads);
