@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import os
 import sys
@@ -50,26 +51,55 @@ def env_required(name: str) -> str:
     return value
 
 
-def report_team_keys() -> list[str]:
-    """Load one or many department keys without requiring a global all-brand password."""
-    raw_json = os.getenv("REPORT_TEAM_KEYS_JSON", "").strip()
-    if raw_json:
-        try:
-            parsed = json.loads(raw_json)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("REPORT_TEAM_KEYS_JSON must be a JSON array of department keys.") from exc
-        if not isinstance(parsed, list):
-            raise RuntimeError("REPORT_TEAM_KEYS_JSON must be a JSON array.")
-        keys = [str(x).strip() for x in parsed if str(x).strip()]
-        if keys:
-            return list(dict.fromkeys(keys))
+_OIDC_CACHE = {"token": "", "exp": 0}
 
-    single = os.getenv("REPORT_TEAM_KEY", "").strip()
-    if single:
-        return [single]
 
-    raise RuntimeError("Missing REPORT_TEAM_KEYS_JSON (preferred) or REPORT_TEAM_KEY.")
+def _jwt_exp(token: str) -> int:
+    try:
+        part = token.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(part.encode("ascii")).decode("utf-8"))
+        return int(payload.get("exp") or 0)
+    except Exception:
+        return 0
 
+
+def github_oidc_token() -> str:
+    """Request a short-lived GitHub Actions OIDC token for the Cloudflare machine gateway."""
+    now = int(datetime.now(timezone.utc).timestamp())
+    if _OIDC_CACHE["token"] and _OIDC_CACHE["exp"] - now > 120:
+        return str(_OIDC_CACHE["token"])
+
+    request_url = os.getenv("ACTIONS_ID_TOKEN_REQUEST_URL", "").strip()
+    request_token = os.getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "").strip()
+    if not request_url or not request_token:
+        raise RuntimeError("GitHub OIDC environment is unavailable. Workflow needs permissions: id-token: write.")
+
+    sep = "&" if "?" in request_url else "?"
+    url = request_url + sep + urllib.parse.urlencode({"audience": "speedingscs-airbyte"})
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": "Bearer " + request_token,
+            "Accept": "application/json",
+            "User-Agent": "speedingscs-airbyte-sync/2.0",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Unable to obtain GitHub OIDC token: HTTP {exc.code}: {raw[:400]}") from exc
+
+    token = str(payload.get("value") or "").strip()
+    if not token:
+        raise RuntimeError("GitHub OIDC endpoint returned no token.")
+
+    _OIDC_CACHE["token"] = token
+    _OIDC_CACHE["exp"] = _jwt_exp(token)
+    return token
 
 def dump_model(value: Any) -> Any:
     if hasattr(value, "model_dump"):
@@ -126,11 +156,11 @@ async def paged(method, **params: Any) -> list[dict[str, Any]]:
     return rows
 
 
-def http_json(url: str, team_key: str, method: str = "GET", body: bytes | None = None) -> Any:
+def http_json(url: str, method: str = "GET", body: bytes | None = None) -> Any:
     headers = {
-        "X-Team-Key": team_key,
+        "Authorization": "Bearer " + github_oidc_token(),
         "Accept": "application/json",
-        "User-Agent": "speedingscs-airbyte-sync/1.0",
+        "User-Agent": "speedingscs-airbyte-sync/2.0",
     }
     if body is not None:
         headers["Content-Type"] = "text/plain; charset=utf-8"
@@ -145,12 +175,12 @@ def http_json(url: str, team_key: str, method: str = "GET", body: bytes | None =
 
 
 def kv_url(base_url: str, key: str) -> str:
-    return base_url.rstrip("/") + "/api/kv/item/" + urllib.parse.quote(key, safe="")
+    return base_url.rstrip("/") + "/api/airbyte/kv/item/" + urllib.parse.quote(key, safe="")
 
 
-def kv_get(base_url: str, team_key: str, key: str) -> Any:
+def kv_get(base_url: str, key: str) -> Any:
     try:
-        payload = http_json(kv_url(base_url, key), team_key)
+        payload = http_json(kv_url(base_url, key))
     except RuntimeError as exc:
         if "HTTP 404" in str(exc):
             return None
@@ -163,13 +193,13 @@ def kv_get(base_url: str, team_key: str, key: str) -> Any:
         return payload["value"]
 
 
-def kv_put(base_url: str, team_key: str, key: str, value: Any) -> None:
+def kv_put(base_url: str, key: str, value: Any) -> None:
     raw = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    http_json(kv_url(base_url, key), team_key, method="PUT", body=raw)
+    http_json(kv_url(base_url, key), method="PUT", body=raw)
 
 
-def fetch_brand_roster(base_url: str, team_key: str) -> list[dict[str, str]]:
-    payload = http_json(base_url.rstrip("/") + "/api/airbyte/brands", team_key)
+def fetch_brand_roster(base_url: str) -> list[dict[str, str]]:
+    payload = http_json(base_url.rstrip("/") + "/api/airbyte/brands")
     if not isinstance(payload, dict) or not payload.get("ok"):
         raise RuntimeError(f"Unable to load brand roster: {payload}")
     brands = payload.get("brands") or []
@@ -580,7 +610,6 @@ def build_report_record(
 async def sync_brand(
     connector: FacebookMarketingConnector,
     base_url: str,
-    team_key: str,
     brand: dict[str, str],
     lookback_days: int,
     metadata_max_age_hours: int,
@@ -600,7 +629,7 @@ async def sync_brand(
     needed_months = {month_key(current_month_start), month_key(last_week_start), month_key(last_week_end)}
     caches: dict[str, dict[str, Any]] = {}
     for mk in needed_months:
-        cached = kv_get(base_url, team_key, cache_key(account_id, mk))
+        cached = kv_get(base_url, cache_key(account_id, mk))
         caches[mk] = cached if isinstance(cached, dict) else {"version": 1, "accountId": account_id, "month": mk, "days": {}}
 
     current_cache = caches[month_key(current_month_start)]
@@ -624,15 +653,15 @@ async def sync_brand(
         week_rows = await fetch_daily_insights(connector, account_id, last_week_start, last_week_end)
         update_cache_rows(caches, account_id, last_week_start, last_week_end, week_rows)
 
-    old_meta = kv_get(base_url, team_key, meta_key(account_id))
+    old_meta = kv_get(base_url, meta_key(account_id))
     metadata = await refresh_metadata(connector, account_id, old_meta, metadata_max_age_hours)
     if metadata is not old_meta:
-        kv_put(base_url, team_key, meta_key(account_id), metadata)
+        kv_put(base_url, meta_key(account_id), metadata)
 
     for mk, cache in caches.items():
-        kv_put(base_url, team_key, cache_key(account_id, mk), cache)
+        kv_put(base_url, cache_key(account_id, mk), cache)
 
-    month_existing = kv_get(base_url, team_key, month_report_key(account_id, month_key(local_today)))
+    month_existing = kv_get(base_url, month_report_key(account_id, month_key(local_today)))
     legacy = legacy_ad_meta(month_existing)
     month_rows = rows_for_period(caches, current_month_start, local_today)
     month_reach = await fetch_period_reach(connector, account_id, current_month_start, local_today)
@@ -640,10 +669,10 @@ async def sync_brand(
         month_rows, month_reach, metadata, legacy, account_id, currency,
         current_month_start, local_today, relax_threshold=False,
     )
-    kv_put(base_url, team_key, month_report_key(account_id, month_key(local_today)), month_record)
+    kv_put(base_url, month_report_key(account_id, month_key(local_today)), month_record)
 
     week_key = week_report_key(account_id, last_week_start.isoformat())
-    week_existing = kv_get(base_url, team_key, week_key)
+    week_existing = kv_get(base_url, week_key)
     if not isinstance(week_existing, dict) or week_existing.get("source") != "airbyte":
         week_rows = rows_for_period(caches, last_week_start, last_week_end)
         week_reach = await fetch_period_reach(connector, account_id, last_week_start, last_week_end)
@@ -651,7 +680,7 @@ async def sync_brand(
             week_rows, week_reach, metadata, legacy_ad_meta(week_existing), account_id, currency,
             last_week_start, last_week_end, relax_threshold=True,
         )
-        kv_put(base_url, team_key, week_key, week_record)
+        kv_put(base_url, week_key, week_record)
 
     print(
         f"[{brand['name']}] done: month ads={len(month_record['ads'])}, "
@@ -661,36 +690,29 @@ async def sync_brand(
 
 async def amain(args: argparse.Namespace) -> int:
     token = env_required("META_SYSTEM_USER_TOKEN")
-    team_keys = report_team_keys()
     base_url = os.getenv("REPORT_BASE_URL", DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL
+
+    # Fail early if GitHub OIDC is not available before touching Meta.
+    github_oidc_token()
 
     connector = FacebookMarketingConnector(
         auth_config=FacebookMarketingServiceAccountKeyAuthenticationAuthConfig(account_key=token)
     )
 
-    # Each department key only reveals/writes its own brand scope. Merge those scopes here,
-    # keeping the corresponding key with each brand so no "all 7 brands" password is required.
-    brand_access: dict[str, tuple[dict[str, str], str]] = {}
-    for idx, team_key in enumerate(team_keys, start=1):
-        roster = fetch_brand_roster(base_url, team_key)
-        print(f"Department key {idx}: {len(roster)} accessible brand(s)")
-        for brand in roster:
-            brand_access.setdefault(brand["id"], (brand, team_key))
-
-    targets = list(brand_access.values())
+    brands = fetch_brand_roster(base_url)
     if args.brand_id:
         wanted = args.brand_id.removeprefix("act_")
-        targets = [item for item in targets if item[0]["id"] == wanted]
-    if not targets:
-        raise RuntimeError("No accessible brands returned by the configured department keys.")
+        brands = [b for b in brands if b["id"] == wanted]
+    if not brands:
+        raise RuntimeError("No brands returned by the machine-only Airbyte roster endpoint.")
 
-    print(f"Central sync roster: {len(targets)} unique brand(s) across {len(team_keys)} department key(s)")
+    print(f"Central sync roster: {len(brands)} unique brand(s), auth=github_actions_oidc")
     errors = []
-    for index, (brand, team_key) in enumerate(targets, start=1):
-        print(f"({index}/{len(targets)}) {brand['name']} [{brand['id']}]")
+    for index, brand in enumerate(brands, start=1):
+        print(f"({index}/{len(brands)}) {brand['name']} [{brand['id']}]")
         try:
             await sync_brand(
-                connector, base_url, team_key, brand,
+                connector, base_url, brand,
                 lookback_days=args.lookback_days,
                 metadata_max_age_hours=args.metadata_max_age_hours,
                 force_backfill_days=args.backfill_days,
@@ -698,7 +720,7 @@ async def amain(args: argparse.Namespace) -> int:
         except Exception as exc:
             errors.append((brand, exc))
             print(f"ERROR [{brand['name']}]: {exc}", file=sys.stderr)
-        if index < len(targets):
+        if index < len(brands):
             await asyncio.sleep(args.brand_gap_seconds)
 
     if errors:
@@ -707,7 +729,6 @@ async def amain(args: argparse.Namespace) -> int:
             print(f"  - {brand['name']}: {exc}", file=sys.stderr)
         return 1
     return 0
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
