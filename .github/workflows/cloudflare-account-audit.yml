@@ -52,6 +52,29 @@ jobs:
           ' | sort
 
           echo
+          echo "=== PAGE PROJECT DETAILS ==="
+          for project in hj-brand-report hj-shopline-report rocket speeding-rocket speedingrocket speedingscs; do
+            echo "--- $project ---"
+            project_json="$(cf_get "/pages/projects/$project")"
+            if echo "$project_json" | show_error_or_pass; then
+              echo "$project_json" | jq -c '{
+                name:.result.name,
+                subdomain:.result.subdomain,
+                domains:(.result.domains // []),
+                production_branch:.result.production_branch,
+                source:(.result.source // null),
+                latest_deployment:(.result.latest_deployment | if . == null then null else {id,environment,created_on,url,aliases} end),
+                production_bindings:{
+                  kv_namespaces:(.result.deployment_configs.production.kv_namespaces // {}),
+                  d1_databases:(.result.deployment_configs.production.d1_databases // {}),
+                  services:(.result.deployment_configs.production.services // {}),
+                  compatibility_date:(.result.deployment_configs.production.compatibility_date // null)
+                }
+              }'
+            fi
+          done
+
+          echo
           echo "=== WORKER SCRIPTS ==="
           workers_json="$(cf_get "/workers/scripts")"
           echo "$workers_json" | show_error_or_pass &&
