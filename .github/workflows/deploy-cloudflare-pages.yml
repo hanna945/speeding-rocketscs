@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "index.html"
+      - "manifest.json"
+      - "_routes.json"
+      - "wrangler.toml"
+      - "functions/**"
+      - "liaoliao-meta/**"
+      - "mavis-meta/**"
   workflow_dispatch:
 
 permissions:
