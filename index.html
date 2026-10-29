@@ -900,11 +900,8 @@ const localOnlyStorage = {
   },
 };
 const STORAGE_PREFIX = "metaads-month:";
-const WEEK_STORAGE_PREFIX = "metaads-week:";
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
-const WEEKLY_PLAN_PREFIX = "weekly-plan:";
 const MONTHLY_PLAN_PREFIX = "monthly-plan:";
-const ADPERF_AI_WEEK_PREFIX = "adperf-ai-week:";
 const ADPERF_AI_MONTH_PREFIX = "adperf-ai-month:";
 // 2026-07-30新增:H-J那邊已經在同步真實Shopline訂單資料(shopline-week:/shopline-month:),
 // key格式完全一致,speedingscs這裡只要讀,不用自己另外抓——H&J一頁業績透過speedingscs看矩陣總覽時,
@@ -914,7 +911,7 @@ const SHOPLINE_MONTH_PREFIX = "shopline-month:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
 const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-monthly-budgets", "meta-api-product-names"]);
-const SHARED_PREFIXES = [STORAGE_PREFIX, WEEK_STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, WEEKLY_PLAN_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_WEEK_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_WEEK_PREFIX, SHOPLINE_MONTH_PREFIX];
+const SHARED_PREFIXES = [STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_MONTH_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
   return SHARED_PREFIXES.some((p) => key.startsWith(p));
@@ -3927,36 +3924,6 @@ function MetaAdsLedger() {
     }
   }, [apiToken, rememberToken]);
 
-  async function loadAllWeeks(brandId, isStale) {
-    try {
-      const listRes = await storage.list(WEEK_STORAGE_PREFIX);
-      if (isStale && isStale()) return;
-      const keys = ((listRes && listRes.keys) || []).filter((k) => {
-        const rest = k.slice(WEEK_STORAGE_PREFIX.length);
-        return brandId ? rest.startsWith(brandId + "::") : !rest.includes("::");
-      });
-      const entries = {};
-      for (const k of keys) {
-        if (isStale && isStale()) return;
-        const res = await storage.get(k);
-        if (res && res.value) {
-          const rest = k.slice(WEEK_STORAGE_PREFIX.length);
-          const wk = brandId ? rest.slice((brandId + "::").length) : rest;
-          entries[wk] = JSON.parse(res.value);
-        }
-      }
-      if (isStale && isStale()) return;
-      setWeeksData(entries);
-      const sorted = Object.keys(entries).sort();
-      setFocusWeek(sorted.length ? sorted[sorted.length - 1] : null);
-    } catch {
-      if (!(isStale && isStale())) {
-        setWeeksData({});
-        setFocusWeek(null);
-      }
-    }
-  }
-
   async function loadLedger(brandId, isStale) {
     try {
       const listRes = await storage.list(LEDGER_STORAGE_PREFIX);
@@ -4000,7 +3967,7 @@ function MetaAdsLedger() {
         await storage.set(ledgerKeyFor(activeBrandId, mk), JSON.stringify(parsedByMonth[mk]));
       }
       await loadLedger(activeBrandId);
-      setLedgerImportNotice(`已匯入 ${monthKeys.map((mk) => monthLabel(mk)).join("、")} 的後台每日收益表,週報表/月報表會自動比對。`);
+      setLedgerImportNotice(`已匯入 ${monthKeys.map((mk) => monthLabel(mk)).join("、")} 的後台每日收益表,月報表會自動比對。`);
       setShowLedgerModal(false);
     } catch (e) {
       setLedgerImportError("讀取檔案時發生問題,請確認上傳的是 .xlsx 檔,且格式跟範例表單一致。");
@@ -5860,34 +5827,25 @@ function MetaAdsLedger() {
   // 同時涵蓋矩陣總覽/選一天用的activeDailyMonth,跟每月/每週報表用的focusMonth/focusWeek——
   // 三個不同分頁各自選的月份/週可能不一樣,分開判斷、分開讀,已經讀過的不重讀。
   useEffect(() => {
-    if (activeBrandId !== HJ_ONEPAGE_ACCOUNT_ID) return;
-    let cancelled = false;
-    const monthsNeeded = [...new Set([activeDailyMonth, focusMonth].filter(Boolean))].filter((mk) => !shoplineMonthsData[mk]);
-    const weeksNeeded = focusWeek && !shoplineWeeksData[focusWeek] ? [focusWeek] : [];
-    if (!monthsNeeded.length && !weeksNeeded.length) return;
-    (async () => {
-      for (const mk of monthsNeeded) {
-        try {
-          const res = await storage.get(shoplineMonthKey(mk));
-          if (!cancelled && res && res.value) {
-            const record = JSON.parse(res.value);
-            setShoplineMonthsData((prev) => ({ ...prev, [mk]: record }));
-          }
-        } catch { /* 這個月份還沒有共用的Shopline資料(H-J那邊還沒抓過),維持顯示— */ }
-      }
-      for (const ws of weeksNeeded) {
-        try {
-          const res = await storage.get(shoplineWeekKey(ws));
-          if (!cancelled && res && res.value) {
-            const record = JSON.parse(res.value);
-            setShoplineWeeksData((prev) => ({ ...prev, [ws]: record }));
-          }
-        } catch { /* 這週還沒有共用的Shopline資料,維持顯示— */ }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [activeBrandId, activeDailyMonth, focusMonth, focusWeek, shoplineMonthsData, shoplineWeeksData]);
-  const shopeRealDailyMap = useMemo(() => {
+  if (activeBrandId !== HJ_ONEPAGE_ACCOUNT_ID) return;
+  let cancelled = false;
+  const monthsNeeded = [...new Set([activeDailyMonth, focusMonth].filter(Boolean))]
+    .filter((mk) => !shoplineMonthsData[mk]);
+  if (!monthsNeeded.length) return;
+  (async () => {
+    for (const mk of monthsNeeded) {
+      try {
+        const res = await storage.get(shoplineMonthKey(mk));
+        if (!cancelled && res && res.value) {
+          const record = JSON.parse(res.value);
+          setShoplineMonthsData((prev) => ({ ...prev, [mk]: record }));
+        }
+      } catch {}
+    }
+  })();
+  return () => { cancelled = true; };
+}, [activeBrandId, activeDailyMonth, focusMonth, shoplineMonthsData]);
+const shopeRealDailyMap = useMemo(() => {
     if (activeBrandId !== HJ_ONEPAGE_ACCOUNT_ID) return {};
     const monthRecord = activeDailyMonth ? shoplineMonthsData[activeDailyMonth] : null;
     if (!monthRecord || !monthRecord.orders) return {};
@@ -5956,19 +5914,6 @@ function MetaAdsLedger() {
     return sponsorMonthsWithData.find((m) => m.monthKey === focusMonth)
       || sponsorMonthsWithData[sponsorMonthsWithData.length - 1];
   }, [sponsorMonthsWithData, focusMonth]);
-
-  const sortedWeekKeys = useMemo(() => Object.keys(weeksData).sort(), [weeksData]);
-  const focusWeekData = focusWeek ? weeksData[focusWeek] : null;
-  const focusWeekIdx = sortedWeekKeys.indexOf(focusWeek);
-  const prevWeekData = focusWeekIdx > 0 ? weeksData[sortedWeekKeys[focusWeekIdx - 1]] : null;
-  function weekLabel(weekStart) {
-    if (!weekStart) return "";
-    const [y, m, d] = weekStart.split("-").map(Number);
-    const start = new Date(y, m - 1, d);
-    const end = new Date(y, m - 1, d + 6);
-    const fmt2 = (dt) => `${String(dt.getMonth() + 1).padStart(2, "0")}/${String(dt.getDate()).padStart(2, "0")}`;
-    return `${fmt2(start)}~${fmt2(end)}`;
-  }
 
   const sortedVisibleAds = useMemo(() => sortAdsByMode(visibleAds, adSortMode), [visibleAds, adSortMode]);
 
