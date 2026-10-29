@@ -1518,6 +1518,50 @@ function buildProductBreakdown(ads, minSpend) {
   return { rows, unresolved, excludedTestCount, lowSpendCount, lowSpendAmount, totalRevenue, totalSpend };
 }
 
+function mergeChannelBreakdown(metaRows, metaTotalRevenue, metaTotalSpend, ledgerAgg) {
+  const metaCodes = new Set(metaRows.map((r) => r.code));
+  const channelRowsToMerge = [];
+  const channelRevenueOnlyRows = [];
+  if (ledgerAgg && ledgerAgg.byCode) {
+    Object.entries(ledgerAgg.byCode).forEach(([code, v]) => {
+      if (metaCodes.has(code)) return; // 這個代號 Meta 已經有資料,不重複算(帳面 vs Meta 落差另外由 LedgerVsMetaComparison 負責)
+      // 只有「真正的通路」(SHOPLINE、GOOGLE、蝦皮、MOMO…)才放進「其他通路」;產品代號(SR、TE、FS、REC、RS、KE、JK…)
+      // 就算 Meta 沒有對應資料,也不是通路,不能塞進「其他通路」——否則會被誤當成通路顯示、也會讓通路總額灌水。
+      if (!isChannelCode(code)) return;
+      // spend 門檻多一道「至少是營收1%」的保護,是因為帳本解析在少數欄位對不到文字時會退回固定位移量保底,
+      // 保底偶爾會抓到旁邊的百分比顯示欄(數字很小但不是0),這裡避免那種雜訊被誤判成「有花費」。
+      const hasRealSpend = v.spend > 0 && (!(v.revenue > 0) || v.spend >= v.revenue * 0.01);
+      if (hasRealSpend) {
+        channelRowsToMerge.push({
+          code,
+          spend: v.spend,
+          revenue: v.revenue,
+          conversions: v.hasOrderEst && v.orderEst > 0 ? Math.round(v.orderEst) : null,
+          count: 0,
+          isChannel: true,
+        });
+      } else if (v.revenue > 0 || v.spend > 0) {
+        channelRevenueOnlyRows.push({ code, revenue: v.revenue, spend: v.spend || 0, profit: v.profit, netProfit: v.netProfit });
+      }
+    });
+  }
+  const mergedTotalRevenue = metaTotalRevenue + channelRowsToMerge.reduce((s, r) => s + r.revenue, 0);
+  const mergedTotalSpend = metaTotalSpend + channelRowsToMerge.reduce((s, r) => s + r.spend, 0);
+  const rows = [...metaRows, ...channelRowsToMerge]
+    .map((r) => ({
+      ...r,
+      profit: r.revenue - r.spend,
+      revenueShare: mergedTotalRevenue > 0 ? (r.revenue / mergedTotalRevenue) * 100 : 0,
+      spendShare: mergedTotalSpend > 0 ? (r.spend / mergedTotalSpend) * 100 : 0,
+      costRatio: r.revenue > 0 ? (r.spend / r.revenue) * 100 : null,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+  const grandTotalRevenue = mergedTotalRevenue + channelRevenueOnlyRows.reduce((s, r) => s + r.revenue, 0);
+  const grandTotalSpend = mergedTotalSpend + channelRevenueOnlyRows.reduce((s, r) => s + (r.spend || 0), 0);
+  return { rows, totalRevenue: mergedTotalRevenue, totalSpend: mergedTotalSpend, channelRowsToMerge, channelRevenueOnlyRows, grandTotalRevenue, grandTotalSpend };
+}
+
+
 // ---------- 後台「每日收益表」(.xlsx) 解析 ----------
 // 檔案格式(依使用者提供的範例表單):每個分頁是一個月(例如「7月」),
 // 第 1 列是各品牌/產品區塊的代號與名稱標題,第 2 列是每個區塊裡的欄位名稱(帳面營業額/平均客單價/廣告費/帳面利潤/稅後淨利),
@@ -3584,6 +3628,10 @@ function CollapsibleSectionTitle({ children, className = "", style, ...props }) 
   );
 }
 
+function StaticSectionTitle({ children, className = "", style, ...props }
+
+function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel, prevPeriodLabel, roasTarget = 3, currencyCode, minSpend = 500, collapsible = true }
+
 function MetaAdsLedger() {
   const [months, setMonths] = useState({});
   const [loading, setLoading] = useState(true);
@@ -5271,7 +5319,9 @@ function MetaAdsLedger() {
   });
 
 
-  function PerformanceBreakdown({ ads, currencyCode, accountId }) {
+  function LedgerVsMetaComparison({ ads, currencyCode, ledgerAgg, onOpenImport, periodLabel }
+
+function PerformanceBreakdown({ ads, currencyCode, accountId }) {
     const { qualifyingAds, buckets } = groupAdsByPerformance(ads);
     const brandPageId = derivePageIdFromAds(ads);
     // 預設先把每一組收起來(不然「成效好」動輒上百支廣告,頁面會很長),
