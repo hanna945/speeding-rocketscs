@@ -1069,7 +1069,7 @@
   .mal-presentation-callout-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
   .mal-presentation-callout { padding:16px 18px; border-radius:16px; background:linear-gradient(135deg,rgba(241,232,221,.92),rgba(251,247,241,.9)); border:1px solid rgba(137,113,90,.15); font-size:15px; line-height:1.5; }
   .mal-presentation-callout strong { display:block; margin-bottom:5px; color:#4a392f; font-size:16px; }
-  .mal-presentation-plan-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; align-content:start; }
+  .mal-presentation-plan-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:13px; row-gap:9px; align-content:start; }
   .mal-presentation-plan-type { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; margin-bottom:7px; border-radius:999px; background:#eee3d7; color:#785c48; font-size:12px; font-weight:800; }
   .mal-presentation-plan-card-v3 { min-height:128px; padding:17px 19px; border-radius:17px; background:rgba(255,255,255,.75); border:1px solid rgba(137,113,90,.16); }
   .mal-presentation-plan-card-v3 h3 { margin:0 0 7px; font-size:18px; color:#44362d; }
@@ -1199,18 +1199,22 @@
   .mal-presentation-plan-grid.mal-presentation-density-sparse,
   .mal-presentation-plan-grid.mal-presentation-density-roomy {
     flex:1;
-    grid-auto-rows:minmax(0,1fr);
-    align-content:stretch;
+    grid-auto-rows:max-content;
+    align-content:start;
   }
   .mal-presentation-plan-grid.mal-presentation-density-sparse .mal-presentation-plan-card-v3 {
-    padding:24px 26px;
+    min-height:0;
+    padding:18px 20px;
   }
   .mal-presentation-plan-grid.mal-presentation-density-sparse .mal-presentation-plan-card-v3 h3 {
-    font-size:24px;
+    font-size:21px;
   }
   .mal-presentation-plan-grid.mal-presentation-density-sparse .mal-presentation-plan-card-v3 p {
-    font-size:18px;
-    line-height:1.6;
+    font-size:16.5px;
+    line-height:1.5;
+  }
+  .mal-presentation-plan-grid.mal-presentation-density-roomy .mal-presentation-plan-card-v3 {
+    min-height:0;
   }
   .mal-presentation-plan-grid.mal-presentation-density-roomy .mal-presentation-plan-card-v3 h3 {
     font-size:21px;
@@ -1230,10 +1234,10 @@
     grid-column:1 / -1;
     display:flex;
     align-items:center;
-    gap:12px;
-    margin:8px 0 2px;
+    gap:10px;
+    margin:2px 0 0;
     font-family:'Noto Serif TC',serif;
-    font-size:22px;
+    font-size:20px;
     font-weight:700;
     color:#4a382d;
   }
@@ -4610,17 +4614,26 @@ function MonthlyPresentation({
   }, [materialIssues, projectItems, actionItems]);
 
   function packByWeight(items,maxWeight) {
-    const pages=[]; let page=[]; let weight=0;
+    const pages=[]; let page=[]; let weight=0; let lastType=null;
     (items||[]).forEach((item)=>{
       const raw=(item.title||"")+" "+(item.description||"")+" "+(item.meta||"");
-      const itemWeight=Math.max(1,Math.ceil(raw.length/95)) + (item.image ? 3 : 0);
-      if(page.length && weight+itemWeight>maxWeight){ pages.push(page); page=[]; weight=0; }
-      page.push(item); weight+=itemWeight;
+      const sectionCost = item.type !== lastType ? 0.65 : 0;
+      const itemWeight=Math.max(1,Math.ceil(raw.length/95)) + (item.image ? 3 : 0) + sectionCost;
+      if(page.length && weight+itemWeight>maxWeight){
+        pages.push(page);
+        page=[];
+        weight=0;
+        lastType=null;
+      }
+      const pageSectionCost = item.type !== lastType ? 0.65 : 0;
+      page.push(item);
+      weight += Math.max(1,Math.ceil(raw.length/95)) + (item.image ? 3 : 0) + pageSectionCost;
+      lastType=item.type;
     });
     if(page.length) pages.push(page);
     return pages.length?pages:[[]];
   }
-  const planChunks=useMemo(()=>packByWeight(planItems,9),[planItems]);
+  const planChunks=useMemo(()=>packByWeight(planItems,8.2),[planItems]);
 
   const historyRows = useMemo(() => (history || []).filter((r)=>r&&r.monthKey).slice(-6), [history]);
 
