@@ -3580,17 +3580,11 @@ function MetaAdsLedger() {
         if (loadedToken) setApiToken(loadedToken);
       }
 
-      const autoSyncOn = autoSyncRes && autoSyncRes.value === "1";
-      if (autoSyncOn) setAutoSyncEnabled(true);
-
-      // 所有設定都載入完成後,才決定要不要自動同步——避免品牌清單還沒載完就搶跑,
-      // 這裡直接用剛讀到的資料(而不是 brands 這個 state),因為 setState 不會馬上生效。
-      // 不再要求一定要有 loadedToken 才觸發——自動同步已經改用不需要貼權杖的 Worker 代理。
-      if (autoSyncOn && !autoSyncRanRef.current) {
-        autoSyncRanRef.current = true;
-        // 改叫 refreshAllData(false):廣告成效(官網+一頁)、Shopline 訂單、每日收益表(Google 試算表)三個一起自動刷新,
-        // 跟廣告成效原本的自動同步共用同一個「今天有沒有跑過」的判斷,不會因為改成一起跑而變成每天重複觸發好幾次。
-        refreshAllData(false);
+      // Meta 自動同步已由 GitHub Actions 中央排程接管。
+      // 舊的 Worker / 瀏覽器自動抓取永久關閉，避免多頁面、多裝置重複打 Meta。
+      setAutoSyncEnabled(false);
+      if (autoSyncRes && autoSyncRes.value === "1") {
+        storage.set("meta-api-autosync", "0").catch(() => {});
       }
     }
     loadInitialConfig();
@@ -5476,9 +5470,10 @@ function MetaAdsLedger() {
     }
   }
 
-  async function toggleAutoSync(checked) {
-    setAutoSyncEnabled(checked);
-    await storage.set("meta-api-autosync", checked ? "1" : "0").catch(() => {});
+  async function toggleAutoSync() {
+    setAutoSyncEnabled(false);
+    await storage.set("meta-api-autosync", "0").catch(() => {});
+    setApiNotice("Meta 自動同步已由中央排程接管；此頁只讀取已同步資料。手動抓取功能保留作緊急備援。");
   }
 
   // 自動同步(網頁打開時背景觸發):改用跟「快速補3月」「快速補4週」同一套不需要貼權杖的 Worker 代理(callMetaWorker),
