@@ -1,3 +1,17 @@
+async function cachedPublicResponse(request, build, waitUntil) {
+  const cache = caches.default;
+  const cacheKey = new Request(request.url, { method: "GET" });
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+  const response = await build();
+  if (response && response.ok) {
+    const put = cache.put(cacheKey, response.clone()).catch(() => {});
+    if (typeof waitUntil === "function") waitUntil(put);
+    else await put;
+  }
+  return response;
+}
+
 const BRAND_NAME_MATCH = /mavis/i;
 
 function corsHeaders() {
@@ -77,7 +91,8 @@ export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: corsHeaders() });
 }
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ request, env, waitUntil }) {
+  return cachedPublicResponse(request, async () => {
   try {
     const brand = await resolveBrand(env);
     const monthPrefix = `metaads-month:${brand.id}::`;
@@ -117,4 +132,5 @@ export async function onRequestGet({ env }) {
       message: error && error.message ? error.message : String(error),
     }), { status: 500, headers: corsHeaders() });
   }
+  }, waitUntil);
 }
