@@ -2,7 +2,7 @@ import { extendCredentialRoster } from "../../../../_shared/brandDefaults.js";
 
 import { verifyGitHubActionsOidc } from "../../../../_shared/githubOidc.js";
 
-const DOUBLE_COLON_PREFIXES = ["metaads-month:", "metaads-week:", "airbyte-cache:", "airbyte-day-baseline:"];
+const DOUBLE_COLON_PREFIXES = ["metaads-month:", "metaads-week:", "airbyte-cache:", "airbyte-day-baseline:", "airbyte-attribution-reconcile:"];
 const DIRECT_PREFIXES = ["airbyte-meta:"];
 const HJ_OFFICIAL_ACCOUNT_ID = "436280797192761";
 
