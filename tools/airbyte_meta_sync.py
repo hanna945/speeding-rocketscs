@@ -891,7 +891,7 @@ async def reconcile_recent_attribution_airbyte(
     account_id = brand["id"]
     marker_key = attribution_reconcile_key(account_id, local_today)
     previous = kv_get(base_url, marker_key)
-    if isinstance(previous, dict) and previous.get("status") == "done":
+    if isinstance(previous, dict) and str(previous.get("status") or "").startswith("done"):
         print(f"[{brand['name']}] attribution reconciliation already done for {local_today}")
         return
 
@@ -1003,7 +1003,8 @@ async def reconcile_recent_attribution_airbyte(
         "requestedDays": [day.isoformat() for day in days],
         "reconciledDays": reconciled,
         "skippedDays": skipped,
-        "status": "done" if not skipped else "partial",
+        "status": "done" if not skipped else "done_with_skips",
+        "complete": not skipped,
         "syncedAt": datetime.now(timezone.utc).isoformat(),
     }
     kv_put(base_url, marker_key, marker)
