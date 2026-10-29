@@ -1017,9 +1017,7 @@ function sumShoplineOrders(orders) {
   };
 }
 function sortCodesChannelFirst(codes) {
-  const channels = codes.filter(isChannelCode);
-  const products = codes.filter((c) => !isChannelCode(c));
-  return { channels, products, sorted: [...channels, ...products] };
+  return splitBusinessCodes(codes);
 }
 function fmtDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1205,32 +1203,141 @@ const adPct = (spend, revenue, threshold) => {
   );
 };
 
-// 已知的「通路」名稱(不是產品代號,是銷售平台/門市/經銷這種)——移到頂層,原因跟adPct一樣:
-// AdPerformanceReport現在需要直接用這個判斷式來拆分產品/通路,是獨立頂層元件沒辦法取用主元件內部的東西。
-const KNOWN_CHANNEL_NAMES = ["蝦皮", "MOMO", "門市", "經銷", "LINE 禮物", "LINE禮物", "SHOPIFY", "SHOPLINE", "GOOGLE"];
+// 業績來源分三層：商品代號=一頁式網站、SHOPIFY/SHOPLINE=官網、其餘平台=外部通路。
+// 花費不靠平台名稱猜歸屬；後端 parser 已依「欄位所在區塊」歸入各自網站/通路。
+const OFFICIAL_SITE_NAMES = ["SHOPIFY", "SHOPLINE"];
+const EXTERNAL_CHANNEL_NAMES = ["蝦皮", "MOMO", "門市", "經銷", "LINE 禮物", "LINE禮物"];
+function isOfficialSiteCode(code) {
+  const s = (code || "").toString().toUpperCase();
+  return OFFICIAL_SITE_NAMES.some((name) => s.includes(name));
+}
+function isExternalChannelCode(code) {
+  const s = (code || "").toString();
+  return EXTERNAL_CHANNEL_NAMES.some((name) => s.includes(name));
+}
+function isLegacyAdOnlyCode(code) {
+  const s = (code || "").toString().toUpperCase().replace(/\s+/g, "");
+  return s === "GOOGLE" || s === "門市GOOGLE";
+}
+function isOnePageCode(code) {
+  return !isLegacyAdOnlyCode(code) && !isOfficialSiteCode(code) && !isExternalChannelCode(code);
+}
 function isChannelCode(code) {
-  return KNOWN_CHANNEL_NAMES.some((name) => code.includes(name));
+  return !isLegacyAdOnlyCode(code) && (isOfficialSiteCode(code) || isExternalChannelCode(code));
+}
+function splitBusinessCodes(codes) {
+  const unique = [...new Set((codes || []).filter((code) => !isLegacyAdOnlyCode(code)))];
+  const products = unique.filter(isOnePageCode);
+  const officialSites = unique.filter(isOfficialSiteCode);
+  const externalChannels = unique.filter((code) => isExternalChannelCode(code) && !isOfficialSiteCode(code));
+  return {
+    products,
+    officialSites,
+    externalChannels,
+    channels: [...officialSites, ...externalChannels],
+    sorted: [...products, ...officialSites, ...externalChannels],
+  };
+}
+function isBusinessGroupBoundary(index, split) {
+  if (!split) return false;
+  const officialStart = split.products.length;
+  const externalStart = split.products.length + split.officialSites.length;
+  return (index === officialStart && officialStart > 0 && split.officialSites.length > 0) ||
+    (index === externalStart && externalStart > 0 && split.externalChannels.length > 0);
+}
+function businessCodeLabel(code) {
+  if (isOfficialSiteCode(code)) return "🌐 " + code;
+  if (isExternalChannelCode(code)) return "🔗 " + code;
+  return code;
+}
+function rowsForSurface(record, surface) {
+  return Object.entries((record && record.byCode) || {})
+    .filter(([code]) => {
+      if (surface === "official") return isOfficialSiteCode(code);
+      if (surface === "external") return isExternalChannelCode(code) && !isOfficialSiteCode(code);
+      return isOnePageCode(code);
+    })
+    .sort((a, b) => (b[1].revenue || 0) - (a[1].revenue || 0));
+}
+function sumSurface(record, surface) {
+  return rowsForSurface(record, surface).reduce((sum, [, v]) => ({
+    revenue: sum.revenue + (v.revenue || 0),
+    spend: sum.spend + (v.spend || 0),
+    profit: sum.profit + (v.profit || 0),
+    netProfit: sum.netProfit + (v.netProfit || 0),
+  }), { revenue: 0, spend: 0, profit: 0, netProfit: 0 });
+}
+function sumCodeAcrossDays(days, code) {
+  return (days || []).reduce((sum, d) => {
+    const v = d.byCode && d.byCode[code];
+    if (!v) return sum;
+    sum.revenue += v.revenue || 0;
+    sum.spend += v.spend || 0;
+    sum.profit += v.profit || 0;
+    sum.netProfit += v.netProfit || 0;
+    return sum;
+  }, { revenue: 0, spend: 0, profit: 0, netProfit: 0 });
+}
+function sumOverallAcrossDays(days) {
+  return (days || []).reduce((sum, d) => {
+    const v = d.overall || {};
+    sum.revenue += v.revenue || 0;
+    sum.adSpend += v.adSpend || 0;
+    sum.profit += v.profit || 0;
+    sum.netProfit += v.netProfit || 0;
+    return sum;
+  }, { revenue: 0, adSpend: 0, profit: 0, netProfit: 0 });
+}
+function DailyBusinessSurfaceTable({ title, surface, record, prevRecord, threshold }) {
+  const rows = rowsForSurface(record, surface);
+  if (!rows.length) return null;
+  const firstLabel = surface === "official" ? "網站" : "通路";
+  return (
+    <>
+      <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 14.5, margin: "24px 0 12px" }}>{title}</h3>
+      <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+        <table className="mal-table">
+          <thead><tr><th>{firstLabel}</th><th>營收</th><th>與前一天比</th><th>花費</th><th>花費佔比</th><th>淨利潤</th></tr></thead>
+          <tbody>
+            {rows.map(([code, v]) => {
+              const prev = prevRecord && prevRecord.byCode ? prevRecord.byCode[code] : undefined;
+              return (
+                <tr key={code}>
+                  <td>{code}</td>
+                  <td>{fmtMoney(v.revenue)}</td>
+                  <td>{!prevRecord ? "—" : prev === undefined ? <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>新來源</span> : <DeltaBadge value={pctChange(v.revenue, prev.revenue)} />}</td>
+                  <td>{fmtMoney(v.spend)}</td>
+                  <td>{adPct(v.spend, v.revenue, threshold)}</td>
+                  <td>{netProfitCell(v.netProfit)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
 }
 
-// 把帳本(ledgerAgg)資料轉成跟原本 buildProductBreakdown 相容的 rows 格式(code/spend/revenue/
-// conversions/spendShare),多加 profit/netProfit/aov 這幾個帳本才有的欄位——「投放成效」整合了
-// 「品牌業績」之後,兩邊共用的核心資料來源就是這個函式,不用再各自維護一套邏輯。
-// 產品代號跟通路分開回傳,因為通路(蝦皮/MOMO等)不該混在同一份成效判斷/AI分析裡。
 function buildLedgerProductBreakdown(ledgerAgg) {
   const allCodes = Object.keys(ledgerAgg.byCode).sort();
-  const productCodes = allCodes.filter((c) => !isChannelCode(c));
-  const channelCodes = allCodes.filter((c) => isChannelCode(c));
+  const officialSiteCodes = allCodes.filter((c) => !isLegacyAdOnlyCode(c) && isOfficialSiteCode(c));
+  const externalChannelCodes = allCodes.filter((c) => !isLegacyAdOnlyCode(c) && isExternalChannelCode(c) && !isOfficialSiteCode(c));
+  const productCodes = allCodes.filter(isOnePageCode);
   function toRow(code) {
     const v = ledgerAgg.byCode[code];
     return { code, spend: v.spend, revenue: v.revenue, conversions: v.hasOrderEst ? v.orderEst : 0, profit: v.profit, netProfit: v.netProfit, aov: v.aov };
   }
   const rows = productCodes.map(toRow);
-  const channelRows = channelCodes.map(toRow);
+  const officialSiteRows = officialSiteCodes.map(toRow);
+  const externalChannelRows = externalChannelCodes.map(toRow);
   const totalProductSpend = rows.reduce((s, r) => s + r.spend, 0);
   rows.forEach((r) => { r.spendShare = totalProductSpend > 0 ? (r.spend / totalProductSpend) * 100 : 0; });
-  const totalChannelSpend = channelRows.reduce((s, r) => s + r.spend, 0);
-  channelRows.forEach((r) => { r.spendShare = totalChannelSpend > 0 ? (r.spend / totalChannelSpend) * 100 : 0; });
-  return { rows, channelRows };
+  const totalOfficialSpend = officialSiteRows.reduce((s, r) => s + r.spend, 0);
+  officialSiteRows.forEach((r) => { r.spendShare = totalOfficialSpend > 0 ? (r.spend / totalOfficialSpend) * 100 : 0; });
+  const totalExternalSpend = externalChannelRows.reduce((s, r) => s + r.spend, 0);
+  externalChannelRows.forEach((r) => { r.spendShare = totalExternalSpend > 0 ? (r.spend / totalExternalSpend) * 100 : 0; });
+  return { rows, officialSiteRows, externalChannelRows };
 }
 
 function buildProductBreakdown(ads, minSpend) {
@@ -2883,20 +2990,26 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
       </div>
     );
   }
-  const { rows, channelRows } = buildLedgerProductBreakdown(ledgerAgg);
-  if (!rows.length && !channelRows.length) {
+  const { rows, officialSiteRows, externalChannelRows } = buildLedgerProductBreakdown(ledgerAgg);
+  if (!rows.length && !officialSiteRows.length && !externalChannelRows.length) {
     return <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>目前還沒有足夠的資料可以產生投放成效報告。</p>;
   }
   // 總計卡片用 ledgerAgg.overall(帳本裡「整體」那一列),不是逐代號加總——這樣才會跟後台看到的
   // 整體數字一致,不會因為某些收入沒被歸類到任何產品代號底下,加總起來反而對不上。
-  const totalRevenue = ledgerAgg.overall.revenue;
-  const totalSpend = ledgerAgg.overall.adSpend;
-  const totalProfit = ledgerAgg.overall.profit;
+  const totalRevenue = rows.reduce((s, r) => s + (r.revenue || 0), 0);
+  const totalSpend = rows.reduce((s, r) => s + (r.spend || 0), 0);
+  const totalProfit = rows.reduce((s, r) => s + (r.profit || 0), 0);
   const totalConversions = rows.reduce((s, r) => s + r.conversions, 0);
   const overallRoas = totalSpend > 0 ? totalRevenue / totalSpend : null;
-  const chartRows = [...rows].sort((a, b) => (b.spend > 0 ? b.revenue / b.spend : 0) - (a.spend > 0 ? a.revenue / a.spend : 0));
-  const chartData = chartRows.map((r) => {
-    const roas = r.spend > 0 ? r.revenue / r.spend : 0;
+  const chartRows = [...rows].sort((a, b) => {
+    if (a.spend <= 0 && b.spend > 0) return 1;
+    if (b.spend <= 0 && a.spend > 0) return -1;
+    return (b.spend > 0 ? b.revenue / b.spend : 0) - (a.spend > 0 ? a.revenue / a.spend : 0);
+  });
+  // ROAS without spend is undefined, not 0x. Keep those rows in the table as "—",
+  // but do not draw fake 0x bars in the chart.
+  const chartData = chartRows.filter((r) => r.spend > 0).map((r) => {
+    const roas = r.revenue / r.spend;
     const tier = roasTier(roas);
     return { label: r.code, value: roas, color: tier ? tier.color : "var(--ink-soft)" };
   });
@@ -3110,9 +3223,35 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         </table>
       </div>
 
-      {channelRows.length > 0 && (
+      {officialSiteRows.length > 0 && (
         <>
-          <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 14.5, margin: "24px 0 12px" }}>通路業績</h3>
+          <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 14.5, margin: "24px 0 12px" }}>官網業績</h3>
+          <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+            <table className="mal-table">
+              <thead>
+                <tr>
+                  <th>網站</th><th>業績</th><th>花費</th><th>帳面利潤</th><th>客單價</th>
+                </tr>
+              </thead>
+              <tbody>
+                {officialSiteRows.map((r) => (
+                  <tr key={r.code}>
+                    <td>{r.code}</td>
+                    <td>{fmtMoney(r.revenue, currencyCode)}</td>
+                    <td>{fmtMoney(r.spend, currencyCode)}</td>
+                    <td>{fmtMoney(r.profit, currencyCode)}</td>
+                    <td>{r.aov !== null ? fmtMoney(r.aov, currencyCode) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {externalChannelRows.length > 0 && (
+        <>
+          <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 14.5, margin: "24px 0 12px" }}>其他通路業績</h3>
           <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
             <table className="mal-table">
               <thead>
@@ -3121,7 +3260,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
                 </tr>
               </thead>
               <tbody>
-                {channelRows.map((r) => (
+                {externalChannelRows.map((r) => (
                   <tr key={r.code}>
                     <td>{r.code}</td>
                     <td>{fmtMoney(r.revenue, currencyCode)}</td>
@@ -3323,7 +3462,7 @@ function MetaAdsLedger() {
   // 匯出PDF要的是一份完整、連續、不會被紙張尺寸切斷的檔案,而且使用者可能只想要部分區塊
   // (例如不要廣告明細那一長串),所以另外開一個勾選視窗,匯出前自己選要包含什麼。
   const PDF_SECTION_OPTIONS = [
-    { key: "ad-performance", label: "投放成效(含通路業績)" },
+    { key: "ad-performance", label: "投放成效(含官網/通路業績)" },
     { key: "campaign-analysis", label: "行銷活動整體成效分析" },
     { key: "performance-breakdown", label: "廣告成效分類" },
     { key: "ad-list", label: "廣告明細" },
@@ -6572,11 +6711,11 @@ function MetaAdsLedger() {
                     </div>
 
                     <CollapsibleSectionTitle className="mal-section-title">
-                      {activeFocusDay} 業績比例分析
+                      {activeFocusDay} 一頁式業績比例分析
                       <span className="mal-section-count">(後台實際數據,依當日營收由高到低排序)</span>
                     </CollapsibleSectionTitle>
                     {(() => {
-                      const dayCodes = Object.entries(focusDayRecord.byCode).sort((a, b) => b[1].revenue - a[1].revenue);
+                      const dayCodes = rowsForSurface(focusDayRecord, "one_page");
                       const dayTotalRevenue = dayCodes.reduce((sum, [, v]) => sum + v.revenue, 0);
                       const dayChartData = dayCodes.map(([code, v], i) => ({ label: code, value: v.revenue, color: colorForIndex(i) }));
                       return (
@@ -6600,12 +6739,11 @@ function MetaAdsLedger() {
                       <table className="mal-table">
                         <thead>
                           <tr>
-                            <th>代號</th><th>營收(後台)</th><th>與前一天比(後台)</th><th>廣告費</th><th>廣告費佔比</th><th>淨利潤</th>
+                            <th>一頁式代號</th><th>營收(後台)</th><th>與前一天比(後台)</th><th>廣告費</th><th>廣告費佔比</th><th>淨利潤</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {Object.entries(focusDayRecord.byCode)
-                            .sort((a, b) => b[1].revenue - a[1].revenue)
+                          {rowsForSurface(focusDayRecord, "one_page")
                             .map(([code, v]) => {
                               const prev = prevDayRecord ? prevDayRecord.byCode[code] : undefined;
                               const isNewCode = !!prevDayRecord && prev === undefined;
@@ -6626,19 +6764,37 @@ function MetaAdsLedger() {
                                 </tr>
                               );
                             })}
-                          <tr>
-                            <td className="mal-row-month">🏬 全店合計</td>
-                            <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.revenue)}</td>
-                            <td className="mal-row-month">
-                              {prevDayRecord ? <DeltaBadge value={pctChange(focusDayRecord.overall.revenue, prevDayRecord.overall.revenue)} /> : "—"}
-                            </td>
-                            <td className="mal-row-month">{fmtMoney(focusDayRecord.overall.adSpend)}</td>
-                            <td className="mal-row-month">{adPct(focusDayRecord.overall.adSpend, focusDayRecord.overall.revenue, adRatioThresholds[activeBrandId])}</td>
-                            <td className="mal-row-month">{netProfitCell(focusDayRecord.overall.netProfit)}</td>
-                          </tr>
+                          {(() => {
+                            const t = sumSurface(focusDayRecord, "one_page");
+                            const p = prevDayRecord ? sumSurface(prevDayRecord, "one_page") : null;
+                            return (
+                              <tr>
+                                <td className="mal-row-month">一頁式小計</td>
+                                <td className="mal-row-month">{fmtMoney(t.revenue)}</td>
+                                <td className="mal-row-month">{p ? <DeltaBadge value={pctChange(t.revenue, p.revenue)} /> : "—"}</td>
+                                <td className="mal-row-month">{fmtMoney(t.spend)}</td>
+                                <td className="mal-row-month">{adPct(t.spend, t.revenue, adRatioThresholds[activeBrandId])}</td>
+                                <td className="mal-row-month">{netProfitCell(t.netProfit)}</td>
+                              </tr>
+                            );
+                          })()}
                         </tbody>
                       </table>
                     </div>
+                    <DailyBusinessSurfaceTable
+                      title="官網業績"
+                      surface="official"
+                      record={focusDayRecord}
+                      prevRecord={prevDayRecord}
+                      threshold={adRatioThresholds[activeBrandId]}
+                    />
+                    <DailyBusinessSurfaceTable
+                      title="其他通路業績"
+                      surface="external"
+                      record={focusDayRecord}
+                      prevRecord={prevDayRecord}
+                      threshold={adRatioThresholds[activeBrandId]}
+                    />
                     <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "8px 0 0" }}>
                       🏬 全店合計取自後台每日收益表本身的總表欄位(不是加總各代號估算的),各代號明細加總起來如果對不上,通常是因為部分業績沒有掛在任何一個產品代號底下(例如混合購物車訂單)。
                       每日報表沒有 Meta 廣告回報數字可以對照——Meta 只抓整週/整月的彙總,沒有拆到單日,這裡看到的都是後台帳本本身的數據。
@@ -6653,7 +6809,7 @@ function MetaAdsLedger() {
             {dailySubMode === "matrix" && (
               <>
                 <CollapsibleSectionTitle className="mal-section-title">
-                  {activeDailyMonth ? monthLabel(activeDailyMonth) : ""} 每日 x 產品代號矩陣
+                  {activeDailyMonth ? monthLabel(activeDailyMonth) : ""} 每日 × 業績來源矩陣
                   <span className="mal-section-count">(表格較寬,可左右滑動)</span>
                 </CollapsibleSectionTitle>
                 <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
@@ -6670,9 +6826,9 @@ function MetaAdsLedger() {
                             key={code}
                             colSpan={4}
                             className={`mal-matrix-group-${i % 2 === 0 ? "a" : "b"}-header mal-matrix-group-${i % 2 === 0 ? "a" : "b"}-label mal-matrix-group-start`}
-                            style={{ textAlign: "center", ...(i === dailyMatrixSplit.channels.length && dailyMatrixSplit.products.length > 0 ? { borderLeft: "3px solid var(--blue-deep)" } : {}) }}
+                            style={{ textAlign: "center", ...(isBusinessGroupBoundary(i, dailyMatrixSplit) ? { borderLeft: "3px solid var(--blue-deep)" } : {}) }}
                           >
-                            {isChannelCode(code) ? `🔗 ${code}` : code}
+                            {businessCodeLabel(code)}
                           </th>
                         ))}
                       </tr>
@@ -6689,7 +6845,7 @@ function MetaAdsLedger() {
                         )}
                         {dailyMatrixCodes.map((code, i) => {
                           const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
-                          const boundary = i === dailyMatrixSplit.channels.length && dailyMatrixSplit.products.length > 0;
+                          const boundary = isBusinessGroupBoundary(i, dailyMatrixSplit);
                           return (
                             <React.Fragment key={code}>
                               <th className={`${tone} mal-matrix-group-start`} style={boundary ? { borderLeft: "3px solid var(--blue-deep)" } : undefined}>營收</th>
@@ -6718,7 +6874,7 @@ function MetaAdsLedger() {
                           {dailyMatrixCodes.map((code, i) => {
                             const v = d.byCode[code];
                             const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
-                            const boundary = i === dailyMatrixSplit.channels.length && dailyMatrixSplit.products.length > 0;
+                            const boundary = isBusinessGroupBoundary(i, dailyMatrixSplit);
                             return (
                               <React.Fragment key={code}>
                                 <td className={`${tone} mal-matrix-group-start`} style={boundary ? { borderLeft: "3px solid var(--blue-deep)" } : undefined}>{v ? fmtMoney(v.revenue) : "—"}</td>
@@ -6730,13 +6886,13 @@ function MetaAdsLedger() {
                           })}
                         </tr>
                       ))}
-                      {dailyMonthRecord && dailyMonthRecord.monthTotal && (
+                      {dailyMonthRecord && sortedDailyDays.length > 0 && (
                         <tr>
                           <td className="mal-row-month">總計</td>
-                          <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.revenue)}</td>
-                          <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.adSpend)}</td>
-                          <td className="mal-ledger-group-backend mal-row-month">{adPct(dailyMonthRecord.monthTotal.overall.adSpend, dailyMonthRecord.monthTotal.overall.revenue, adRatioThresholds[activeBrandId])}</td>
-                          <td className="mal-ledger-group-backend mal-row-month">{netProfitCell(dailyMonthRecord.monthTotal.overall.netProfit)}</td>
+                          <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(sumOverallAcrossDays(sortedDailyDays).revenue)}</td>
+                          <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(sumOverallAcrossDays(sortedDailyDays).adSpend)}</td>
+                          <td className="mal-ledger-group-backend mal-row-month">{adPct(sumOverallAcrossDays(sortedDailyDays).adSpend, sumOverallAcrossDays(sortedDailyDays).revenue, adRatioThresholds[activeBrandId])}</td>
+                          <td className="mal-ledger-group-backend mal-row-month">{netProfitCell(sumOverallAcrossDays(sortedDailyDays).netProfit)}</td>
                           {/* 修正欄位錯位:表頭跟每一天的資料列在「全店」跟各代號之間都有「真實Shopline訂單」2欄(訂單數/實收營收),
                               但總計列原本漏了這2格,導致總計列所有代號的數字整排往左錯2格——「淨利潤」欄下顯示到別的數字,
                               跟試算表對不起來。這裡補上該月真實Shopline訂單總計(跟每月報表卡片同一套 sumShoplineOrders 邏輯)。 */}
@@ -6751,7 +6907,7 @@ function MetaAdsLedger() {
                             );
                           })()}
                           {dailyMatrixCodes.map((code, i) => {
-                            const v = dailyMonthRecord.monthTotal.byCode[code];
+                            const v = sumCodeAcrossDays(sortedDailyDays, code);
                             const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
                             return (
                               <React.Fragment key={code}>
