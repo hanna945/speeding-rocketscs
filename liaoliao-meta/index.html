@@ -1154,30 +1154,8 @@ function fmtStartDate(isoString) {
 // 改成反過來:只排除「明確不算錢」的狀態(未付款/等待中/已授權未請款/已退款),不在這份清單裡的
 // 一律算數——即使對Shopline確切用字的理解還有落差,也不會像之前那樣被錯誤的精確比對直接砍成0。
 const UNPAID_STATUSES = new Set(["unpaid", "pending", "authorized", "refunded", "voided", "failed"]);
-function groupShoplineOrdersByDay(orders) {
-  const byDay = {};
-  (orders || [])
-    .filter((o) => !UNPAID_STATUSES.has(o.paymentStatus) && o.status !== "cancelled")
-    .forEach((o) => {
-      const day = (o.createdAt || "").slice(0, 10);
-      if (!day) return;
-      if (!byDay[day]) byDay[day] = { date: day, orderCount: 0, grossRevenue: 0, discountAmount: 0, netRevenue: 0 };
-      byDay[day].orderCount += 1;
-      byDay[day].grossRevenue += o.subtotal || 0;
-      byDay[day].discountAmount += o.discountAmount || 0;
-      byDay[day].netRevenue += o.amount || 0;
-    });
-  return Object.values(byDay).sort((a, b) => (a.date < b.date ? 1 : -1));
-}
 // 整段期間(一整個月)的真實Shopline訂單總計,不拆到逐日——用在每月報表這種只要看
 // 總數的地方,跟上面逐日分組共用同一套篩選條件(已完成、未取消)。
-function sumShoplineOrders(orders) {
-  const valid = (orders || []).filter((o) => !UNPAID_STATUSES.has(o.paymentStatus) && o.status !== "cancelled");
-  return {
-    orderCount: valid.length,
-    netRevenue: valid.reduce((sum, o) => sum + (o.amount || 0), 0),
-  };
-}
 
 const LEGACY_DEFAULT_BRAND_IDS = [
   "2345685238995965",
