@@ -42,7 +42,7 @@ permissions:
 
 concurrency:
   group: airbyte-meta-central-sync
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   sync:
