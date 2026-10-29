@@ -1,0 +1,62 @@
+name: Validate Brand Report Work Branch
+
+on:
+  push:
+    branches:
+      - work/brand-report-mavis-layout-20261029
+    paths:
+      - "index.html"
+      - ".github/workflows/validate-brand-report-work.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Babel parser
+        run: npm install --no-save @babel/parser@7
+
+      - name: Parse brand report JSX and assert required features
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const parser = require('@babel/parser');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const match = html.match(/<script type="text\/babel">([\s\S]*?)<\/script>/);
+          if (!match) throw new Error('text/babel script not found');
+          parser.parse(match[1], {
+            sourceType: 'script',
+            plugins: ['jsx']
+          });
+
+          const forbidden = [
+            'WEEK_STORAGE_PREFIX','WEEKLY_PLAN_PREFIX','ADPERF_AI_WEEK_PREFIX','SHOPLINE_WEEK_PREFIX',
+            'loadAllWeeks(','fetchLastWeekData(','fetchRecentWeeksFromApi(','computeWeekAnalysis(',
+            'weeklyAdReportRef','weeklyPlanRef','viewMode === "week"','setViewMode("week")',
+            'metaads-week:','weekly-plan:','adperf-ai-week:','shopline-week:',
+            '每週報表','上週報表','週報告','廣告怎麼調'
+          ];
+          for (const term of forbidden) {
+            if (html.includes(term)) throw new Error('Forbidden ghost code remains: ' + term);
+          }
+
+          const required = [
+            'viewMode === "month"','viewMode === "daily"','viewMode === "sponsor"',
+            'monthly-plan:','ReportPlanningSection','syncFromGoogleSheet',
+            'HJ_ONEPAGE_ACCOUNT_ID','shoplineMonthKey','sponsorMonthlyStats',
+            'CampaignAnalysis','AdSetAnalysis','PerformanceBreakdown',
+            'EvidenceExecutiveSummary','MetaAdsOpenSourceSuite',
+            'showPrintSelector','PDF_SECTION_OPTIONS','mal-report-navigation',
+            '品牌總報表版型：比照 MAIVS'
+          ];
+          for (const term of required) {
+            if (!html.includes(term)) throw new Error('Required feature missing: ' + term);
+          }
+
+          console.log('VALIDATION_OK');
+          NODE
