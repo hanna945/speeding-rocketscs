@@ -29,7 +29,7 @@ permissions:
 
 concurrency:
   group: airbyte-meta-central-sync
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sync:
@@ -74,4 +74,4 @@ jobs:
           META_SYSTEM_USER_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
           REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
         run: |
-          python tools/airbyte_meta_sync.py             --lookback-days 8             --metadata-max-age-hours 24             --brand-id "${{ github.event.inputs.brand_id || '' }}"             --backfill-days "${{ github.event.inputs.backfill_days || '0' }}"
+          python tools/airbyte_meta_sync.py             --lookback-days 1             --metadata-max-age-hours 24             --brand-id "${{ github.event.inputs.brand_id || '' }}"             --backfill-days "${{ github.event.inputs.backfill_days || '0' }}"
