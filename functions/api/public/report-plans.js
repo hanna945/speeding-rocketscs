@@ -8,7 +8,6 @@ const ALLOWED_BRAND_IDS = new Set([
 
 const PLAN_PREFIXES = ["weekly-plan:", "monthly-plan:"];
 const MAX_VALUE_BYTES = 5 * 1024 * 1024;
-const ONE_TIME_BACKUP_TOKEN = "layout-safe-20261029-v1";
 
 function corsHeaders(request) {
   const origin = request.headers.get("Origin") || "";
@@ -84,22 +83,6 @@ export async function onRequestOptions({ request }) {
 
 export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
-
-  if (url.searchParams.get("backup") === "all") {
-    if (url.searchParams.get("token") !== ONE_TIME_BACKUP_TOKEN) {
-      return json(request, { ok: false, error: "invalid_backup_token" }, 403);
-    }
-    const keys = await listPlanKeys(env);
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    let copied = 0;
-    for (const key of keys) {
-      const raw = await env.REPORT_KV.get(key);
-      if (!raw) continue;
-      await env.REPORT_KV.put(`report-plan-snapshot:${stamp}::${key}`, raw);
-      copied++;
-    }
-    return json(request, { ok: true, snapshot: stamp, copied, keys });
-  }
 
   const key = url.searchParams.get("key");
   if (key) {
