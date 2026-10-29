@@ -813,7 +813,6 @@ let cloudStatusCache = "unknown";
 let credentialNameCache = "Liaoliao 撩撩";
 let credentialBrandsCache = [{ id: PUBLIC_LIAOLIAO_BRAND_ID, name: "Liaoliao 撩撩" }];
 
-function getTeamKey() { return ""; }
 function teamKeyHeaders() { return {}; }
 
 async function loadPublicReport(force) {
@@ -1404,22 +1403,6 @@ const PURCHASE_ACTION_PRIORITY = [
   "onsite_web_app_purchase",
 ];
 
-function pickPurchaseValue(list) {
-  if (!list || !list.length) return 0;
-  for (const type of PURCHASE_ACTION_PRIORITY) {
-    const match = list.find((a) => a.action_type === type);
-    if (match) return parseFloat(match.value) || 0;
-  }
-  return 0;
-}
-function pickActionTypes(list, types) {
-  if (!list || !list.length) return 0;
-  for (const type of types) {
-    const match = list.find((a) => a.action_type === type);
-    if (match) return parseFloat(match.value) || 0;
-  }
-  return 0;
-}
 
 
 // 組出直接跳轉到 Meta 廣告管理員、並選取這支(或這幾支合併的)廣告的連結。
@@ -1620,15 +1603,6 @@ function mergeChannelBreakdown(metaRows, metaTotalRevenue, metaTotalSpend, ledge
 // 從網址參數(url_tags / UTM 字串)裡取出「=」後面的那串值,用來判斷是不是同一個素材。
 // 例如 "utm_medium=SR_FB_0309-CPA" -> "SR_FB_0309-CPA"。
 // 如果同時有多組參數(用 & 分隔),只取第一組的值——因為廣告主通常只在其中一個參數放素材代碼。
-function extractUtmValue(raw) {
-  if (!raw) return "";
-  const first = raw.split("&")[0] || raw;
-  const eqIdx = first.indexOf("=");
-  const value = eqIdx >= 0 ? first.slice(eqIdx + 1) : first;
-  let decoded = value;
-  try { decoded = decodeURIComponent(value); } catch { /* 保留原始值 */ }
-  return decoded.trim();
-}
 function monthLabel(key) {
   const [y, m] = key.split("-");
   return `${y}/${m}`;
@@ -4445,50 +4419,7 @@ function MetaAdsLedger() {
   // 大型帳號備援：Meta 官方建議大型 Insights 結果改用 async report run。
   // 平常仍先走原本同步 GET；只有同步查詢因資料量/處理時間失敗時才切 async，
   // 小帳號與既有流程完全不受影響。
-  async function fetchInsightsRowsAsync(token, accountId, since, until, fields) {
-    const params = new URLSearchParams({
-      level: "ad",
-      use_account_attribution_setting: "true",
-      fields,
-      time_range: JSON.stringify({ since, until }),
-      access_token: token,
-    });
-    const createUrl = `https://graph.facebook.com/v19.0/act_${accountId}/insights?${params.toString()}`;
-    const createRes = await throttledFetch(createUrl, "建立大型成效報告", { method: "POST" });
-    const createJson = await parseApiResponse(createRes, "建立大型成效報告");
-    const reportRunId = createJson.report_run_id;
-    if (!reportRunId) throw new Error("Meta 沒有回傳大型成效報告 ID。");
-
-    let completed = false;
-    for (let attempt = 0; attempt < 60; attempt++) {
-      if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
-      const statusJson = await fetchGraphApi(
-        `https://graph.facebook.com/v19.0/${reportRunId}?fields=async_status,async_percent_completion&access_token=${encodeURIComponent(token)}`,
-        "等待大型成效報告"
-      );
-      if (statusJson.async_status === "Job Completed") {
-        completed = true;
-        break;
-      }
-      if (statusJson.async_status === "Job Failed") {
-        throw new Error("Meta 大型成效報告建立失敗。");
-      }
-    }
-    if (!completed) throw new Error("Meta 大型成效報告處理逾時，請稍後再試。");
-
-    let resultUrl =
-      `https://graph.facebook.com/v19.0/${reportRunId}/insights?limit=500&access_token=${encodeURIComponent(token)}`;
-    const rows = [];
-    let page = 0;
-    while (resultUrl && page < 100) {
-      const json = await fetchGraphApi(resultUrl, "下載大型成效報告");
-      rows.push(...(json.data || []));
-      resultUrl = json.paging && json.paging.next ? json.paging.next : null;
-      page++;
-    }
-    return rows;
-  }
-
+  async 
   // 月報明細維持花費 ≥ MIN_FETCH_SPEND 的既有門檻；帳號總計仍使用完整 rows，不受明細門檻影響。
   async 
   // ---------- 投放中廣告成效分類(成效好 / 成效正常 / 成效不好 / 學習中) ----------
