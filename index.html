@@ -901,11 +901,39 @@ const cloudStorage = {
   },
 };
 
+const REPORT_PLAN_API = "/api/public/report-plans";
+function isReportPlanKey(key) {
+  return /^\b(?:weekly-plan|monthly-plan):[^:]+::\d{4}-\d{2}(?:-\d{2})?$/.test(String(key || ""));
+}
+async function sharedReportPlanGet(key) {
+  const res = await fetch(`${REPORT_PLAN_API}?key=${encodeURIComponent(key)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("report plan get failed: " + res.status);
+  const json = await res.json();
+  if (!json || !json.ok) throw new Error((json && json.error) || "report plan get failed");
+  return json.value == null ? null : { key, value: json.value };
+}
+async function sharedReportPlanSet(key, value) {
+  const res = await fetch(REPORT_PLAN_API, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, value }),
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error("report plan set failed: " + res.status + (msg ? " " + msg : ""));
+  }
+  return await res.json();
+}
+
 // 「嚴格版」存檔——跟上面 storage.set 的差異是:連不上雲端/雲端回錯,這裡會直接把錯誤丟出去,
 // 不會悄悄退回存到本機。只給「週報告」這種使用者主動打字、資料遺失會很有感的功能用;
 // 其他既有功能(月報表/週報表快取等)本來就是靠自動同步機制重新填滿,繼續沿用會悄悄退回本機
 // 的 storage.set,不改,降低這次修正波及其他既有功能的風險。
 async function storageSetStrict(key, value) {
+  if (isReportPlanKey(key)) {
+    await localOnlyStorage.set(key, value);
+    return await sharedReportPlanSet(key, value);
+  }
   if (!isSharedKey(key)) return localOnlyStorage.set(key, value);
   if (HAS_SHARED_STORAGE) return await window.storage.set(key, value, true);
   const status = await probeCloud();
@@ -917,6 +945,19 @@ async function storageSetStrict(key, value) {
 // 讀取版的「嚴格模式」,理由跟 storageSetStrict 一樣——原本 storage.get 連不上雲端時會悄悄退回讀本機
 // (通常是空的,尤其換裝置/換瀏覽器一定是空的),畫面看起來會像「資料真的不見了」,實際上只是連線問題。
 async function storageGetStrict(key) {
+  if (isReportPlanKey(key)) {
+    const remote = await sharedReportPlanGet(key);
+    if (remote && remote.value != null) {
+      await localOnlyStorage.set(key, remote.value).catch(() => {});
+      return remote;
+    }
+    const local = await localOnlyStorage.get(key);
+    if (local && local.value != null) {
+      await sharedReportPlanSet(key, local.value);
+      return local;
+    }
+    return null;
+  }
   if (!isSharedKey(key)) return localOnlyStorage.get(key);
   if (HAS_SHARED_STORAGE) return await window.storage.get(key, true);
   const status = await probeCloud();
