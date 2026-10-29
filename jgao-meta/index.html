@@ -810,9 +810,12 @@ const PUBLIC_MONTHLY_TOP3_FEED = "https://speedingscs.pages.dev/api/public/month
 const PUBLIC_JGAO_BRAND_ID = "2345685238995965";
 let publicReportCache = null;
 let cloudStatusCache = "unknown";
-
+let credentialNameCache = "J.GAO";
 let credentialBrandsCache = [{ id: PUBLIC_JGAO_BRAND_ID, name: "J.GAO" }];
 
+function getTeamKey() { return ""; }
+function setTeamKey() {}
+function teamKeyHeaders() { return {}; }
 
 async function loadPublicReport(force) {
   if (publicReportCache && !force) return publicReportCache;
@@ -841,6 +844,9 @@ async function probeCloud(force) {
   }
   return cloudStatusCache;
 }
+function getCredentialName() { return credentialNameCache; }
+function getCredentialBrands() { return credentialBrandsCache; }
+function mergeCredentialBrands() { return credentialBrandsCache.slice(); }
 
 function keyedSetting(value) {
   return value == null ? {} : { [PUBLIC_JGAO_BRAND_ID]: value };
@@ -1006,6 +1012,9 @@ function monthKeyFor(brandId, mk) {
 // ---------- 後台「一頁式正確業績」(每日收益表匯入) ----------
 // 每個品牌、每個月存一筆,key 格式跟月報表一致,方便重複匯入時直接覆蓋更新。
 const LEDGER_STORAGE_PREFIX = "metaads-ledger:";
+function ledgerKeyFor(brandId, monthKey) {
+  return LEDGER_STORAGE_PREFIX + (brandId ? brandId + "::" : "") + monthKey;
+}
 const SHARED_PREFIXES = [LEDGER_STORAGE_PREFIX]; // Shopline 月資料前綴稍後宣告完再併入。
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
@@ -1028,13 +1037,186 @@ const LEDGER_PRODUCT_BLOCK_WIDTH = 8;
 const LEDGER_PRODUCT_BLOCK_START_COL = 19; // 從 T 欄(0-indexed 19)開始才是「產品代號」區塊,前面 A-R 欄是總表與 FB 總花費
 const LEDGER_MONTH_SHEET_RE = /^(\d{1,2})\s*月/;
 
+function excelDateToISO(v) {
+  if (v instanceof Date) {
+    return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, "0")}-${String(v.getUTCDate()).padStart(2, "0")}`;
+  }
+  return null;
+}
 
+function toNum(v) {
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return isFinite(n) ? n : 0;
+}
 
 // 解析單一分頁(一個月份)成 { monthKey, days: [...], productCodes: [...] }。
 // year 由匯入時使用者指定(表單裡沒有年份資訊,只有分頁月份)。
+function parseLedgerSheet(matrix, year) {
+  if (!matrix || matrix.length < 3) return null;
+  const row1 = matrix[0] || [];
+  const row2 = matrix[1] || [];
+  const blocks = [];
+  // fallback 防呆用:文字比對找不到欄位、要用固定位移量保底之前,先確認那一欄「沒有寫任何標籤」。
+  // 那一欄已經寫著別的欄位名(例:SHOPLINE 區塊的 c+4 是 GOOGLE、KP 門市/經銷的 c+2 是抽成費用/貨物成本,
+  // 或已經跨進下一個代號的區塊),就代表這個區塊根本沒有這個欄位——硬用固定位移會把別人的數字當成
+  // 自己的廣告費/利潤(SHOPLINE 的帳面利潤曾因此顯示成 GOOGLE 廣告費)。回傳 null,讀值時 toNum(row[null])
+  // 自然是 0,寧可空白也不要錯的數字。
+  const emptyLabelCol = (col) => (((row2[col] || "").toString().trim()) ? null : col);
+  // 不再寫死從T欄(index19)開始掃描——這個假設對某些品牌是錯的(例如宥凱的整體總表只到第8欄,
+  // 產品代號第9欄就開始了,寫死19會把前面的代號整批跳過)。改成從第1欄開始逐欄掃描,
+  // 但「帳面營業額」第一次出現一定是整體/全店總表本身(不是產品代號),要跳過不當成代號,
+  // 從第二次出現開始才是真正的產品代號區塊——不管整體總表實際多寬,都能正確定位。
+  let skippedOverall = false;
+  for (let c = 1; c < Math.max(row1.length, row2.length); c += 1) {
+    if ((row2[c] || "").toString().trim() === "帳面營業額") {
+      if (!skippedOverall) { skippedOverall = true; continue; }
+      const code = (row1[c] || "").toString().trim().toUpperCase();
+      if (!code) continue;
+      // 「平均客單價」「廣告費」「帳面利潤」「稅後淨利/實際利潤」都不用固定位移量推算在第幾欄,
+      // 改成直接往右找寫著這些字的儲存格,用文字比對定位——避免某個代號剛好欄位排列跟其他代號
+      // 不一樣時,固定位移量抓歪卻沒人發現。這裡不是理論上的假設:蝦皮、MOMO 這兩個代號實際上就是
+      // 沒有「平均客單價」這一欄(行銷通路直接看訂單、沒有這個概念),導致後面的廣告費/利潤欄位
+      // 整批往左遞補一格,固定位移量在這兩個代號上會直接抓錯欄。
+      // 搜尋範圍限制在 c ~ c+11(11欄),超過這個範圍代表已經進到下一個代號的區塊,不能再往下找;
+      // 真的找不到才退回原本的固定位移量當保底,不會整個欄位直接空著。
+      const SEARCH_LIMIT = 12;
+      let colAov = null;
+      let colSpend = null;
+      let colProfit = null;
+      let colNetProfit = null;
+      let colGoogleSpend = null; // 只有少數代號(目前已知:H&J一頁業績的SHOPLINE區塊)會有這欄,大部分代號沒有
+      let blockEnd = c + SEARCH_LIMIT;
+      // 搜尋界線加一道保險:碰到下一個區塊的起點(下一個「帳面營業額」)就停,絕不跨進下一個代號的
+      // 欄位範圍——SHOPLINE 區塊比標準區塊窄,原本的搜尋範圍會越界「偷到」隔壁 SR 的平均客單價。
+      for (let n = c + 1; n < blockEnd; n++) {
+        if ((row2[n] || "").toString().trim() === "帳面營業額") { blockEnd = n; break; }
+      }
+      for (let k = c + 1; k < blockEnd; k++) {
+        const label = (row2[k] || "").toString().trim();
+        if (colAov === null && label === "平均客單價") colAov = k;
+        // 廣告費/帳面利潤,原本用精確比對,MOMO、LINE禮物的欄名其實是「廣告費(平台抽成)」,
+        // 門市、經銷的利潤欄名是「帳面利潤:扣貨物成本」「帳面利潤:貨物成本」這種帶冒號後綴的寫法,
+        // 精確比對全部對不上、會落到後面的固定位移量保底(而保底位移量對這幾個代號來說是錯的,
+        // 通常會抓到旁邊的百分比顯示欄,數字很小但不是0,不會被『沒資料』的判斷擋下來)。
+        // 改成 startsWith,只要開頭是這幾個字就算數,涵蓋全部後綴變體。
+        // 2026-07-30新增:「FB廣告費」也算數(H&J一頁業績SHOPLINE區塊的實際欄名不是「廣告費」,是
+        // 「FB廣告費」,原本比對不到、導致搜尋一路延伸到緊接著的下一個代號區塊,誤抓別人的廣告費欄位
+        // 當成自己的——這正是SHOPLINE跟SR顯示出一模一樣廣告費數字的根本原因。
+        if (colSpend === null && (label.startsWith("廣告費") || label === "FB廣告費")) colSpend = k;
+        if (colGoogleSpend === null && label === "GOOGLE") colGoogleSpend = k;
+        if (colProfit === null && label.startsWith("帳面利潤")) colProfit = k;
+        if (colNetProfit === null && (label === "稅後淨利" || label.startsWith("實際利潤") || label.startsWith("真實利潤"))) colNetProfit = k;
+      }
+      blocks.push({
+        code,
+        name: (row1[c + 1] || "").toString().trim(),
+        colRevenue: c,
+        colAov: colAov, // 找不到就是 null(蝦皮/MOMO本來就沒有這欄,orders 會算不出來,直接顯示 "—",不會硬套錯的欄位)
+        colSpend: colSpend !== null ? colSpend : emptyLabelCol(c + 2),
+        colProfit: colProfit !== null ? colProfit : emptyLabelCol(c + 4),
+        colNetProfit: colNetProfit !== null ? colNetProfit : emptyLabelCol(c + 6),
+        colGoogleSpend,
+      });
+      // Google廣告費比照其他通路(蝦皮、MOMO等)的做法,獨立列成自己的一個代號區塊——這樣矩陣總覽/
+      // 選一天/每週/每月才能跟其他代號一樣,自動出現在同樣的地方,不用另外寫顯示邏輯。這是純廣告費
+      // 支出(不是產品線),沒有自己的營收/利潤,固定填0,不是沒抓到資料。
+      if (colGoogleSpend !== null) {
+        blocks.push({
+          code: "GOOGLE",
+          name: "Google廣告",
+          colRevenue: null,
+          colAov: null,
+          colSpend: colGoogleSpend,
+          colProfit: null,
+          colNetProfit: null,
+        });
+      }
+    }
+  }
+  // 全店(整體)的「淨利」欄位改用文字比對定位——原本寫死 row[7]||row[6] 其實只符合 H&J 的版型:
+  // KP 的真實利潤在第6欄、第7欄是百分比(被當成 0.28 這種數字,畫面顯示 $0);Mavis/J.GAO 的第7欄是
+  // 另外登記的廣告費(直接把廣告費金額當成全店淨利顯示)。改成依「稅後淨利 → 真實利潤 → 實際利潤」的
+  // 優先順序,在全店區塊的範圍內(第2欄起、到第一個產品代號區塊之前)找標籤;全部找不到才退回舊的
+  // row[7]||row[6] 行為(對未知版型維持原本結果,不會更糟)。H&J 的「(改)稅後淨利」會被第一優先命中、
+  // 「(原)」不含這些關鍵字所以自然跳過,跟原本取值一致。
+  const firstBlockCol = blocks.length ? blocks[0].colRevenue : Math.max(row1.length, row2.length);
+  let overallNetCol = null;
+  const OVERALL_NET_TIERS = [
+    (l) => l.includes("稅後淨利"),
+    (l) => l.startsWith("真實利潤"),
+    (l) => l.startsWith("實際利潤"),
+  ];
+  for (const tierMatches of OVERALL_NET_TIERS) {
+    for (let k = 2; k < firstBlockCol; k++) {
+      const l = (row2[k] || "").toString().trim();
+      if (l && tierMatches(l)) { overallNetCol = k; break; }
+    }
+    if (overallNetCol !== null) break;
+  }
+  const days = [];
+  let totalRow = null;
+  for (let r = 2; r < matrix.length; r++) {
+    const row = matrix[r] || [];
+    const dateCell = row[0];
+    if (dateCell instanceof Date) {
+      const iso = excelDateToISO(dateCell);
+      const overall = {
+        revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
+        netProfit: overallNetCol !== null ? toNum(row[overallNetCol]) : toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
+      };
+      const byCode = {};
+      blocks.forEach((b) => {
+        const revenue = toNum(row[b.colRevenue]);
+        const spend = toNum(row[b.colSpend]);
+        const aov = toNum(row[b.colAov]);
+        if (revenue === 0 && spend === 0) return; // 這天這個產品沒有資料,不建立空物件,避免污染平均值計算
+        byCode[b.code] = {
+          revenue, spend, aov,
+          profit: toNum(row[b.colProfit]),
+          netProfit: toNum(row[b.colNetProfit]),
+          orders: aov > 0 ? revenue / aov : null,
+        };
+      });
+      days.push({ date: iso, overall, byCode });
+    } else if (typeof dateCell === "string" && dateCell.trim() === "總結") {
+      const overall = {
+        revenue: toNum(row[1]), adSpend: toNum(row[2]), profit: toNum(row[4]),
+        netProfit: overallNetCol !== null ? toNum(row[overallNetCol]) : toNum(row[7] !== undefined && row[7] !== null && row[7] !== "" ? row[7] : row[6]),
+      };
+      const byCode = {};
+      blocks.forEach((b) => {
+        byCode[b.code] = {
+          revenue: toNum(row[b.colRevenue]), spend: toNum(row[b.colSpend]),
+          profit: toNum(row[b.colProfit]), netProfit: toNum(row[b.colNetProfit]),
+        };
+      });
+      totalRow = { overall, byCode };
+      break; // 「總結」之後是代言費、預估獲利等其他彙總列,不屬於逐日資料,停止解析
+    }
+  }
+  if (!days.length) return null;
+  return { days, monthTotal: totalRow, productCodes: blocks.map((b) => b.code) };
+}
 // LEDGER_PARSER_SYNC_CHECK:END
 
 // 解析整份工作簿(可能包含 12 個月分頁),回傳 { [monthKey]: monthObject }。
+function parseLedgerWorkbook(workbook, year) {
+  const result = {};
+  workbook.SheetNames.forEach((sheetName) => {
+    const m = sheetName.match(LEDGER_MONTH_SHEET_RE);
+    if (!m) return;
+    const monthNum = parseInt(m[1], 10);
+    if (!monthNum || monthNum < 1 || monthNum > 12) return;
+    const sheet = workbook.Sheets[sheetName];
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+    const parsed = parseLedgerSheet(matrix, year);
+    if (parsed) {
+      const monthKey = `${year}-${String(monthNum).padStart(2, "0")}`;
+      result[monthKey] = { monthKey, year, month: monthNum, ...parsed };
+    }
+  });
+  return result;
+}
 
 // 把後台每日資料彙總成指定日期範圍(since ~ until 的 ISO 日期字串)總計,依產品代號分組。
 // ledgerByMonth: { [monthKey]: monthObject },會自動跨月份撈資料。
@@ -1086,10 +1268,22 @@ SHARED_PREFIXES.push(ADPERF_AI_MONTH_PREFIX);
 // 不會重複對同一個廣告帳號打 Meta API——在 Meta App 目前是 Dev Tier(每帳號每小時300次請求)
 // 這種嚴格額度下,這是真正能大幅降低同一帳號總請求量的做法,而不是只優化單次查詢本身。
 SHARED_PREFIXES.push(STORAGE_PREFIX);
+function shoplineMonthKey(monthKey) {
+  return SHOPLINE_MONTH_PREFIX + monthKey;
+}
 
 // 把 Date 物件格式化成 "YYYY-MM-DD"(用日曆上的年月日,不轉時區)
+function fmtYmd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // 一個月的起訖日期字串,給 Shopline Worker 用
+function monthRangeForShopline(monthKey) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const start = new Date(y, m - 1, 1);
+  const end = new Date(y, m, 0); // 該月最後一天
+  return { since: fmtYmd(start), until: fmtYmd(end) };
+}
 
 // 把 Shopline 訂單依「utm_content(通常是 Meta 廣告 ID)」比對到對應的廣告,
 // 比對不到的訂單(例如自然流量、直接輸入網址、UTM 是空的)歸到「unmatched」。
@@ -1139,6 +1333,9 @@ function sortCodesChannelFirst(codes) {
   const products = codes.filter((c) => !isChannelCode(c));
   return { channels, products, sorted: [...channels, ...products] };
 }
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // 把 Meta 回傳的投放起始時間(ISO 字串,例如 "2026-07-16T00:00:00+0800")格式化成「7/16」這種簡短格式。
 // 直接用字串前面的年月日去解析,不透過 Date 物件轉時區,避免因為瀏覽器時區不同而讓日期跑掉一天。
@@ -1157,8 +1354,30 @@ function fmtStartDate(isoString) {
 // 改成反過來:只排除「明確不算錢」的狀態(未付款/等待中/已授權未請款/已退款),不在這份清單裡的
 // 一律算數——即使對Shopline確切用字的理解還有落差,也不會像之前那樣被錯誤的精確比對直接砍成0。
 const UNPAID_STATUSES = new Set(["unpaid", "pending", "authorized", "refunded", "voided", "failed"]);
+function groupShoplineOrdersByDay(orders) {
+  const byDay = {};
+  (orders || [])
+    .filter((o) => !UNPAID_STATUSES.has(o.paymentStatus) && o.status !== "cancelled")
+    .forEach((o) => {
+      const day = (o.createdAt || "").slice(0, 10);
+      if (!day) return;
+      if (!byDay[day]) byDay[day] = { date: day, orderCount: 0, grossRevenue: 0, discountAmount: 0, netRevenue: 0 };
+      byDay[day].orderCount += 1;
+      byDay[day].grossRevenue += o.subtotal || 0;
+      byDay[day].discountAmount += o.discountAmount || 0;
+      byDay[day].netRevenue += o.amount || 0;
+    });
+  return Object.values(byDay).sort((a, b) => (a.date < b.date ? 1 : -1));
+}
 // 整段期間(一整個月)的真實Shopline訂單總計,不拆到逐日——用在每月報表這種只要看
 // 總數的地方,跟上面逐日分組共用同一套篩選條件(已完成、未取消)。
+function sumShoplineOrders(orders) {
+  const valid = (orders || []).filter((o) => !UNPAID_STATUSES.has(o.paymentStatus) && o.status !== "cancelled");
+  return {
+    orderCount: valid.length,
+    netRevenue: valid.reduce((sum, o) => sum + (o.amount || 0), 0),
+  };
+}
 
 const LEGACY_DEFAULT_BRAND_IDS = [
   "2345685238995965",
@@ -1173,6 +1392,7 @@ const HARDCODED_BRANDS = [
 ];
 // 明確命名這兩個鎖定品牌的 ID,避免程式碼裡到處出現看不出意義的數字字串。
 // 官網業績的營收資料來源是 Shopline(訂單直接來自官網後台);一頁業績的營收資料來源是 Google 試算表帳本(metaads-ledger)。
+const OFFICIAL_SITE_BRAND_ID = "__NO_OFFICIAL_SITE__";
 const ONEPAGE_BRAND_ID = HARDCODED_BRANDS[0].id; // J.GAO
 // 把鎖定的品牌跟使用者自己存過的品牌清單合併,鎖定的品牌一定排最前面、一定會出現,
 // 如果使用者存過同一個 id 但取了不同名字,以鎖定清單裡的名字為準(避免被改掉)。
@@ -1193,6 +1413,22 @@ const PURCHASE_ACTION_PRIORITY = [
   "onsite_web_app_purchase",
 ];
 
+function pickPurchaseValue(list) {
+  if (!list || !list.length) return 0;
+  for (const type of PURCHASE_ACTION_PRIORITY) {
+    const match = list.find((a) => a.action_type === type);
+    if (match) return parseFloat(match.value) || 0;
+  }
+  return 0;
+}
+function pickActionTypes(list, types) {
+  if (!list || !list.length) return 0;
+  for (const type of types) {
+    const match = list.find((a) => a.action_type === type);
+    if (match) return parseFloat(match.value) || 0;
+  }
+  return 0;
+}
 
 
 // 組出直接跳轉到 Meta 廣告管理員、並選取這支(或這幾支合併的)廣告的連結。
@@ -1393,6 +1629,15 @@ function mergeChannelBreakdown(metaRows, metaTotalRevenue, metaTotalSpend, ledge
 // 從網址參數(url_tags / UTM 字串)裡取出「=」後面的那串值,用來判斷是不是同一個素材。
 // 例如 "utm_medium=SR_FB_0309-CPA" -> "SR_FB_0309-CPA"。
 // 如果同時有多組參數(用 & 分隔),只取第一組的值——因為廣告主通常只在其中一個參數放素材代碼。
+function extractUtmValue(raw) {
+  if (!raw) return "";
+  const first = raw.split("&")[0] || raw;
+  const eqIdx = first.indexOf("=");
+  const value = eqIdx >= 0 ? first.slice(eqIdx + 1) : first;
+  let decoded = value;
+  try { decoded = decodeURIComponent(value); } catch { /* 保留原始值 */ }
+  return decoded.trim();
+}
 function monthLabel(key) {
   const [y, m] = key.split("-");
   return `${y}/${m}`;
@@ -3446,8 +3691,11 @@ function MetaAdsLedger() {
   const [months, setMonths] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-    const [focusMonth, setFocusMonth] = useState(null);
-      const [showAllAds, setShowAllAds] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [focusMonth, setFocusMonth] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [showAllAds, setShowAllAds] = useState(false);
   const [adSortMode, setAdSortMode] = useState("spend");
   const [adStatusFilter, setAdStatusFilter] = useState("all"); // "all" | "active" | "inactive" —— 篩選要看投放中還是已停止的廣告
   const [adLaunchFilter, setAdLaunchFilter] = useState("all"); // month view: "all" | "month" —— 只看該月份才開始投放的廣告
@@ -3456,10 +3704,11 @@ function MetaAdsLedger() {
   // 月報表、批次、自動同步或縮圖抓取只要打 Meta 請求,都共用同一個時間戳。
   // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS,避免跨動作連續請求撞到頻率限制。
   const lastApiCallRef = useRef(0);
-  // 自動更新前3個月用
+  const [recentMonthsCount, setRecentMonthsCount] = useState(3); // 自動更新前3個月用
   const [apiToken, setApiToken] = useState("");
   // 這個工具只服務單一品牌,廣告帳號 ID 直接鎖定,不需要使用者輸入或從瀏覽器記錄裡讀取。
-    const [brands, setBrands] = useState([]);
+  const [apiAccountId, setApiAccountId] = useState(HARDCODED_BRANDS[0].id);
+  const [brands, setBrands] = useState([]);
   const [activeBrandId, setActiveBrandId] = useState("");
   const [cpaThresholds, setCpaThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「CPA 過高」標準
   const [cpcThresholds, setCpcThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的 CPC 目標
@@ -3468,7 +3717,9 @@ function MetaAdsLedger() {
   const [monthlyBudgets, setMonthlyBudgets] = useState({}); // { [brandId]: number } 每個品牌月廣告預算上限
   const [productNames, setProductNames] = useState({}); // { [brandId]: { [code]: name } } 每個品牌、每個代號各自的中文名稱,顯示成「代號(名稱)」——
   // 沒辦法從行銷活動名稱自動抓出乾淨的產品名稱(命名不夠固定),所以讓使用者自己設定,類似 roasTargets 那樣。
-      const [viewMode, setViewMode] = useState("month");
+  const [selectedBatchBrandIds, setSelectedBatchBrandIds] = useState([]);
+  const [batchProgress, setBatchProgress] = useState(null);
+  const [viewMode, setViewMode] = useState("month");
   // 診斷用:error boundary 在這個元件外層,沒辦法直接讀到這裡的 state,錯誤發生時只能靠這個
   // 全域變數(即時更新)才知道「事情發生的當下,使用者停在哪個頁面/哪個品牌」。純診斷用途,
   // 不影響任何功能或畫面。
@@ -3480,17 +3731,37 @@ function MetaAdsLedger() {
       brandCount: brands.length,
     };
   }, [viewMode, activeBrandId, brands]);
-      const [apiError, setApiError] = useState(null);
-    const [rememberToken, setRememberToken] = useState(false);
-      // 「刷新全部」按鈕的進度文字
+  const [apiMonth, setApiMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [apiLoading, setApiLoading] = useState(false);
+  const [apiError, setApiError] = useState(null);
+  const [apiNotice, setApiNotice] = useState(null);
+  const [rememberToken, setRememberToken] = useState(false);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [autoSyncStatus, setAutoSyncStatus] = useState(null);
+  const [refreshAllStatus, setRefreshAllStatus] = useState(null); // 「刷新全部」按鈕的進度文字
   const autoSyncRanRef = useRef(false);
 
   // ---------- 後台每日收益表(帳本)/ 每日報表 / 團隊密碼:state ----------
   const [ledgerByMonth, setLedgerByMonth] = useState({});
-          const [dailyMonth, setDailyMonth] = useState(null);
+  const [ledgerYear, setLedgerYear] = useState(new Date().getFullYear());
+  const [ledgerImportLoading, setLedgerImportLoading] = useState(false);
+  const [ledgerImportError, setLedgerImportError] = useState(null);
+  const [ledgerImportNotice, setLedgerImportNotice] = useState(null);
+  const [dailyMonth, setDailyMonth] = useState(null);
   const [dailySubMode, setDailySubMode] = useState("single"); // "single"(選一天) | "matrix"(矩陣總覽)
   const [focusDay, setFocusDay] = useState(null);
-      const [cloudStatus, setCloudStatus] = useState(HAS_SHARED_STORAGE ? "artifact" : "unknown");
+  const [sheetIdInput, setSheetIdInput] = useState("");
+  const [sheetSyncLoading, setSheetSyncLoading] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState(HAS_SHARED_STORAGE ? "artifact" : "unknown");
+  const [credentialName, setCredentialName] = useState("");
+  const [showTeamKeyModal, setShowTeamKeyModal] = useState(false);
+  // showApiPanel/showLedgerModal:對應的按鈕、彈窗畫面都拿掉了(這兩個是會外流權杖/試算表的舊功能),
+  // 但底下還有幾支舊函式(importLedgerFile、syncFromGoogleSheet等)內部呼叫這兩個setter——
+  // 這些函式現在沒有任何按鈕會觸發到,是真正的孤兒程式碼,之後應該整支拿掉,
+  // 但這裡先保留state宣告本身,避免那幾支孤兒函式(萬一被別處呼叫到)直接噴出「未定義」的錯誤。
   const [customJgaoLogo, setCustomJgaoLogo] = useState(() => getSavedJgaoLogo());
   const [logoUploadNotice, setLogoUploadNotice] = useState("");
 
@@ -3581,6 +3852,38 @@ function MetaAdsLedger() {
   useEffect(() => {
     if (customJgaoLogo) setJgaoFavicon(customJgaoLogo);
   }, [customJgaoLogo]);
+
+  const [showApiPanel, setShowApiPanel] = useState(false);
+  const [showLedgerModal, setShowLedgerModal] = useState(false);
+  const [teamKeyInput, setTeamKeyInput] = useState(getTeamKey());
+
+  // ---------- Shopline 對照:state ----------
+  // Worker 網址跟驗證密碼已經固定,直接寫死在程式碼裡。
+  const DEFAULT_SHOPLINE_WORKER_URL = "https://shopline-proxy.hanna-104.workers.dev";
+  const SHOPLINE_PROXY_SECRET = "0d7f31d2c6435ef57cafa4358dc7f0a5ad3bed45c31eb13d";
+  const [shoplineWorkerUrl, setShoplineWorkerUrl] = useState(DEFAULT_SHOPLINE_WORKER_URL);
+  const [shoplineWorkerUrlInput, setShoplineWorkerUrlInput] = useState(DEFAULT_SHOPLINE_WORKER_URL);
+  const [shoplineMonthsData, setShoplineMonthsData] = useState({}); // { [monthKey]: record }
+  const [shoplineLoading, setShoplineLoading] = useState(false);
+  const [shoplineError, setShoplineError] = useState(null);
+  const [shoplineNotice, setShoplineNotice] = useState(null);
+
+  // ---------- 折價券查詢:state(自訂時間範圍,不綁定週/月的固定區間)----------
+  const [couponQuerySince, setCouponQuerySince] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [couponQueryUntil, setCouponQueryUntil] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [couponQueryData, setCouponQueryData] = useState(null);
+  const [couponQueryLoading, setCouponQueryLoading] = useState(false);
+  const [couponQueryError, setCouponQueryError] = useState(null);
+  const [couponSearchInput, setCouponSearchInput] = useState("");
+  const [couponFocusCode, setCouponFocusCode] = useState(null);
+
   // ---------- Meta 廣告成效更新按鈕:state ----------
   const [metaUpdateLoading, setMetaUpdateLoading] = useState(null); // null | "month"
   const [metaUpdateError, setMetaUpdateError] = useState(null);
@@ -3652,7 +3955,7 @@ function MetaAdsLedger() {
 
       // Meta 自動同步已由 GitHub Actions 中央排程接管。
       // 舊的 Worker / 瀏覽器自動抓取永久關閉，避免多頁面、多裝置重複打 Meta。
-
+      setAutoSyncEnabled(false);
       if (autoSyncRes && autoSyncRes.value === "1") {
         storage.set("meta-api-autosync", "0").catch(() => {});
       }
@@ -3669,12 +3972,17 @@ function MetaAdsLedger() {
     loadLedger(activeBrandId, () => cancelled);
     return () => { cancelled = true; }; // 品牌再度切換,或元件卸載時,讓這次還沒跑完的請求作廢
   }, [activeBrandId]);
+  // 切換品牌時,如果目前停留的分頁對新品牌來說已經不存在(例如「折價券查詢」只有官網業績才有),
+  // 自動跳回「每月報表」,避免留在一個沒有對應按鈕、內容可能是空的分頁上。
+  useEffect(() => {
+    if (viewMode === "coupon" && activeBrandId !== OFFICIAL_SITE_BRAND_ID) setViewMode("month");
+  }, [activeBrandId, viewMode]);
   useEffect(() => {
     if (HAS_SHARED_STORAGE) return; // Claude Artifact 已經有共用儲存,不需要再測 Cloudflare API
     probeCloud(true).then((status) => {
       setCloudStatus(status);
       if (status === "connected") {
-
+        setCredentialName(getCredentialName());
         /* public read-only mirror: no background sync */
         refreshBrandsAfterAuth();
       }
@@ -3684,6 +3992,17 @@ function MetaAdsLedger() {
   // 連線成功後背景觸發一次「登入後自動同步」(/api/sheets/auto):
   // 後端會自己判斷今天有沒有同步過、要不要真的去打 Google API,這裡不用先判斷,呼叫了也不會浪費額度。
   // 純背景動作,失敗就算了(例如還沒設定 Google 服務帳號金鑰),不影響畫面其他功能。
+  async function triggerAutoAccountSync() {
+    try {
+      const res = await fetch("/api/sheets/auto", { headers: teamKeyHeaders() });
+      if (!res.ok) return;
+      const j = await res.json();
+      if (j.synced && j.synced.length) {
+        setNotice(`已自動同步 ${j.synced.length} 個品牌的每日營收(Google 試算表)。`);
+        if (activeBrandId && j.synced.includes(activeBrandId)) loadLedger(activeBrandId);
+      }
+    } catch { /* 背景動作,失敗不影響主要畫面 */ }
+  }
 
   // 網頁剛打開的當下,不一定已經知道「目前是哪組登入身份」(密碼可能是這次才輸入的),身份解析出來後,
   // 帳本(metaads-ledger:)的讀寫權限判斷才會正確——但品牌「切換選單」本身不受這個影響。
@@ -3693,12 +4012,131 @@ function MetaAdsLedger() {
     setBrands((prev) => mergeWithHardcodedBrands(prev.filter((b) => !HARDCODED_BRANDS.some((h) => h.id === b.id))));
   }
 
+  async function saveTeamKey() {
+    setTeamKey(teamKeyInput.trim());
+    const status = await probeCloud(true);
+    setCloudStatus(status);
+    if (status === "connected") {
+      setCredentialName(getCredentialName());
+      /* public read-only mirror: no background sync */
+      refreshBrandsAfterAuth();
+      setShowTeamKeyModal(false);
+    }
+  }
   useEffect(() => { setShowAllAds(false); }, [focusMonth]);
   useEffect(() => {
     if (rememberToken && apiToken.trim()) {
       storage.set("meta-api-token", apiToken.trim()).catch(() => {});
     }
   }, [apiToken, rememberToken]);
+
+  // ---------- Shopline 對照:載入既有設定與已抓過的資料 ----------
+  useEffect(() => {
+    async function loadShopline() {
+      try {
+        const urlRes = await storage.get(SHOPLINE_WORKER_URL_KEY).catch(() => null);
+        if (urlRes && urlRes.value) {
+          // 如果之前手動改過、存過不同的網址,以存過的為準;沒存過的話就維持程式碼裡寫死的預設值。
+          setShoplineWorkerUrl(urlRes.value);
+          setShoplineWorkerUrlInput(urlRes.value);
+        }
+        const monthList = await storage.list(SHOPLINE_MONTH_PREFIX).catch(() => ({ keys: [] }));
+        const monthEntries = {};
+        for (const k of monthList.keys || []) {
+          const res = await storage.get(k).catch(() => null);
+          if (res && res.value) monthEntries[k.slice(SHOPLINE_MONTH_PREFIX.length)] = JSON.parse(res.value);
+        }
+        setShoplineMonthsData(monthEntries);
+      } catch { /* 讀取失敗時維持空白狀態即可,不影響其他功能 */ }
+    }
+    loadShopline();
+  }, []);
+
+  async function saveShoplineWorkerUrl() {
+    const trimmed = shoplineWorkerUrlInput.trim().replace(/\/$/, "");
+    if (!trimmed) {
+      setShoplineError("請先貼上你的 Cloudflare Worker 網址。");
+      return;
+    }
+    setShoplineWorkerUrl(trimmed);
+    setShoplineError(null);
+    try {
+      await storage.set(SHOPLINE_WORKER_URL_KEY, trimmed);
+      setShoplineNotice("已儲存 Worker 網址。");
+      setTimeout(() => setShoplineNotice(null), 3000);
+    } catch {
+      setShoplineError("儲存 Worker 網址失敗,請再試一次。");
+    }
+  }
+
+  async function fetchShoplineData(since, until, storageKey, applyFn) {
+    if (!shoplineWorkerUrl) {
+      setShoplineError("請先貼上並儲存你的 Cloudflare Worker 網址。");
+      return;
+    }
+    setShoplineLoading(true);
+    setShoplineError(null);
+    setShoplineNotice(null);
+    try {
+      const res = await fetch(`${shoplineWorkerUrl}/api/orders?since=${since}&until=${until}`, {
+        headers: { "X-Proxy-Auth": SHOPLINE_PROXY_SECRET },
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Worker 回應錯誤 (status ${res.status})`);
+      }
+      await storage.set(storageKey, JSON.stringify(data));
+      applyFn(data);
+      setShoplineNotice(`已抓取 ${data.meta && data.meta.totalOrders != null ? data.meta.totalOrders : "0"} 筆 Shopline 訂單(${since} ~ ${until})。`);
+    } catch (e) {
+      setShoplineError("抓取 Shopline 資料失敗:" + e.message);
+    } finally {
+      setShoplineLoading(false);
+    }
+  }
+
+  function fetchShoplineForMonth(monthKey) {
+    const { since, until } = monthRangeForShopline(monthKey);
+    return fetchShoplineData(since, until, shoplineMonthKey(monthKey), (data) => {
+      setShoplineMonthsData((prev) => ({ ...prev, [monthKey]: data }));
+    });
+  }
+
+  // 折價券查詢:自訂時間範圍(日曆選的起訖日),不綁定既有的週/月固定區間,查詢結果只放在畫面上,不存進共用/本機儲存空間
+  // (跟月報表的 Shopline 資料是分開的兩份,避免互相覆蓋)。
+  async function fetchCouponQueryData() {
+    if (!couponQuerySince || !couponQueryUntil) {
+      setCouponQueryError("請選擇開始與結束日期。");
+      return;
+    }
+    if (!shoplineWorkerUrl) {
+      setCouponQueryError("請先在「Shopline 對照」分頁貼上並儲存 Worker 網址。");
+      return;
+    }
+    setCouponQueryLoading(true);
+    setCouponQueryError(null);
+    setCouponFocusCode(null);
+    try {
+      const res = await fetch(`${shoplineWorkerUrl}/api/orders?since=${couponQuerySince}&until=${couponQueryUntil}`, {
+        headers: { "X-Proxy-Auth": SHOPLINE_PROXY_SECRET },
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `Worker 回應錯誤 (status ${res.status})`);
+      setCouponQueryData(data);
+    } catch (e) {
+      setCouponQueryError("查詢失敗:" + e.message);
+    } finally {
+      setCouponQueryLoading(false);
+    }
+  }
+
+  // 把訂單的 utm 物件整理成一句話說明「這筆訂單從哪裡來的」,沒有 utm 資料就視為直接流量/非廣告帶來的訂單。
+  function formatOrderSource(utm) {
+    if (!utm || Object.keys(utm).length === 0) return "直接流量 / 無 UTM";
+    const parts = [utm.utm_source, utm.utm_medium, utm.utm_campaign, utm.utm_content, utm.utm_term].filter(Boolean);
+    return parts.length ? parts.join(" / ") : "有 UTM 但欄位皆為空";
+  }
+
   // 把各種技術性的失敗原因(網路錯誤、JSON 解析失敗、Worker 狀態碼、Meta 頻率限制等)
   // 轉成看得懂的中文說明。原始技術訊息還是會印在瀏覽器 console 裡,真的要除錯可以按 F12 查看,
   // 但畫面上只顯示一般人看得懂的話。
@@ -3830,9 +4268,60 @@ function MetaAdsLedger() {
     }
   }
 
+  async function importLedgerFile(file) {
+    setLedgerImportLoading(true); setLedgerImportError(null); setLedgerImportNotice(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const workbook = XLSX.read(buf, { type: "array", cellDates: true });
+      const parsedByMonth = parseLedgerWorkbook(workbook, Number(ledgerYear));
+      const monthKeys = Object.keys(parsedByMonth);
+      if (!monthKeys.length) {
+        setLedgerImportError("在這份檔案裡沒有找到看得懂的月份分頁(分頁名稱需要是「1月」~「12月」這種格式),請確認檔案格式是否跟範例表單一致。");
+        return;
+      }
+      for (const mk of monthKeys) {
+        await storage.set(ledgerKeyFor(activeBrandId, mk), JSON.stringify(parsedByMonth[mk]));
+      }
+      await loadLedger(activeBrandId);
+      setLedgerImportNotice(`已匯入 ${monthKeys.map((mk) => monthLabel(mk)).join("、")} 的後台每日收益表,月報表會自動比對。`);
+      setShowLedgerModal(false);
+    } catch (e) {
+      setLedgerImportError("讀取檔案時發生問題,請確認上傳的是 .xlsx 檔,且格式跟範例表單一致。");
+    } finally {
+      setLedgerImportLoading(false);
+    }
+  }
+
   // 從 Google 試算表直接同步後台每日收益表(方式B:試算表保持完全私密,只分享給一個服務帳號),
   // 取代手動下載 xlsx 再上傳的步驟。伺服器端(/api/sheets/sync)會用服務帳號金鑰讀「1月」~「12月」
   // 這些分頁,轉成跟 xlsx 匯入完全同一套格式後直接存進帳本,前端這裡只需要打一次 API。
+  async function syncFromGoogleSheet() {
+    if (!activeBrandId) {
+      setLedgerImportError("請先在上方選擇或建立一個品牌(廣告帳號),系統才知道要把同步回來的資料存到哪一本帳。");
+      return;
+    }
+    const sheetId = sheetIdInput.trim();
+    setSheetSyncLoading(true); setLedgerImportError(null); setLedgerImportNotice(null);
+    try {
+      const res = await fetch(`/api/sheets/sync`, {
+        method: "POST",
+        headers: { ...teamKeyHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: activeBrandId, sheetId, year: Number(ledgerYear) }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      await loadLedger(activeBrandId);
+      const monthsLabel = (json.importedMonths || []).map((mk) => monthLabel(mk)).join("、");
+      setLedgerImportNotice(
+        `已從 Google 試算表同步 ${monthsLabel} 的後台每日收益表。` +
+        (json.errors && json.errors.length ? ` (部分分頁略過:${json.errors.join(";")})` : "")
+      );
+    } catch (e) {
+      setLedgerImportError("同步失敗:" + e.message + "——請確認這份試算表已經分享給服務帳號的 email(檢視者權限即可),且 ID 沒有貼錯。");
+    } finally {
+      setSheetSyncLoading(false);
+    }
+  }
 
   async function loadAll(brandId, isStale) {
     setLoading(true); setError(null);
@@ -3864,6 +4353,17 @@ function MetaAdsLedger() {
     }
   }
 
+  async function deleteMonth(mk) {
+    try {
+      await storage.delete(monthKeyFor(activeBrandId, mk));
+      const updated = { ...months }; delete updated[mk];
+      setMonths(updated);
+      const sorted = Object.keys(updated).sort();
+      if (focusMonth === mk) setFocusMonth(sorted.length ? sorted[sorted.length - 1] : null);
+    } catch { setError("刪除失敗,請再試一次。"); }
+    setConfirmDelete(null);
+  }
+
   function handlePrintClick() {
     // 跟匯出 PDF 一樣,列印前先展開所有收合中的「廣告成效分類」區塊,避免收合的內容沒有印出來。
     window.dispatchEvent(new Event(PERF_EXPAND_ALL_EVENT));
@@ -3889,10 +4389,27 @@ function MetaAdsLedger() {
     })();
   }
 
+  async function resetAll() {
+    try {
+      for (const mk of Object.keys(months)) await storage.delete(monthKeyFor(activeBrandId, mk));
+      setMonths({}); setFocusMonth(null);
+    } catch { setError("重置失敗,請再試一次。"); }
+    setConfirmReset(false);
+  }
+
   // 每個品牌各自的「CPA 過高」標準是各品牌獨立設定、互不影響,存起來之後下次打開網頁還會記得,
   // 也隨時可以重新設定或修改。輸入空白表示清除這個品牌的標準(改回「尚未設定」,不會顯示過高警示)。
   // 已經拿掉「預設帳本」,所以只要抓到資料,就一定要掛在一個看得到的品牌底下——
   // 如果這個帳號 ID 還沒存成常用品牌,就先用帳號 ID 當名稱自動建立一個(之後可以用「存為常用」改成正式名稱)。
+  async function ensureBrandRegistered(cleanId) {
+    const matched = brands.find((b) => b.id === cleanId);
+    if (matched) return matched.id;
+    const autoBrand = { name: cleanId, id: cleanId };
+    const updated = [...brands, autoBrand];
+    setBrands(updated);
+    await storage.set("meta-api-brands", JSON.stringify(updated)).catch(() => {});
+    return cleanId;
+  }
 
   function editCpaThreshold(brandId) {
     const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
@@ -3918,7 +4435,30 @@ function MetaAdsLedger() {
     storage.set("meta-api-cpa-thresholds", JSON.stringify(updated)).catch(() => {});
   }
 
-  
+  function editCpcThreshold(brandId) {
+    const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
+    const current = cpcThresholds[brandId];
+    const input = window.prompt(
+      `設定「${brandName}」的 CPC 目標——Traffic / CPC 類 Campaign 會以 CPC 當主要 Winner 指標。\n留空白可以清除這個品牌的 CPC 目標。`,
+      current != null ? String(current) : ""
+    );
+    if (input === null) return;
+    const trimmed = input.trim().replace(/,/g, "");
+    const updated = { ...cpcThresholds };
+    if (!trimmed) {
+      delete updated[brandId];
+    } else {
+      const num = parseFloat(trimmed);
+      if (!Number.isFinite(num) || num <= 0) {
+        setApiError("CPC 目標請輸入一個大於 0 的數字。");
+        return;
+      }
+      updated[brandId] = num;
+    }
+    setCpcThresholds(updated);
+    storage.set("meta-api-cpc-thresholds", JSON.stringify(updated)).catch(() => {});
+  }
+
   // 跟 editCpaThreshold 同一套模式:每個品牌各自的「廣告費佔比過高」標準(百分比),
   // 超過這個比例,每日報表(選一天/矩陣總覽)裡的廣告費佔比欄位會標紅提醒。
   function editAdRatioThreshold(brandId) {
@@ -4015,7 +4555,54 @@ function MetaAdsLedger() {
     storage.set("meta-api-product-names", JSON.stringify(updated)).catch(() => {});
   }
 
+  async function saveCurrentAsBrand() {
+    if (!apiAccountId.trim()) {
+      setApiError("請先填廣告帳號 ID,才能存成常用品牌。");
+      return;
+    }
+    const name = window.prompt("幫這個廣告帳號取個品牌名稱:");
+    if (!name || !name.trim()) return;
+    const cleanId = apiAccountId.trim().replace(/^act_/, "");
+    const updated = [...brands.filter((b) => b.name !== name.trim()), { name: name.trim(), id: cleanId }];
+    setBrands(updated);
+    try {
+      await storage.set("meta-api-brands", JSON.stringify(updated));
+      // 同時記住這個帳號 ID 是「目前使用中」的,下次打開網頁時才會自動帶入,
+      // 不用等到真的按下抓取資料才會被記住。
+      await storage.set("meta-api-account-id", cleanId).catch(() => {});
+      setApiNotice(`已將「${name.trim()}」存為常用品牌。`);
+      setTimeout(() => setApiNotice(null), 4000);
+    } catch {
+      setApiError("儲存常用品牌失敗,請再試一次。");
+    }
+  }
 
+  function selectBrand(name) {
+    const found = brands.find((b) => b.name === name);
+    if (found) {
+      setApiAccountId(found.id);
+      // 選了常用品牌後也立刻記住,這樣下次打開網頁會直接帶入這個品牌的帳號 ID。
+      storage.set("meta-api-account-id", found.id).catch(() => {});
+    }
+  }
+
+  async function deleteBrand(name) {
+    const updated = brands.filter((b) => b.name !== name);
+    setBrands(updated);
+    try {
+      await storage.set("meta-api-brands", JSON.stringify(updated));
+    } catch {
+      setApiError("刪除常用品牌失敗,請再試一次。");
+    }
+  }
+
+  async function fetchOneBrandMonth(token, accountId, month) {
+    const [y, m] = month.split("-").map(Number);
+    const since = `${month}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const until = `${month}-${String(lastDay).padStart(2, "0")}`;
+    return fetchInsightsForRange(token, accountId, since, until);
+  }
 
   const MIN_FETCH_SPEND = 500;
   const MIN_API_GAP_MS = 1200; // 任兩次 Meta Graph API 請求之間的最小間隔(毫秒)
@@ -4072,12 +4659,271 @@ function MetaAdsLedger() {
     }
   }
 
-  
+  function apiErrorHint(e) {
+    const msg = (e && e.message) || "";
+    if (e && (e.code === 1 || e.code === 2)) {
+      return (
+        "。這不是你的權杖或帳號 ID 設定錯誤——Meta 官方把這種錯誤歸類為「暫時性問題,建議直接重試」," +
+        "常見原因是短時間內對同一個廣告帳號打太多次 API(可能是你自己連續按了好幾次、同事剛好也在同時間抓同一個品牌、" +
+        "或自動同步跟手動抓取撞在一起),系統已經自動重試過,如果還是失敗,等 1~2 分鐘再試一次通常就會恢復。"
+      );
+    }
+    if (/too many calls/i.test(msg) || /80004/.test(msg) || /error_subcode 2446079/i.test(msg)) {
+      return "。這是 Meta 廣告帳號的呼叫頻率限制,不是設定錯誤——通常等 5~15 分鐘再試一次就會恢復,批次抓多個品牌時建議一次不要抓太多個。";
+    }
+    return "。請確認權杖沒過期、廣告帳號 ID 正確,且已授權 ads_read 權限。";
+  }
+
   // 大型帳號備援：Meta 官方建議大型 Insights 結果改用 async report run。
   // 平常仍先走原本同步 GET；只有同步查詢因資料量/處理時間失敗時才切 async，
   // 小帳號與既有流程完全不受影響。
+  async function fetchInsightsRowsAsync(token, accountId, since, until, fields) {
+    const params = new URLSearchParams({
+      level: "ad",
+      use_account_attribution_setting: "true",
+      fields,
+      time_range: JSON.stringify({ since, until }),
+      access_token: token,
+    });
+    const createUrl = `https://graph.facebook.com/v19.0/act_${accountId}/insights?${params.toString()}`;
+    const createRes = await throttledFetch(createUrl, "建立大型成效報告", { method: "POST" });
+    const createJson = await parseApiResponse(createRes, "建立大型成效報告");
+    const reportRunId = createJson.report_run_id;
+    if (!reportRunId) throw new Error("Meta 沒有回傳大型成效報告 ID。");
+
+    let completed = false;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+      const statusJson = await fetchGraphApi(
+        `https://graph.facebook.com/v19.0/${reportRunId}?fields=async_status,async_percent_completion&access_token=${encodeURIComponent(token)}`,
+        "等待大型成效報告"
+      );
+      if (statusJson.async_status === "Job Completed") {
+        completed = true;
+        break;
+      }
+      if (statusJson.async_status === "Job Failed") {
+        throw new Error("Meta 大型成效報告建立失敗。");
+      }
+    }
+    if (!completed) throw new Error("Meta 大型成效報告處理逾時，請稍後再試。");
+
+    let resultUrl =
+      `https://graph.facebook.com/v19.0/${reportRunId}/insights?limit=500&access_token=${encodeURIComponent(token)}`;
+    const rows = [];
+    let page = 0;
+    while (resultUrl && page < 100) {
+      const json = await fetchGraphApi(resultUrl, "下載大型成效報告");
+      rows.push(...(json.data || []));
+      resultUrl = json.paging && json.paging.next ? json.paging.next : null;
+      page++;
+    }
+    return rows;
+  }
 
   // 月報明細維持花費 ≥ MIN_FETCH_SPEND 的既有門檻；帳號總計仍使用完整 rows，不受明細門檻影響。
+  async function fetchInsightsForRange(token, accountId, since, until) {
+    const encToken = encodeURIComponent(token);
+    const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
+
+    // 0) account currency
+    let currency = "TWD";
+    try {
+      const curJson = await fetchGraphApi(`https://graph.facebook.com/v19.0/act_${accountId}?fields=currency&access_token=${encToken}`, "讀取帳號幣別");
+      if (curJson.currency) currency = curJson.currency;
+    } catch { /* fall back to TWD, this call isn't critical */ }
+
+    // 1) per-ad performance for the month
+    // 關鍵參數 use_account_attribution_setting=true:讓這次 API 呼叫套用「這個廣告帳號自己在 Meta 後台設定的歸因窗口」,
+    // 而不是 API 預設的歸因窗口。如果沒有這個參數,API 預設的歸因窗口通常比後台顯示用的寬(例如把 7 天內的點擊、
+    // 甚至瀏覽後很久才發生的購買都算進來),會導致轉單數比 Meta 後台顯示的「結果」多出好幾倍,CPA 被嚴重低估、
+    // ROAS 被嚴重高估——這正是造成轉單數跟後台數字差非常多倍的根本原因,不是重複計算的問題。
+    const insightFields = "ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,reach,actions,action_values";
+    let insightsUrl =
+      `https://graph.facebook.com/v19.0/act_${accountId}/insights?level=ad&use_account_attribution_setting=true` +
+      `&fields=${insightFields}&time_range=${timeRange}&limit=500&access_token=${encToken}`;
+    let rows = [];
+    let page = 0;
+    try {
+      while (insightsUrl && page < 20) {
+        const json = await fetchGraphApi(insightsUrl, "讀取成效資料");
+        rows = rows.concat(json.data || []);
+        insightsUrl = json.paging && json.paging.next ? json.paging.next : null;
+        page++;
+      }
+      // 原本最多只讀 20 頁，超過時會默默截斷。大型 H&J 帳號改走 async 重新抓完整結果。
+      if (insightsUrl) {
+        rows = await fetchInsightsRowsAsync(token, accountId, since, until, insightFields);
+      }
+    } catch (e) {
+      const msg = String((e && e.message) || "").toLowerCase();
+      const likelyLargeReport =
+        e.code === 1 ||
+        e.code === 2 ||
+        /timeout|timed out|reduce the amount of data|request too large|unknown error/.test(msg);
+      if (!likelyLargeReport) throw e;
+      rows = await fetchInsightsRowsAsync(token, accountId, since, until, insightFields);
+    }
+
+    if (!rows.length) {
+      return { spend: 0, conversions: 0, revenue: 0, campaigns: 0, currency, accountId, ads: [], syncedAt: new Date().toISOString() };
+    }
+
+    // 2) thumbnails + UTM tags + 投放狀態 + 所屬行銷活動,matched by ad_id (more reliable than name)
+    // H&J 帳號歷史廣告量很大。月報若把「所有有花費的 ad_id」都再查一次詳細資料，
+    // 會製造大量 /ads 請求，容易撞 Meta rate limit，也會讓整輪抓取拖非常久。
+    //
+    // 總計仍然使用完整 rows 計算，所以花費 / 轉單 / 營收 / ROAS 不會少算。
+    // 只有「廣告明細」需要額外抓 metadata：月報只查原本就會顯示的 spend >= MIN_FETCH_SPEND 廣告。
+    const detailTargetRows = rows.filter((r) => (parseFloat(r.spend) || 0) >= MIN_FETCH_SPEND);
+    const periodAdIds = [...new Set(detailTargetRows.map((r) => r.ad_id).filter(Boolean))];
+    let thumbMap = {};
+    let utmMap = {};
+    let statusMap = {};
+    let campaignMap = {};
+    let adSetMap = {};
+    let adSetIdMap = {};
+    let startDateMap = {};
+    let postIdMap = {};
+    let creativeIdMap = {};
+    let objectiveMap = {};
+    let optimizationGoalMap = {};
+    const ID_CHUNK_SIZE = 50;
+    for (let i = 0; i < periodAdIds.length; i += ID_CHUNK_SIZE) {
+      const chunk = periodAdIds.slice(i, i + ID_CHUNK_SIZE);
+      const filtering = encodeURIComponent(JSON.stringify([{ field: "id", operator: "IN", value: chunk }]));
+      let adsUrl =
+        `https://graph.facebook.com/v19.0/act_${accountId}/ads?fields=id,name,url_tags,effective_status,created_time,campaign{id,name,objective},adset{id,name,start_time,optimization_goal},creative{id,thumbnail_url,image_url,url_tags,effective_object_story_id}` +
+        `&filtering=${filtering}&limit=500&access_token=${encToken}`;
+      let page2 = 0;
+      while (adsUrl && page2 < 5) {
+        const json = await fetchGraphApi(adsUrl, "讀取廣告清單");
+        (json.data || []).forEach((ad) => {
+          const thumb = ad.creative && (ad.creative.thumbnail_url || ad.creative.image_url);
+          if (thumb) thumbMap[ad.id] = thumb;
+          // effective_object_story_id = 「粉專ID_貼文ID」,用來組出貼文本身的前台連結。
+          const storyId = ad.creative && ad.creative.effective_object_story_id;
+          if (storyId) postIdMap[ad.id] = storyId;
+          const creativeId = ad.creative && ad.creative.id;
+          if (creativeId) creativeIdMap[ad.id] = creativeId;
+          if (ad.campaign && ad.campaign.objective) objectiveMap[ad.id] = ad.campaign.objective;
+          if (ad.adset && ad.adset.optimization_goal) optimizationGoalMap[ad.id] = ad.adset.optimization_goal;
+          // 有些廣告(例如動態素材/型錄類廣告)的追蹤參數是設在「創意」層級,不是廣告本身,
+          // 所以廣告本身的 url_tags 抓不到值時,再退回去看創意底下的 url_tags。
+          const tags = ad.url_tags || (ad.creative && ad.creative.url_tags) || "";
+          if (tags) utmMap[ad.id] = extractUtmValue(tags);
+          statusMap[ad.id] = ad.effective_status || "UNKNOWN";
+          if (ad.campaign && ad.campaign.name) campaignMap[ad.id] = ad.campaign.name;
+          if (ad.adset && ad.adset.name) adSetMap[ad.id] = ad.adset.name;
+          if (ad.adset && ad.adset.id) adSetIdMap[ad.id] = ad.adset.id;
+          // 投放起始時間:優先用廣告組合(adset)排定的開始時間,最貼近實際開始投放的日期;
+          // 抓不到的話(例如舊資料、權限限制)退回用廣告本身的建立時間,當作大概的參考。
+          const startRaw = (ad.adset && ad.adset.start_time) || ad.created_time || "";
+          if (startRaw) startDateMap[ad.id] = startRaw;
+        });
+        adsUrl = json.paging && json.paging.next ? json.paging.next : null;
+        page2++;
+      }
+    }
+
+    // 3) 先用「完整、未篩選」的資料算總計——這樣廣告費/轉單數/轉單金額才會跟 Meta 後台的帳號總覽數字完全一致。
+    // 後台的總計是把該期間「所有」廣告都算進去,不會因為某支廣告花費很小就不計入;
+    // 如果只加總「花費 ≥ 500」的廣告,總計就會比後台實際數字少,CPA/ROAS 也會跟著失真。
+    let totalSpend = 0, totalConv = 0, totalRev = 0, totalImpressions = 0, totalClicks = 0, totalLinkClicks = 0, totalReach = 0;
+    rows.forEach((row) => {
+      totalSpend += parseFloat(row.spend) || 0;
+      totalConv += pickPurchaseValue(row.actions);
+      totalRev += pickPurchaseValue(row.action_values);
+      totalImpressions += parseFloat(row.impressions) || 0;
+      totalClicks += parseFloat(row.clicks) || 0;
+      totalLinkClicks += parseFloat(row.inline_link_clicks) || 0;
+      totalReach += parseFloat(row.reach) || 0;
+    });
+
+    // 花費門檻只用來決定「廣告明細列表」要不要顯示這支廣告(避免清單被大量花費很少的測試廣告洗版),
+    // 不會再影響上面的總計數字。
+    const detailRows = rows.filter((row) => (parseFloat(row.spend) || 0) >= MIN_FETCH_SPEND);
+
+    // 4) aggregate, merging ads that share the same UTM tag —— 但「投放中」跟「已停止」的廣告絕對不會合併在一起,
+    // 即使 UTM 追蹤代碼相同,只要目前的投放狀態不一樣,就會拆成不同的兩列,避免誤把已經停掉的舊數字跟現在還在跑的混在一起看。
+    const grouped = {};
+    detailRows.forEach((row) => {
+      const spend = parseFloat(row.spend) || 0;
+      const conversions = pickPurchaseValue(row.actions);
+      const revenue = pickPurchaseValue(row.action_values);
+      const impressions = parseFloat(row.impressions) || 0;
+      const clicks = parseFloat(row.clicks) || 0;
+      const linkClicks = parseFloat(row.inline_link_clicks) || 0;
+      const reach = parseFloat(row.reach) || 0;
+      const landingPageViews = pickActionTypes(row.actions, ["landing_page_view", "omni_landing_page_view"]);
+
+      const adName = row.ad_name || "(未命名廣告)";
+      const utm = utmMap[row.ad_id] || "";
+      const isActive = statusMap[row.ad_id] === "ACTIVE";
+      // 跟shopline-proxy後端同一個bug、同一套修法。
+      const campaignName = campaignMap[row.ad_id] || "(未分類活動)";
+      const adSetName = adSetMap[row.ad_id] || "(未分類廣告組合)";
+      const groupKey = (utm ? "utm:" + utm : "ad:" + row.ad_id) + "::campaign:" + campaignName + "::adset:" + adSetName + "::" + (isActive ? "on" : "off");
+      if (!grouped[groupKey]) {
+        grouped[groupKey] = { utm, names: new Set(), image: "", postId: "", creativeId: "", objective: "", optimizationGoal: "", spend: 0, conversions: 0, revenue: 0, impressions: 0, clicks: 0, linkClicks: 0, landingPageViews: 0, reach: 0, active: isActive, campaigns: new Set(), adSets: new Set(), adSetIds: new Set(), adIds: new Set(), startDate: null };
+      }
+      const g = grouped[groupKey];
+      g.names.add(adName);
+      g.spend += spend; g.conversions += conversions; g.revenue += revenue; g.impressions += impressions; g.clicks += clicks; g.linkClicks += linkClicks; g.landingPageViews += landingPageViews; g.reach += reach;
+      if (!g.image && thumbMap[row.ad_id]) g.image = thumbMap[row.ad_id];
+      if (!g.postId && postIdMap[row.ad_id]) g.postId = postIdMap[row.ad_id];
+      if (!g.creativeId && creativeIdMap[row.ad_id]) g.creativeId = creativeIdMap[row.ad_id];
+      if (!g.objective && objectiveMap[row.ad_id]) g.objective = objectiveMap[row.ad_id];
+      if (!g.optimizationGoal && optimizationGoalMap[row.ad_id]) g.optimizationGoal = optimizationGoalMap[row.ad_id];
+      if (campaignMap[row.ad_id]) g.campaigns.add(campaignMap[row.ad_id]);
+      if (adSetMap[row.ad_id]) g.adSets.add(adSetMap[row.ad_id]);
+      if (adSetIdMap[row.ad_id]) g.adSetIds.add(adSetIdMap[row.ad_id]);
+      if (row.ad_id) g.adIds.add(row.ad_id);
+      // 如果這個群組是合併了好幾支廣告(同一個 UTM 追蹤代碼),投放起始時間取「最早」的那個,
+      // 代表這個素材/追蹤代碼最初是什麼時候開始投放的。
+      const rowStart = startDateMap[row.ad_id];
+      if (rowStart && (!g.startDate || rowStart < g.startDate)) g.startDate = rowStart;
+    });
+
+    const ads = Object.values(grouped)
+      .map((g) => {
+        const nameList = [...g.names];
+        const adCount = g.adIds.size || nameList.length || 1;
+        const name =
+          nameList.length === 0
+            ? g.utm || "未命名廣告"
+            : nameList.length === 1
+            ? nameList[0]
+            : `${nameList[0]} 等 ${nameList.length} 支廣告`;
+        const campaignList = [...g.campaigns];
+        // 跟 shopline-proxy 後端同一個bug、同一個修法。
+        const campaign =
+          campaignList.length === 0
+            ? "(未分類活動)"
+            : campaignList.length === 1
+            ? campaignList[0]
+            : `${campaignList[0]} 等 ${campaignList.length} 個活動`;
+        const adSetList = [...g.adSets];
+        const adSet =
+          adSetList.length === 0
+            ? "(未分類廣告組合)"
+            : adSetList.length === 1
+            ? adSetList[0]
+            : `${adSetList[0]} 等 ${adSetList.length} 個廣告組合`;
+        return {
+          name, utm: g.utm, image: g.image, postId: g.postId, creativeId: g.creativeId, objective: g.objective, optimizationGoal: g.optimizationGoal, spend: g.spend, conversions: g.conversions, revenue: g.revenue,
+          impressions: g.impressions, clicks: g.clicks, linkClicks: g.linkClicks, landingPageViews: g.landingPageViews, reach: g.reach,
+          adCount, rawNames: nameList, active: g.active, campaign, adSet, adSetIds: [...g.adSetIds], adIds: [...g.adIds], startDate: g.startDate,
+        };
+      })
+      .sort((a, b) => b.spend - a.spend);
+
+    return {
+      spend: totalSpend, conversions: totalConv, revenue: totalRev,
+      impressions: totalImpressions, clicks: totalClicks, linkClicks: totalLinkClicks, reach: totalReach,
+      campaigns: 0, currency, accountId, ads, syncedAt: new Date().toISOString()
+    };
+  }
 
   // ---------- 投放中廣告成效分類(成效好 / 成效正常 / 成效不好 / 學習中) ----------
   const LEARNING_MIN_CONVERSIONS = 10; // 轉單數不足,還看不出真實成效,先歸類為「學習中」
@@ -4805,7 +5651,7 @@ function MetaAdsLedger() {
     );
   }
 
-  ) {
+  function ShoplineComparisonView({ record, ads, currencyCode }) {
     if (!record) return null;
     const { rows, unmatched, matchedOrderCount, totalValidOrders } = matchShoplineOrdersToAds(record.orders, ads);
     const discountRows = record.discountSummary || [];
@@ -4889,26 +5735,288 @@ function MetaAdsLedger() {
     );
   }
 
+  async function fetchFullMonthFromApi() {
+    if (!apiMonth) {
+      setApiError("請選擇月份。");
+      return;
+    }
+    if (!activeBrandId) {
+      setApiError("請先在上方選擇一個品牌。");
+      return;
+    }
+    setApiError(null);
+    setApiNotice(null);
+    setApiLoading(true);
+    try {
+      const [y, m] = apiMonth.split("-").map(Number);
+      const since = `${apiMonth}-01`;
+      const lastDay = new Date(y, m, 0).getDate();
+      const until = `${apiMonth}-${String(lastDay).padStart(2, "0")}`;
+      const record = await callMetaWorker("/api/meta/insights", { accountId: activeBrandId, since, until, relax: "false" });
+      record.source = "manual";
+      await storage.set(monthKeyFor(activeBrandId, apiMonth), JSON.stringify(record));
+      await loadAll(activeBrandId);
+      setFocusMonth(apiMonth);
+      setViewMode("month");
+      setApiNotice(`已抓到 ${monthLabel(apiMonth)} 的資料,共 ${record.ads.length} 支廣告。`);
+      setShowApiPanel(false);
+    } catch (e) {
+      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
+    } finally {
+      setApiLoading(false);
+    }
+  }
+
+  async function fetchBatchFromApi() {
+    if (!apiToken.trim() || !apiMonth) {
+      setApiError("請填入存取權杖並選擇月份。");
+      return;
+    }
+    const targets = brands.filter((b) => selectedBatchBrandIds.includes(b.id));
+    if (!targets.length) {
+      setApiError("請至少勾選一個品牌。");
+      return;
+    }
+    setApiError(null);
+    setApiNotice(null);
+    setApiLoading(true);
+    const progress = targets.map((b) => ({ id: b.id, name: b.name, status: "pending", message: "" }));
+    setBatchProgress(progress);
+    for (let i = 0; i < targets.length; i++) {
+      const b = targets[i];
+      setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "running" } : p)));
+      try {
+        const record = await fetchOneBrandMonth(apiToken.trim(), b.id, apiMonth);
+        record.source = "manual";
+        await storage.set(monthKeyFor(b.id, apiMonth), JSON.stringify(record));
+        setBatchProgress((prev) =>
+          prev.map((p, idx) => (idx === i ? { ...p, status: record.ads.length ? "done" : "empty", message: record.ads.length + " 支廣告" } : p))
+        );
+      } catch (e) {
+        setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "error", message: e.message } : p)));
+      }
+      if (i < targets.length - 1) await new Promise((resolve) => setTimeout(resolve, 4000));
+    }
+    setApiLoading(false);
+    setApiNotice("批次抓取完成,上方可以切換品牌查看結果。");
+    await loadAll(activeBrandId);
+  }
 
   // 自動更新前3個月月報表:計算當月和前2個月,依次抓取每個月的資料
+  async function fetchRecentMonthsFromApi(monthsCount) {
+    if (!apiToken.trim() || !apiAccountId.trim()) {
+      setApiError("請填入存取權杖跟廣告帳號 ID。");
+      return;
+    }
+    setApiError(null);
+    setApiNotice(null);
+    setApiLoading(true);
+    setShowApiPanel(false);
+    try {
+      const cleanId = apiAccountId.trim().replace(/^act_/, "");
+      const brandIdToUse = await ensureBrandRegistered(cleanId);
 
+      // 計算前 N 個月(包含當月)
+      const monthsToFetch = [];
+      const now = new Date();
+      for (let m = 0; m < monthsCount; m++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        monthsToFetch.push(monthKey);
+      }
+      monthsToFetch.reverse(); // 反轉,從最早的月開始抓
 
+      const progress = monthsToFetch.map((mk) => ({ id: mk, name: monthLabel(mk), status: "pending", message: "" }));
+      setBatchProgress(progress);
+
+      let successCount = 0, errorCount = 0;
+      for (let m = 0; m < monthsToFetch.length; m++) {
+        const monthKey = monthsToFetch[m];
+        setBatchProgress((prev) => prev.map((p, idx) => (idx === m ? { ...p, status: "running" } : p)));
+        try {
+          const record = await fetchOneBrandMonth(apiToken.trim(), cleanId, monthKey);
+          record.source = "manual";
+          await storage.set(monthKeyFor(brandIdToUse, monthKey), JSON.stringify(record));
+          successCount++;
+          setBatchProgress((prev) =>
+            prev.map((p, idx) => (idx === m ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
+          );
+        } catch (e) {
+          errorCount++;
+          setBatchProgress((prev) => prev.map((p, idx) => (idx === m ? { ...p, status: "error", message: e.message } : p)));
+        }
+        if (m < monthsToFetch.length - 1) await new Promise((r) => setTimeout(r, 4000));
+      }
+
+      setActiveBrandId(brandIdToUse);
+      await loadAll(brandIdToUse);
+      setFocusMonth(monthsToFetch[monthsToFetch.length - 1]); // 聚焦到最新月份
+      setApiNotice(`已自動更新前 ${monthsCount} 個月:成功 ${successCount} 個月${errorCount > 0 ? `,失敗 ${errorCount} 個月` : ""}。`);
+    } catch (e) {
+      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
+    } finally {
+      setApiLoading(false);
+    }
+  }
+
+  async function toggleRememberToken(checked) {
+    setRememberToken(checked);
+    if (checked) {
+      await storage.set("meta-api-remember-token", "1").catch(() => {});
+      if (apiToken.trim()) await storage.set("meta-api-token", apiToken.trim()).catch(() => {});
+    } else {
+      await storage.set("meta-api-remember-token", "0").catch(() => {});
+      await storage.delete("meta-api-token").catch(() => {});
+      // 不記住權杖的話,自動同步也一併關閉,因為沒有存起來的權杖可以自動用
+      if (autoSyncEnabled) {
+        setAutoSyncEnabled(false);
+        await storage.set("meta-api-autosync", "0").catch(() => {});
+      }
+    }
+  }
+
+  async function toggleAutoSync() {
+    setAutoSyncEnabled(false);
+    await storage.set("meta-api-autosync", "0").catch(() => {});
+    setApiNotice("Meta 自動同步已由中央排程接管；此頁只讀取已同步資料。手動抓取功能保留作緊急備援。");
+  }
 
   // J.GAO 頁面只維護月報資料；獨立週資料流程已移除。
   // 已結束的月份只在缺資料時補，當月資料若 3 小時內剛更新過就沿用，避免重複打 Meta API。
   const AUTO_SYNC_DATE_KEY = "meta-auto-sync-last-date";
+  async function runAutoSyncWith(brandsList, force = false) {
+    const targets = (brandsList && brandsList.length) ? brandsList : HARDCODED_BRANDS;
+    if (!targets.length) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (!force) {
+      const lastRunRes = await storage.get(AUTO_SYNC_DATE_KEY).catch(() => null);
+      if (lastRunRes && lastRunRes.value === todayStr) return;
+      await storage.set(AUTO_SYNC_DATE_KEY, todayStr).catch(() => {});
+    }
+    const RECENT_MONTHS = 3;
+    let successCount = 0, errorCount = 0;
+    setAutoSyncStatus("自動同步中… 更新近 " + RECENT_MONTHS + " 個月資料");
+    for (const t of targets) {
+      try {
+        const FRESH_ENOUGH_MS = 3 * 3600 * 1000;
+        const now = new Date();
+        for (let m = 0; m < RECENT_MONTHS; m++) {
+          const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+          const monthKey = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+          if (m > 0) {
+            const existing = await storage.get(monthKeyFor(t.id, monthKey)).catch(() => null);
+            if (existing) continue;
+          } else {
+            const existingRaw = await storage.get(monthKeyFor(t.id, monthKey)).catch(() => null);
+            if (existingRaw && existingRaw.value) {
+              try {
+                const existingRecord = JSON.parse(existingRaw.value);
+                const syncedAtMs = existingRecord.syncedAt ? new Date(existingRecord.syncedAt).getTime() : 0;
+                if (syncedAtMs && Date.now() - syncedAtMs < FRESH_ENOUGH_MS) continue;
+              } catch {}
+            }
+          }
+          try {
+            const since = monthKey + "-01";
+            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+            const until = monthKey + "-" + String(lastDay).padStart(2, "0");
+            const record = await callMetaWorker("/api/meta/insights", { accountId: t.id, since, until, relax: "false" });
+            record.source = "auto";
+            await storage.set(monthKeyFor(t.id, monthKey), JSON.stringify(record));
+            successCount++;
+          } catch { errorCount++; }
+          await new Promise((resolve) => setTimeout(resolve, 4000));
+        }
+      } catch { errorCount++; }
+    }
+    await storage.set(AUTO_SYNC_DATE_KEY, todayStr);
+    setAutoSyncStatus(null);
+    await loadAll(activeBrandId);
+    if (successCount > 0) {
+      setMetaUpdateNotice("已自動同步完成:成功更新 " + successCount + " 筆資料" + (errorCount > 0 ? "," + errorCount + " 筆失敗(可能是頻率限制,之後再手動抓一次即可)" : "") + "。");
+    }
+  }
 
   // 手動觸發同步(例如面板裡的「立即同步」按鈕)
-  
+  function runAutoSync() {
+    return runAutoSyncWith(brands.length ? brands : HARDCODED_BRANDS);
+  }
+
   // 直接呼叫 /api/sheets/sync(不是 /api/sheets/auto),指定明確的 accountId——
   // 跟登入自動觸發的每日同步用同一支後端 API,但這支沒有「一天一次」的限制,手動按永遠會真的去抓一次最新的。
   // sheetId 留空,後端會自動沿用這個品牌上次記住的試算表 ID,不用重新貼一次。
+  async function syncLedgerForAccount(accountId) {
+    const res = await fetch(`/api/sheets/sync`, {
+      method: "POST",
+      headers: { ...teamKeyHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId, sheetId: "", year: Number(ledgerYear) }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    if (accountId === activeBrandId) await loadLedger(activeBrandId);
+    return json;
+  }
 
   // 一鍵刷新全部資料來源:①官網+一頁廣告成效(Meta,近3個月)②Shopline 訂單(近3個月)
   // ③一頁業績的每日收益表(Google 試算表)。依序執行(不是同時打,避免太多請求一起打向 Meta/Shopline 觸發頻率限制),
   // 手動點的動作,不受背景自動同步「一天一次」的限制,想刷新隨時可以按。任一項目失敗不會擋住其他項目繼續執行。
   // force=true(手動按「刷新全部」):不管今天有沒有跑過,一定重新整理一次。
   // force=false(網頁打開時自動觸發):先檢查今天是否已經自動刷新過,跑過就直接跳過,避免同一天開好幾次網頁重複打一堆 API。
+  async function refreshAllData(force = true) {
+    if (!force) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const lastRunRes = await storage.get(AUTO_SYNC_DATE_KEY).catch(() => null);
+      if (lastRunRes && lastRunRes.value === todayStr) return;
+      // 關鍵修正:自動同步(非force)一旦確定要跑,立刻把「今天跑過了」寫進去,不要等整個流程
+      // (可能超過1分鐘)跑完才寫。不然使用者在同步跑到一半時重新整理頁面,新的頁面載入會看到
+      // 這個key還沒寫入、以為今天還沒跑過,又觸發一次自動同步——兩個同步流程同時打同一個
+      // 廣告帳號,很容易撞到Meta的頻率限制(錯誤代碼1/99)。手動按「刷新全部」(force=true)
+      // 不受這個保護限制,一律照使用者要求執行。
+      await storage.set(AUTO_SYNC_DATE_KEY, todayStr).catch(() => {});
+    }
+    setRefreshAllStatus("整理中… 官網 / 一頁廣告成效");
+    let metaOk = true;
+    try {
+      // 2026-07-30起:H&J一頁業績(ONEPAGE_BRAND_ID)這個帳號的Meta資料,改成以speedingscs/cron排程
+      // 為主要來源——H-J自己的「自動」同步(頁面載入觸發,不是使用者主動按的)不再重複對這個帳號打Meta,
+      // 直接讀共用KV裡speedingscs/cron已經抓好的資料就好,避免同一個帳號被兩套系統重複消耗同一份
+      // 300次/小時額度。手動按「刷新全部」(force=true)還是會兩個帳號都抓,當作緊急備援——
+      // 手動是使用者自己控制、intentional的動作,不會像自動同步那樣每次開頁面就觸發一次。
+      // 2026-07-30:先前這裡改成排除ONEPAGE_BRAND_ID、只讓speedingscs/cron抓一頁業績,但改完之後
+      // 出現兩個新問題(官網業績每月看不到資料、其他人看不到FB縮圖),時間點高度重疊,還沒完全查清楚
+      // 因果關係前,先撤回這個調整、恢復成兩個帳號都抓,回到已知穩定的狀態,不讓正式環境繼續帶著
+      // 問題運作。如果之後要重新做這個架構調整,要先確認清楚不會連帶影響到官網業績或縮圖資料。
+      await runAutoSyncWith(HARDCODED_BRANDS, force);
+    } catch { metaOk = false; }
+
+    setRefreshAllStatus("整理中… Shopline 訂單");
+    let shoplineOk = true;
+    try {
+      const RECENT_MONTHS = 3;
+      const now = new Date();
+      for (let m = 0; m < RECENT_MONTHS; m++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (m > 0 && shoplineMonthsData[monthKey]) continue; // 已結束的月份,之前抓過就不重抓
+        try { await fetchShoplineForMonth(monthKey); } catch {}
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    } catch { shoplineOk = false; }
+
+    setRefreshAllStatus("整理中… 每日收益表(Google 試算表)");
+    let ledgerOk = true;
+    try {
+      await syncLedgerForAccount(ONEPAGE_BRAND_ID); // H&J 一頁業績
+    } catch { ledgerOk = false; }
+
+    setRefreshAllStatus(null);
+    const failedParts = [!metaOk && "廣告成效", !shoplineOk && "Shopline 訂單", !ledgerOk && "每日收益表"].filter(Boolean);
+    setApiNotice(
+      failedParts.length
+        ? `刷新完成,但有部分失敗(${failedParts.join("、")}),可以再按一次或個別手動重試。`
+        : "已完成刷新全部資料:官網/一頁廣告成效、Shopline 訂單、每日收益表都是最新的。"
+    );
+  }
 
   const sortedKeys = useMemo(() => Object.keys(months).sort(), [months]);
   const enriched = useMemo(() => { const out = {}; for (const mk of sortedKeys) out[mk] = deriveMetrics(months[mk]); return out; }, [months, sortedKeys]);
@@ -4975,6 +6083,56 @@ function MetaAdsLedger() {
   const dailyMatrixCodesRaw = dailyMonthRecord ? dailyMonthRecord.productCodes : [];
   const dailyMatrixSplit = sortCodesChannelFirst(dailyMatrixCodesRaw);
   const dailyMatrixCodes = dailyMatrixSplit.sorted;
+  // 真實Shopline訂單金額(不是試算表手動打的數字,是直接從Shopline後台訂單資料算出來的)——
+  // shoplineMonthsData是refreshAllData裡全域載入的,不分品牌,一頁業績這裡直接讀同一份就有,
+  // 不用額外開新的抓取路徑。用日期(YYYY-MM-DD)當key,方便跟矩陣總覽逐日的列對起來。
+  const shopeRealDailyMap = useMemo(() => {
+    const monthRecord = activeDailyMonth ? shoplineMonthsData[activeDailyMonth] : null;
+    if (!monthRecord || !monthRecord.orders) return {};
+    const grouped = groupShoplineOrdersByDay(monthRecord.orders);
+    return Object.fromEntries(grouped.map((g) => [g.date, g]));
+  }, [shoplineMonthsData, activeDailyMonth]);
+
+  // 官網業績「每日報表」用:邏輯跟上面一頁業績那套完全一樣(月份分頁 → 選一天/矩陣總覽,自動帶入今天或最新一天有資料的日期),
+  // 只是資料源換成 shoplineMonthsData(Shopline 訂單),不是 ledgerByMonth(Google 試算表帳本)。
+  // dailyMonth/focusDay/dailySubMode 兩個品牌共用同一組 state——切換品牌時,如果原本選的月份/日期對新資料源無效,
+  // 下面的 fallback 邏輯會自動退回「今天」或「最新一筆有資料的日期」,不需要另外開一組獨立的 state。
+  const officialDailyMonthKeys = useMemo(() => Object.keys(shoplineMonthsData).sort(), [shoplineMonthsData]);
+  const activeOfficialDailyMonth = (dailyMonth && shoplineMonthsData[dailyMonth])
+    ? dailyMonth
+    : shoplineMonthsData[todayParts.monthKey]
+    ? todayParts.monthKey
+    : (officialDailyMonthKeys.length ? officialDailyMonthKeys[officialDailyMonthKeys.length - 1] : null);
+  const officialDailyMonthRecord = activeOfficialDailyMonth ? shoplineMonthsData[activeOfficialDailyMonth] : null;
+  const officialDailyRows = useMemo(
+    () => groupShoplineOrdersByDay(officialDailyMonthRecord ? officialDailyMonthRecord.orders : null),
+    [officialDailyMonthRecord]
+  );
+  // groupShoplineOrdersByDay 回傳的是新到舊排序,這裡另外存一份舊到新的,跟 sortedDailyDays(一頁業績那邊)排序方向一致,
+  // 這樣「選一天」的日期分頁、矩陣總覽的逐日列表,兩個品牌看起來的排列順序才會一樣。
+  const sortedOfficialDailyRows = useMemo(() => officialDailyRows.slice().sort((a, b) => (a.date < b.date ? -1 : 1)), [officialDailyRows]);
+  const activeOfficialFocusDay = (focusDay && sortedOfficialDailyRows.some((d) => d.date === focusDay))
+    ? focusDay
+    : sortedOfficialDailyRows.some((d) => d.date === todayParts.dateKey)
+    ? todayParts.dateKey
+    : (sortedOfficialDailyRows.length ? sortedOfficialDailyRows[sortedOfficialDailyRows.length - 1].date : null);
+  const officialFocusDayRecord = activeOfficialFocusDay ? sortedOfficialDailyRows.find((d) => d.date === activeOfficialFocusDay) : null;
+  const officialDailyMonthTotal = useMemo(() => {
+    return officialDailyRows.reduce(
+      (acc, d) => ({
+        orderCount: acc.orderCount + d.orderCount,
+        grossRevenue: acc.grossRevenue + d.grossRevenue,
+        discountAmount: acc.discountAmount + d.discountAmount,
+        netRevenue: acc.netRevenue + d.netRevenue,
+      }),
+      { orderCount: 0, grossRevenue: 0, discountAmount: 0, netRevenue: 0 }
+    );
+  }, [officialDailyRows]);
+  // 基礎分析用:當月哪一天實收營收最高。
+  const officialHighestRevenueDay = useMemo(() => {
+    if (!officialDailyRows.length) return null;
+    return officialDailyRows.reduce((best, d) => (!best || d.netRevenue > best.netRevenue ? d : best), null);
+  }, [officialDailyRows]);
   // threshold 有給且超過時,回傳標紅、加驚嘆號的樣式;沒給 threshold 或沒超過,就是原本的樣式。
   // adPct / AD_RATIO_CRITICAL_PCT 已經移到檔案最上面的頂層,這裡不用重複定義。
   const netProfitCell = (value) => {
@@ -5043,6 +6201,20 @@ function MetaAdsLedger() {
   }, []);
 
   const sortedVisibleAds = useMemo(() => sortAdsByMode(visibleAds, adSortMode), [visibleAds, adSortMode]);
+
+  // 折價券查詢:依目前選中/搜尋的折價券代碼,從查詢結果的原始訂單裡篩出用過這組代碼的所有訂單(不分大小寫比對)。
+  const couponFocusOrders = useMemo(() => {
+    if (!couponFocusCode || !couponQueryData) return [];
+    const target = couponFocusCode.trim().toUpperCase();
+    return (couponQueryData.orders || [])
+      .filter((o) => (o.discountCodes || []).some((c) => String(c).toUpperCase() === target))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }, [couponFocusCode, couponQueryData]);
+  const couponFocusSummary = useMemo(() => {
+    if (!couponFocusCode || !couponQueryData) return null;
+    const target = couponFocusCode.trim().toUpperCase();
+    return (couponQueryData.discountSummary || []).find((d) => String(d.code).toUpperCase() === target) || null;
+  }, [couponFocusCode, couponQueryData]);
 
   // ---------- 密碼閘:還沒驗證通過就不顯示任何報表內容 ----------
   if (isUnlocked === null) {
@@ -5159,8 +6331,11 @@ function MetaAdsLedger() {
         </div>
       )}
 
+      {notice && <div className="mal-notice">✓ {notice}</div>}
+      {apiNotice && <div className="mal-notice">✓ {apiNotice}</div>}
       {metaUpdateNotice && <div className="mal-notice">✓ {metaUpdateNotice}</div>}
-
+      {autoSyncStatus && <div className="mal-notice mal-notice-syncing">{autoSyncStatus}</div>}
+      {refreshAllStatus && <div className="mal-notice mal-notice-syncing">{refreshAllStatus}</div>}
       {error && <div className="mal-error">⚠ {error}</div>}
       {apiError && <div className="mal-error">⚠ {apiError}</div>}
       {metaUpdateError && <div className="mal-error">⚠ {metaUpdateError}</div>}
@@ -5184,7 +6359,11 @@ function MetaAdsLedger() {
         <button className={`mal-viewmode-btn ${viewMode === "ads" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("ads")}>
           📊 廣告分析
         </button>
-        
+        {activeBrandId === OFFICIAL_SITE_BRAND_ID && (
+          <button className={`mal-viewmode-btn ${viewMode === "coupon" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("coupon")}>
+            🎟 折價券查詢
+          </button>
+        )}
       </div>
 
       {viewMode === "adjust" && (
@@ -5377,11 +6556,15 @@ function MetaAdsLedger() {
                 periodLabel={monthLabel(focusMonth)}
                 roasTarget={roasTargets[activeBrandId]}
                 minSpend={MIN_AD_SPEND}
-                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+                ledgerAgg={activeBrandId === OFFICIAL_SITE_BRAND_ID ? null : aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
                 prevAds={prevData ? prevData.ads : null}
                 prevPeriodLabel={focusIdx > 0 ? monthLabel(sortedKeys[focusIdx - 1]) : ""}
                 collapsible={false}
-                prevLedgerAgg={focusIdx <= 0 ? null : aggregateLedgerRange(ledgerByMonth, monthDateRange(sortedKeys[focusIdx - 1]).since, monthDateRange(sortedKeys[focusIdx - 1]).until)}
+                prevLedgerAgg={
+                  activeBrandId === OFFICIAL_SITE_BRAND_ID || focusIdx <= 0
+                    ? null
+                    : aggregateLedgerRange(ledgerByMonth, monthDateRange(sortedKeys[focusIdx - 1]).since, monthDateRange(sortedKeys[focusIdx - 1]).until)
+                }
               />
               <div className="mal-cards">
                 <div className="mal-card">
@@ -5407,7 +6590,15 @@ function MetaAdsLedger() {
                   <div className="mal-card-value">{focusData.roas !== null ? `${focusData.roas.toFixed(2)}x` : "—"}</div>
                   <DeltaBadge value={pctChange(focusData.roas, prevData && prevData.roas)} />
                 </div>
-                
+                {activeBrandId === ONEPAGE_BRAND_ID && shoplineMonthsData[focusMonth] && (
+                  <div className="mal-card">
+                    <div className="mal-card-label">✅ 真實Shopline訂單(整月)</div>
+                    <div className="mal-card-value">{fmtMoney(sumShoplineOrders(shoplineMonthsData[focusMonth].orders).netRevenue)}</div>
+                    <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>
+                      {sumShoplineOrders(shoplineMonthsData[focusMonth].orders).orderCount} 筆訂單(非試算表數字)
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -5499,7 +6690,7 @@ function MetaAdsLedger() {
               productNames={productNames[activeBrandId] || {}}
               onEditProductName={editProductName}
               minSpend={MIN_AD_SPEND}
-              ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+              ledgerAgg={activeBrandId === OFFICIAL_SITE_BRAND_ID ? null : aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
               adRatioThreshold={adRatioThresholds[activeBrandId]}
               storageKey={`adperf-ai-month:${activeBrandId}::${focusMonth}`}
               collapsible={false}
@@ -5524,23 +6715,45 @@ function MetaAdsLedger() {
 
 
           {focusData && (
-            <>
-              <StaticSectionTitle className="mal-section-title">
-                {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
-              </StaticSectionTitle>
-              <LedgerVsMetaComparison
-                ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
-                currencyCode={focusData.currency}
-                ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
-                periodLabel="月份"
-              />
-            </>
+            activeBrandId === OFFICIAL_SITE_BRAND_ID ? (
+              <>
+                <StaticSectionTitle className="mal-section-title">
+                  {monthLabel(focusMonth)} Shopline 對照(官網實際 vs Meta 回報)
+                </StaticSectionTitle>
+                {shoplineMonthsData[focusMonth] ? (
+                  <ShoplineComparisonView
+                    record={shoplineMonthsData[focusMonth]}
+                    ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
+                    currencyCode={focusData.currency}
+                  />
+                ) : (
+                  <div className="mal-empty">
+                    <p>這個月份還沒有抓取 Shopline 訂單資料,沒辦法比對官網實際業績跟 Meta 回報的落差。</p>
+                    <button className="mal-btn mal-btn-primary" disabled={shoplineLoading} onClick={() => fetchShoplineForMonth(focusMonth)}>
+                      {shoplineLoading ? "抓取中…" : "☁️ 抓取這個月的 Shopline 資料"}
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <StaticSectionTitle className="mal-section-title">
+                  {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
+                </StaticSectionTitle>
+                <LedgerVsMetaComparison
+                  ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
+                  currencyCode={focusData.currency}
+                  ledgerAgg={aggregateLedgerRange(ledgerByMonth, monthDateRange(focusMonth).since, monthDateRange(focusMonth).until)}
+                  periodLabel="月份"
+                />
+              </>
+            )
           )}
 
           <StaticSectionTitle className="mal-section-title">每月明細</StaticSectionTitle>
           <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
             <table className="mal-table">
-              <thead><tr><th>月份</th><th>廣告費</th><th>轉單</th><th>轉單金額</th><th>CPA</th><th>ROAS</th></tr></thead>
+              <thead><tr><th>月份</th><th>廣告費</th><th>轉單</th><th>轉單金額</th><th>CPA</th><th>ROAS</th><th></th></tr></thead>
               <tbody>
                 {sortedKeys.slice().reverse().map((mk) => {
                   const d = enriched[mk];
@@ -5552,6 +6765,7 @@ function MetaAdsLedger() {
                       <td>{d.revenue > 0 ? fmtMoney(d.revenue, d.currency) : "—"}</td>
                       <td>{d.cpa !== null ? fmtMoney(d.cpa, d.currency) : "—"}</td>
                       <td>{d.roas !== null ? `${d.roas.toFixed(2)}x` : "—"}</td>
+                      <td><button className="mal-icon-btn" onClick={() => setConfirmDelete(mk)} title="刪除此月資料">🗑</button></td>
                     </tr>
                   );
                 })}
@@ -5662,6 +6876,131 @@ function MetaAdsLedger() {
 
 
       {viewMode === "daily" && (
+        activeBrandId === OFFICIAL_SITE_BRAND_ID ? (
+          // ---------- 官網業績:每日報表邏輯跟一頁業績完全一樣(月份分頁 → 選一天/矩陣總覽),資料源是 Shopline ----------
+          !officialDailyMonthRecord && officialDailyMonthKeys.length === 0 ? (
+            <div className="mal-empty">
+              <div style={{ fontSize: 30 }}>📆</div>
+              <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>還沒有抓取 Shopline 訂單資料</h3>
+              <p>每日報表需要先抓取 Shopline 訂單,系統才有逐日的資料可以顯示。按「一鍵更新全部」或「折價券查詢」分頁裡的查詢按鈕都可以抓取。</p>
+            </div>
+          ) : (
+            <>
+              <div className="mal-notice" style={{ marginBottom: 18 }}>
+                ☁️ H&J官網業績的營收數據來自 Shopline,不是 Google 試算表。
+              </div>
+              <div className="mal-tabs">
+                {officialDailyMonthKeys.map((mk) => (
+                  <div key={mk} className={`mal-tab ${mk === activeOfficialDailyMonth ? "mal-tab-active" : ""}`} onClick={() => { setDailyMonth(mk); setFocusDay(null); }}>
+                    {monthLabel(mk)}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mal-viewmode-switch" style={{ marginBottom: 18 }}>
+                <button className={`mal-viewmode-btn ${dailySubMode === "single" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setDailySubMode("single")}>
+                  📌 選一天
+                </button>
+                <button className={`mal-viewmode-btn ${dailySubMode === "matrix" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setDailySubMode("matrix")}>
+                  📊 矩陣總覽
+                </button>
+              </div>
+
+              {dailySubMode === "single" && (
+                <>
+                  <div className="mal-tabs">
+                    {sortedOfficialDailyRows.map((d) => (
+                      <div key={d.date} className={`mal-tab ${d.date === activeOfficialFocusDay ? "mal-tab-active" : ""}`} onClick={() => setFocusDay(d.date)}>
+                        {d.date.slice(5)}
+                      </div>
+                    ))}
+                  </div>
+
+                  {officialFocusDayRecord ? (
+                    <>
+                      <div className="mal-cards" style={{ marginBottom: 18 }}>
+                        <div className="mal-card">
+                          <div className="mal-card-label">🏬 訂單數</div>
+                          <div className="mal-card-value">{fmtInt(officialFocusDayRecord.orderCount)}</div>
+                        </div>
+                        <div className="mal-card">
+                          <div className="mal-card-label">🏬 原價營收</div>
+                          <div className="mal-card-value">{fmtMoney(officialFocusDayRecord.grossRevenue)}</div>
+                        </div>
+                        <div className="mal-card">
+                          <div className="mal-card-label">🏬 折扣金額</div>
+                          <div className="mal-card-value">{fmtMoney(officialFocusDayRecord.discountAmount)}</div>
+                        </div>
+                        <div className="mal-card">
+                          <div className="mal-card-label">🏬 實收營收</div>
+                          <div className="mal-card-value">{fmtMoney(officialFocusDayRecord.netRevenue)}</div>
+                        </div>
+                      </div>
+                      <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "-8px 0 0" }}>
+                        Shopline 訂單沒有像後台每日收益表那樣拆分產品代號,這裡只能看全店合計,不能像一頁業績那樣看逐個代號明細。
+                      </p>
+                    </>
+                  ) : (
+                    <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>這一天沒有資料。</p>
+                  )}
+                </>
+              )}
+
+              {dailySubMode === "matrix" && (
+                <>
+                  <CollapsibleSectionTitle className="mal-section-title">
+                    {activeOfficialDailyMonth ? monthLabel(activeOfficialDailyMonth) : ""} 每日營收矩陣
+                    <span className="mal-section-count">({officialDailyRows.length} 天有訂單)</span>
+                  </CollapsibleSectionTitle>
+                  <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+                    <table className="mal-table">
+                      <thead>
+                        <tr><th>日期</th><th>訂單數</th><th>原價營收</th><th>折扣金額</th><th>實收營收</th></tr>
+                      </thead>
+                      <tbody>
+                        {sortedOfficialDailyRows.map((d) => (
+                          <tr key={d.date}>
+                            <td>{d.date}</td>
+                            <td>{fmtInt(d.orderCount)}</td>
+                            <td>{fmtMoney(d.grossRevenue)}</td>
+                            <td>{fmtMoney(d.discountAmount)}</td>
+                            <td>{fmtMoney(d.netRevenue)}</td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td className="mal-row-month">總計</td>
+                          <td className="mal-row-month">{fmtInt(officialDailyMonthTotal.orderCount)}</td>
+                          <td className="mal-row-month">{fmtMoney(officialDailyMonthTotal.grossRevenue)}</td>
+                          <td className="mal-row-month">{fmtMoney(officialDailyMonthTotal.discountAmount)}</td>
+                          <td className="mal-row-month">{fmtMoney(officialDailyMonthTotal.netRevenue)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {officialDailyMonthRecord && (
+                <div className="mal-week-analysis">
+                  <div className="mal-week-analysis-title">基礎分析</div>
+                  <ul>
+                    {officialHighestRevenueDay && (
+                      <li>
+                        {monthLabel(activeOfficialDailyMonth)}實收營收最高的一天是 {officialHighestRevenueDay.date}
+                        ({fmtMoney(officialHighestRevenueDay.netRevenue)},共 {fmtInt(officialHighestRevenueDay.orderCount)} 筆訂單)。
+                      </li>
+                    )}
+                    {officialDailyMonthTotal.grossRevenue > 0 && (
+                      <li>
+                        這個月折扣金額佔原價營收 {((officialDailyMonthTotal.discountAmount / officialDailyMonthTotal.grossRevenue) * 100).toFixed(1)}%。
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </>
+          )
+        ) :
         !dailyMonthRecord && ledgerMonthKeys.length === 0 ? (
           <div className="mal-empty">
             <div style={{ fontSize: 30 }}>📆</div>
@@ -5735,7 +7074,15 @@ function MetaAdsLedger() {
                         <div className="mal-card-label">🏬 全店淨利潤</div>
                         <div className="mal-card-value">{netProfitCell(focusDayRecord.overall.netProfit)}</div>
                       </div>
-                      
+                      {shopeRealDailyMap[activeFocusDay] && (
+                        <div className="mal-card">
+                          <div className="mal-card-label">✅ 真實Shopline訂單</div>
+                          <div className="mal-card-value">{fmtMoney(shopeRealDailyMap[activeFocusDay].netRevenue)}</div>
+                          <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>
+                            {shopeRealDailyMap[activeFocusDay].orderCount} 筆訂單(非試算表數字,直接來自Shopline後台)
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <CollapsibleSectionTitle className="mal-section-title">
@@ -5829,6 +7176,7 @@ function MetaAdsLedger() {
                       <tr>
                         <th rowSpan={2} style={{ verticalAlign: "bottom" }}>日期</th>
                         <th colSpan={4} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🏬 全店</th>
+                        <th colSpan={2} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>✅ 真實Shopline訂單</th>
                         {dailyMatrixCodes.map((code, i) => (
                           <th
                             key={code}
@@ -5845,6 +7193,8 @@ function MetaAdsLedger() {
                         <th className="mal-ledger-group-backend">廣告費</th>
                         <th className="mal-ledger-group-backend">廣告費佔比</th>
                         <th className="mal-ledger-group-backend">淨利潤</th>
+                        <th className="mal-ledger-group-backend mal-matrix-group-start">訂單數</th>
+                        <th className="mal-ledger-group-backend">實收營收</th>
                         {dailyMatrixCodes.map((code, i) => {
                           const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
                           const boundary = i === dailyMatrixSplit.channels.length && dailyMatrixSplit.products.length > 0;
@@ -5867,6 +7217,8 @@ function MetaAdsLedger() {
                           <td className="mal-ledger-group-backend">{fmtMoney(d.overall.adSpend)}</td>
                           <td className="mal-ledger-group-backend">{adPct(d.overall.adSpend, d.overall.revenue, adRatioThresholds[activeBrandId])}</td>
                           <td className="mal-ledger-group-backend">{netProfitCell(d.overall.netProfit)}</td>
+                          <td className="mal-ledger-group-backend mal-matrix-group-start">{shopeRealDailyMap[d.date] ? shopeRealDailyMap[d.date].orderCount : "—"}</td>
+                          <td className="mal-ledger-group-backend">{shopeRealDailyMap[d.date] ? fmtMoney(shopeRealDailyMap[d.date].netRevenue) : "—"}</td>
                           {dailyMatrixCodes.map((code, i) => {
                             const v = d.byCode[code];
                             const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
@@ -5889,7 +7241,19 @@ function MetaAdsLedger() {
                           <td className="mal-ledger-group-backend mal-row-month">{fmtMoney(dailyMonthRecord.monthTotal.overall.adSpend)}</td>
                           <td className="mal-ledger-group-backend mal-row-month">{adPct(dailyMonthRecord.monthTotal.overall.adSpend, dailyMonthRecord.monthTotal.overall.revenue, adRatioThresholds[activeBrandId])}</td>
                           <td className="mal-ledger-group-backend mal-row-month">{netProfitCell(dailyMonthRecord.monthTotal.overall.netProfit)}</td>
-                          
+                          {/* 修正欄位錯位:表頭跟每一天的資料列在「全店」跟各代號之間都有「真實Shopline訂單」2欄(訂單數/實收營收),
+                              但總計列原本漏了這2格,導致總計列所有代號的數字整排往左錯2格——「淨利潤」欄下顯示到別的數字,
+                              跟試算表對不起來。這裡補上該月真實Shopline訂單總計(跟每月報表卡片同一套 sumShoplineOrders 邏輯)。 */}
+                          {(() => {
+                            const rec = activeDailyMonth ? shoplineMonthsData[activeDailyMonth] : null;
+                            const t = rec ? sumShoplineOrders(rec.orders) : null;
+                            return (
+                              <>
+                                <td className="mal-ledger-group-backend mal-matrix-group-start mal-row-month">{t ? fmtInt(t.orderCount) : "—"}</td>
+                                <td className="mal-ledger-group-backend mal-row-month">{t ? fmtMoney(t.netRevenue) : "—"}</td>
+                              </>
+                            );
+                          })()}
                           {dailyMatrixCodes.map((code, i) => {
                             const v = dailyMonthRecord.monthTotal.byCode[code];
                             const tone = `mal-matrix-group-${i % 2 === 0 ? "a" : "b"}`;
@@ -5938,7 +7302,149 @@ function MetaAdsLedger() {
         )
       )}
 
-      
+      {viewMode === "coupon" && (
+        <>
+          <CollapsibleSectionTitle className="mal-section-title">
+            折價券查詢
+            <span className="mal-section-count">(選一段時間查詢,含使用狀況、轉單金額、轉單來源)</span>
+          </CollapsibleSectionTitle>
+
+          <div className="mal-cards" style={{ gridTemplateColumns: "1fr 1fr auto", alignItems: "end", marginBottom: 18 }}>
+            <div className="mal-field" style={{ margin: 0 }}>
+              <label>開始日期</label>
+              <input
+                type="date"
+                value={couponQuerySince}
+                onChange={(e) => setCouponQuerySince(e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}
+              />
+            </div>
+            <div className="mal-field" style={{ margin: 0 }}>
+              <label>結束日期</label>
+              <input
+                type="date"
+                value={couponQueryUntil}
+                onChange={(e) => setCouponQueryUntil(e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}
+              />
+            </div>
+            <button className="mal-btn mal-btn-primary" disabled={couponQueryLoading} onClick={fetchCouponQueryData}>
+              {couponQueryLoading ? "查詢中…" : "🔍 查詢這段期間"}
+            </button>
+          </div>
+
+          {couponQueryError && <div className="mal-error">⚠ {couponQueryError}</div>}
+
+          <div className="mal-field">
+            <label>或者:直接搜尋特定折價券代碼</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="text"
+                value={couponSearchInput}
+                onChange={(e) => setCouponSearchInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && couponSearchInput.trim()) setCouponFocusCode(couponSearchInput.trim()); }}
+                placeholder="輸入折價券代碼,例如 SHASHA77"
+                style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}
+              />
+              <button
+                className="mal-btn"
+                disabled={!couponSearchInput.trim()}
+                onClick={() => setCouponFocusCode(couponSearchInput.trim())}
+              >
+                搜尋
+              </button>
+            </div>
+            <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
+              不分大小寫。要先按上面「查詢這段期間」抓到資料,搜尋才找得到東西——這裡只是在已經抓回來的訂單裡篩選,不是重新對 Shopline 查詢。
+            </p>
+          </div>
+
+          {!couponQueryData ? (
+            <div className="mal-empty">
+              <div style={{ fontSize: 30 }}>🎟</div>
+              <h3 style={{ fontFamily: "'Noto Serif TC', serif", margin: "12px 0 0" }}>選好時間範圍,按「查詢這段期間」開始</h3>
+              <p>查完之後,下面會列出這段期間用過的所有折價券,點一個就能看到詳細的每一筆轉單。</p>
+            </div>
+          ) : (
+            <>
+              <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 15, margin: "0 0 10px" }}>
+                這段期間用過的折價券<span className="mal-section-count">({(couponQueryData.discountSummary || []).length} 個,點一個查看詳細轉單)</span>
+              </h3>
+              {(couponQueryData.discountSummary || []).length === 0 ? (
+                <p style={{ color: "var(--ink-soft)", fontSize: 13.5, marginBottom: 18 }}>這段期間沒有訂單使用折價券。</p>
+              ) : (
+                <div className="mal-tabs">
+                  {couponQueryData.discountSummary.map((d) => (
+                    <div
+                      key={d.code}
+                      className={`mal-tab ${couponFocusCode && couponFocusCode.toUpperCase() === String(d.code).toUpperCase() ? "mal-tab-active" : ""}`}
+                      onClick={() => { setCouponSearchInput(d.code); setCouponFocusCode(d.code); }}
+                    >
+                      {d.code}({fmtInt(d.usageCount)})
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {couponFocusCode && (
+                couponFocusOrders.length === 0 ? (
+                  <p style={{ color: "var(--ink-soft)", fontSize: 13.5 }}>
+                    在這段期間裡,找不到使用「{couponFocusCode}」這組折價券代碼的訂單(確認代碼有沒有拼對,或者這段時間範圍有沒有涵蓋到)。
+                  </p>
+                ) : (
+                  <>
+                    <div className="mal-cards" style={{ marginBottom: 18 }}>
+                      <div className="mal-card">
+                        <div className="mal-card-label">🎟 使用次數</div>
+                        <div className="mal-card-value">{fmtInt(couponFocusOrders.length)}</div>
+                      </div>
+                      <div className="mal-card">
+                        <div className="mal-card-label">原價營收</div>
+                        <div className="mal-card-value">
+                          {fmtMoney(couponFocusSummary ? couponFocusSummary.grossRevenue : couponFocusOrders.reduce((s, o) => s + (o.subtotal || 0), 0))}
+                        </div>
+                      </div>
+                      <div className="mal-card">
+                        <div className="mal-card-label">折扣金額</div>
+                        <div className="mal-card-value">
+                          {fmtMoney(couponFocusSummary ? couponFocusSummary.discountAmount : couponFocusOrders.reduce((s, o) => s + (o.discountAmount || 0), 0))}
+                        </div>
+                      </div>
+                      <div className="mal-card">
+                        <div className="mal-card-label">實收營收(轉單金額加總)</div>
+                        <div className="mal-card-value">
+                          {fmtMoney(couponFocusSummary ? couponFocusSummary.netRevenue : couponFocusOrders.reduce((s, o) => s + (o.amount || 0), 0))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 15, margin: "0 0 10px" }}>
+                      「{couponFocusCode}」逐筆轉單明細<span className="mal-section-count">(依下單時間新到舊排序)</span>
+                    </h3>
+                    <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
+                      <table className="mal-table">
+                        <thead>
+                          <tr><th>訂單編號</th><th>下單時間</th><th>轉單金額</th><th>轉單來源</th></tr>
+                        </thead>
+                        <tbody>
+                          {couponFocusOrders.map((o) => (
+                            <tr key={o.orderId}>
+                              <td>{o.orderNumber || o.orderId}</td>
+                              <td>{(o.createdAt || "").replace("T", " ").slice(0, 16)}</td>
+                              <td>{fmtMoney(o.amount)}</td>
+                              <td style={{ textAlign: "left" }}>{formatOrderSource(o.utm)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )
+              )}
+            </>
+          )}
+        </>
+      )}
 
 
 
