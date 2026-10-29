@@ -5908,7 +5908,6 @@ async function toggleRememberToken(checked) {
       .sort((a, b) => b.spend - a.spend)
       .slice(0, 3);
   })();
-  const monthStartedSpend = monthStartedAds.reduce((sum, ad) => sum + (Number(ad.spend) || 0), 0);
   const monthRankedSpend = monthRankedAds.reduce((sum, ad) => sum + (Number(ad.spend) || 0), 0);
 
   // ---------- 每日營收報表:直接呈現後台每日收益表(ledgerByMonth)裡「每一天 x 每個產品代號」的明細,不用另外彙總 ----------
