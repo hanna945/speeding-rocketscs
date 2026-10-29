@@ -50,6 +50,27 @@ def env_required(name: str) -> str:
     return value
 
 
+def report_team_keys() -> list[str]:
+    """Load one or many department keys without requiring a global all-brand password."""
+    raw_json = os.getenv("REPORT_TEAM_KEYS_JSON", "").strip()
+    if raw_json:
+        try:
+            parsed = json.loads(raw_json)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("REPORT_TEAM_KEYS_JSON must be a JSON array of department keys.") from exc
+        if not isinstance(parsed, list):
+            raise RuntimeError("REPORT_TEAM_KEYS_JSON must be a JSON array.")
+        keys = [str(x).strip() for x in parsed if str(x).strip()]
+        if keys:
+            return list(dict.fromkeys(keys))
+
+    single = os.getenv("REPORT_TEAM_KEY", "").strip()
+    if single:
+        return [single]
+
+    raise RuntimeError("Missing REPORT_TEAM_KEYS_JSON (preferred) or REPORT_TEAM_KEY.")
+
+
 def dump_model(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
@@ -640,24 +661,33 @@ async def sync_brand(
 
 async def amain(args: argparse.Namespace) -> int:
     token = env_required("META_SYSTEM_USER_TOKEN")
-    team_key = env_required("REPORT_TEAM_KEY")
+    team_keys = report_team_keys()
     base_url = os.getenv("REPORT_BASE_URL", DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL
 
     connector = FacebookMarketingConnector(
         auth_config=FacebookMarketingServiceAccountKeyAuthenticationAuthConfig(account_key=token)
     )
 
-    brands = fetch_brand_roster(base_url, team_key)
+    # Each department key only reveals/writes its own brand scope. Merge those scopes here,
+    # keeping the corresponding key with each brand so no "all 7 brands" password is required.
+    brand_access: dict[str, tuple[dict[str, str], str]] = {}
+    for idx, team_key in enumerate(team_keys, start=1):
+        roster = fetch_brand_roster(base_url, team_key)
+        print(f"Department key {idx}: {len(roster)} accessible brand(s)")
+        for brand in roster:
+            brand_access.setdefault(brand["id"], (brand, team_key))
+
+    targets = list(brand_access.values())
     if args.brand_id:
         wanted = args.brand_id.removeprefix("act_")
-        brands = [b for b in brands if b["id"] == wanted]
-    if not brands:
-        raise RuntimeError("No accessible brands returned by the report. Check REPORT_TEAM_KEY scope.")
+        targets = [item for item in targets if item[0]["id"] == wanted]
+    if not targets:
+        raise RuntimeError("No accessible brands returned by the configured department keys.")
 
-    print(f"Central sync roster: {len(brands)} brand(s)")
+    print(f"Central sync roster: {len(targets)} unique brand(s) across {len(team_keys)} department key(s)")
     errors = []
-    for index, brand in enumerate(brands, start=1):
-        print(f"({index}/{len(brands)}) {brand['name']} [{brand['id']}]")
+    for index, (brand, team_key) in enumerate(targets, start=1):
+        print(f"({index}/{len(targets)}) {brand['name']} [{brand['id']}]")
         try:
             await sync_brand(
                 connector, base_url, team_key, brand,
@@ -668,7 +698,7 @@ async def amain(args: argparse.Namespace) -> int:
         except Exception as exc:
             errors.append((brand, exc))
             print(f"ERROR [{brand['name']}]: {exc}", file=sys.stderr)
-        if index < len(brands):
+        if index < len(targets):
             await asyncio.sleep(args.brand_gap_seconds)
 
     if errors:
