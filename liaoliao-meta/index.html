@@ -1086,9 +1086,6 @@ SHARED_PREFIXES.push(ADPERF_AI_MONTH_PREFIX);
 SHARED_PREFIXES.push(STORAGE_PREFIX);
 
 // 把 Date 物件格式化成 "YYYY-MM-DD"(用日曆上的年月日,不轉時區)
-function fmtYmd(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 // 一個月的起訖日期字串,給 Shopline Worker 用
 
@@ -3469,10 +3466,8 @@ function MetaAdsLedger() {
   const [months, setMonths] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(null);
-  const [focusMonth, setFocusMonth] = useState(null);
-    const [confirmDelete, setConfirmDelete] = useState(null);
-  const [showAllAds, setShowAllAds] = useState(false);
+    const [focusMonth, setFocusMonth] = useState(null);
+      const [showAllAds, setShowAllAds] = useState(false);
   const [adSortMode, setAdSortMode] = useState("spend");
   const [adStatusFilter, setAdStatusFilter] = useState("all"); // "all" | "active" | "inactive" —— 篩選要看投放中還是已停止的廣告
   const [adLaunchFilter, setAdLaunchFilter] = useState("all"); // month view: "all" | "month" —— 只看該月份才開始投放的廣告
@@ -3505,16 +3500,9 @@ function MetaAdsLedger() {
       brandCount: brands.length,
     };
   }, [viewMode, activeBrandId, brands]);
-  const [apiMonth, setApiMonth] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
-    const [apiError, setApiError] = useState(null);
-  const [apiNotice, setApiNotice] = useState(null);
-  const [rememberToken, setRememberToken] = useState(false);
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
-  const [autoSyncStatus, setAutoSyncStatus] = useState(null);
-  const [refreshAllStatus, setRefreshAllStatus] = useState(null); // 「刷新全部」按鈕的進度文字
+      const [apiError, setApiError] = useState(null);
+    const [rememberToken, setRememberToken] = useState(false);
+      // 「刷新全部」按鈕的進度文字
   const autoSyncRanRef = useRef(false);
 
   // ---------- 後台每日收益表(帳本)/ 每日報表 / 團隊密碼:state ----------
@@ -3523,11 +3511,6 @@ function MetaAdsLedger() {
   const [dailySubMode, setDailySubMode] = useState("single"); // "single"(選一天) | "matrix"(矩陣總覽)
   const [focusDay, setFocusDay] = useState(null);
       const [cloudStatus, setCloudStatus] = useState(HAS_SHARED_STORAGE ? "artifact" : "unknown");
-  const [credentialName, setCredentialName] = useState("");
-    // showApiPanel/showLedgerModal:對應的按鈕、彈窗畫面都拿掉了(這兩個是會外流權杖/試算表的舊功能),
-  // 但底下還有幾支舊函式(importLedgerFile、syncFromGoogleSheet等)內部呼叫這兩個setter——
-  // 這些函式現在沒有任何按鈕會觸發到,是真正的孤兒程式碼,之後應該整支拿掉,
-  // 但這裡先保留state宣告本身,避免那幾支孤兒函式(萬一被別處呼叫到)直接噴出「未定義」的錯誤。
   const [customLiaoliaoLogo, setCustomLiaoliaoLogo] = useState(() => getSavedLiaoliaoLogo());
   const [logoUploadNotice, setLogoUploadNotice] = useState("");
 
@@ -3619,33 +3602,16 @@ function MetaAdsLedger() {
     if (customLiaoliaoLogo) setLiaoliaoFavicon(customLiaoliaoLogo);
   }, [customLiaoliaoLogo]);
 
-  const [showApiPanel, setShowApiPanel] = useState(false);
-  const [showLedgerModal, setShowLedgerModal] = useState(false);
-  
+      
   // ---------- Shopline 對照:state ----------
   // 公開報表不再持有 Worker URL / 驗證密鑰；Meta 已由中央 Airbyte 同步。
   const DEFAULT_SHOPLINE_WORKER_URL = "";
   const SHOPLINE_PROXY_SECRET = "";
   const [shoplineWorkerUrl, setShoplineWorkerUrl] = useState(DEFAULT_SHOPLINE_WORKER_URL);
-  const [shoplineWorkerUrlInput, setShoplineWorkerUrlInput] = useState(DEFAULT_SHOPLINE_WORKER_URL);
-  const [shoplineMonthsData, setShoplineMonthsData] = useState({}); // { [monthKey]: record }
-  const [shoplineLoading, setShoplineLoading] = useState(false);
-  const [shoplineError, setShoplineError] = useState(null);
-  const [shoplineNotice, setShoplineNotice] = useState(null);
-
+    const [shoplineMonthsData, setShoplineMonthsData] = useState({}); // { [monthKey]: record }
+      
   // ---------- 折價券查詢:state(自訂時間範圍,不綁定週/月的固定區間)----------
-  const [couponQuerySince, setCouponQuerySince] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  });
-  const [couponQueryUntil, setCouponQueryUntil] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  });
-  const [couponQueryData, setCouponQueryData] = useState(null);
-        const [couponFocusCode, setCouponFocusCode] = useState(null);
-
+              
   // ---------- Meta 廣告成效更新按鈕:state ----------
   const [metaUpdateLoading, setMetaUpdateLoading] = useState(null); // null | "month"
   const [metaUpdateError, setMetaUpdateError] = useState(null);
@@ -3717,7 +3683,7 @@ function MetaAdsLedger() {
 
       // Meta 自動同步已由 GitHub Actions 中央排程接管。
       // 舊的 Worker / 瀏覽器自動抓取永久關閉，避免多頁面、多裝置重複打 Meta。
-      setAutoSyncEnabled(false);
+
       if (autoSyncRes && autoSyncRes.value === "1") {
         storage.set("meta-api-autosync", "0").catch(() => {});
       }
@@ -3739,7 +3705,7 @@ function MetaAdsLedger() {
     probeCloud(true).then((status) => {
       setCloudStatus(status);
       if (status === "connected") {
-        setCredentialName(getCredentialName());
+
         /* public read-only mirror: no background sync */
         refreshBrandsAfterAuth();
       }
@@ -3773,7 +3739,7 @@ function MetaAdsLedger() {
         if (urlRes && urlRes.value) {
           // 如果之前手動改過、存過不同的網址,以存過的為準;沒存過的話就維持程式碼裡寫死的預設值。
           setShoplineWorkerUrl(urlRes.value);
-          setShoplineWorkerUrlInput(urlRes.value);
+
         }
         const monthList = await storage.list(SHOPLINE_MONTH_PREFIX).catch(() => ({ keys: [] }));
         const monthEntries = {};
@@ -5118,20 +5084,6 @@ function MetaAdsLedger() {
 
   const sortedVisibleAds = useMemo(() => sortAdsByMode(visibleAds, adSortMode), [visibleAds, adSortMode]);
 
-  // 折價券查詢:依目前選中/搜尋的折價券代碼,從查詢結果的原始訂單裡篩出用過這組代碼的所有訂單(不分大小寫比對)。
-  const couponFocusOrders = useMemo(() => {
-    if (!couponFocusCode || !couponQueryData) return [];
-    const target = couponFocusCode.trim().toUpperCase();
-    return (couponQueryData.orders || [])
-      .filter((o) => (o.discountCodes || []).some((c) => String(c).toUpperCase() === target))
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  }, [couponFocusCode, couponQueryData]);
-  const couponFocusSummary = useMemo(() => {
-    if (!couponFocusCode || !couponQueryData) return null;
-    const target = couponFocusCode.trim().toUpperCase();
-    return (couponQueryData.discountSummary || []).find((d) => String(d.code).toUpperCase() === target) || null;
-  }, [couponFocusCode, couponQueryData]);
-
   // ---------- 密碼閘:還沒驗證通過就不顯示任何報表內容 ----------
   if (isUnlocked === null) {
     return null; // 還在檢查瀏覽器有沒有記住解鎖狀態,先不顯示任何畫面,避免閃一下
@@ -5247,11 +5199,8 @@ function MetaAdsLedger() {
         </div>
       )}
 
-      {notice && <div className="mal-notice">✓ {notice}</div>}
-      {apiNotice && <div className="mal-notice">✓ {apiNotice}</div>}
       {metaUpdateNotice && <div className="mal-notice">✓ {metaUpdateNotice}</div>}
-      {autoSyncStatus && <div className="mal-notice mal-notice-syncing">{autoSyncStatus}</div>}
-      {refreshAllStatus && <div className="mal-notice mal-notice-syncing">{refreshAllStatus}</div>}
+
       {error && <div className="mal-error">⚠ {error}</div>}
       {apiError && <div className="mal-error">⚠ {apiError}</div>}
       {metaUpdateError && <div className="mal-error">⚠ {metaUpdateError}</div>}
@@ -5639,7 +5588,7 @@ function MetaAdsLedger() {
           <StaticSectionTitle className="mal-section-title">每月明細</StaticSectionTitle>
           <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
             <table className="mal-table">
-              <thead><tr><th>月份</th><th>廣告費</th><th>轉單</th><th>轉單金額</th><th>CPA</th><th>ROAS</th><th></th></tr></thead>
+              <thead><tr><th>月份</th><th>廣告費</th><th>轉單</th><th>轉單金額</th><th>CPA</th><th>ROAS</th></tr></thead>
               <tbody>
                 {sortedKeys.slice().reverse().map((mk) => {
                   const d = enriched[mk];
@@ -5651,7 +5600,6 @@ function MetaAdsLedger() {
                       <td>{d.revenue > 0 ? fmtMoney(d.revenue, d.currency) : "—"}</td>
                       <td>{d.cpa !== null ? fmtMoney(d.cpa, d.currency) : "—"}</td>
                       <td>{d.roas !== null ? `${d.roas.toFixed(2)}x` : "—"}</td>
-                      <td><button className="mal-icon-btn" onClick={() => setConfirmDelete(mk)} title="刪除此月資料">🗑</button></td>
                     </tr>
                   );
                 })}
