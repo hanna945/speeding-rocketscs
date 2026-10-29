@@ -1,0 +1,90 @@
+name: Cloudflare Account Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cloudflare-account-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Audit Cloudflare account resources
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CF_API_TOKEN:-}"
+          test -n "${CF_ACCOUNT_ID:-}"
+          api="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID"
+
+          cf_get() {
+            local path="$1"
+            curl -fsS "$api$path" -H "Authorization: Bearer $CF_API_TOKEN"
+          }
+
+          echo "=== PAGES PROJECTS ==="
+          cf_get "/pages/projects?per_page=100" | jq -r '
+            .result[]? |
+            [
+              .name,
+              (.subdomain // ""),
+              (.production_branch // ""),
+              (.source.type // "manual"),
+              (.source.config.repo_name // ""),
+              (.created_on // "")
+            ] | @tsv
+          ' | sort
+
+          echo
+          echo "=== WORKER SCRIPTS ==="
+          workers_json="$(cf_get "/workers/scripts")"
+          echo "$workers_json" | jq -r '.result[]?.id // .result[]?.name // empty' | sort
+
+          echo
+          echo "=== WORKER DOMAINS ==="
+          cf_get "/workers/domains?per_page=100" | jq -r '
+            .result[]? |
+            [.service, .environment, .hostname, (.enabled|tostring), (.previews_enabled|tostring)] | @tsv
+          ' | sort
+
+          echo
+          echo "=== WORKER DETAILS ==="
+          while IFS= read -r script; do
+            [ -n "$script" ] || continue
+            echo "--- $script ---"
+            echo "subdomain:"
+            cf_get "/workers/scripts/$script/subdomain" 2>/dev/null |
+              jq -c '{enabled:(.result.enabled // false),previews_enabled:(.result.previews_enabled // false)}' ||
+              echo '{"unavailable":true}'
+            echo "schedules:"
+            cf_get "/workers/scripts/$script/schedules" 2>/dev/null |
+              jq -c '.result.schedules // .result // []' ||
+              echo '[]'
+            echo "bindings:"
+            cf_get "/workers/scripts/$script/settings" 2>/dev/null |
+              jq -c '[.result.bindings[]? | {name,type,namespace_id,database_id,service,environment}]' ||
+              echo '[]'
+          done < <(echo "$workers_json" | jq -r '.result[]?.id // .result[]?.name // empty' | sort)
+
+          echo
+          echo "=== KV NAMESPACES ==="
+          cf_get "/storage/kv/namespaces?per_page=100" | jq -r '
+            .result[]? | [.id, .title] | @tsv
+          ' | sort -k2
+
+          echo
+          echo "=== D1 DATABASES ==="
+          cf_get "/d1/database?per_page=100" | jq -r '
+            .result[]? | [.uuid, .name, (.created_at // ""), (.version // "")] | @tsv
+          ' | sort -k2
+
+          echo
+          echo "AUDIT_COMPLETE"
