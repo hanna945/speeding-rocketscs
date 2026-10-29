@@ -121,23 +121,9 @@ jobs:
           echo
           echo "=== CRON META FUNCTION BODY ==="
           cron_source="$(curl -sS "$api/workers/scripts/brand-report-cron-sync" -H "Authorization: Bearer $CF_API_TOKEN")"
-          printf '%s' "$cron_source" | python3 -c '
-import sys
-s=sys.stdin.read()
-for start_token,end_token in [
-    ("async function runMetaAdsSync", "__name(runMetaAdsSync"),
-    ("async function runGroupSync", "__name(runGroupSync"),
-    ("async scheduled(event, env, ctx)", "async fetch(request, env)")
-]:
-    i=s.find(start_token)
-    if i < 0:
-        print("NOT_FOUND", start_token)
-        continue
-    j=s.find(end_token, i)
-    if j < 0: j=min(len(s), i+12000)
-    print("\n###", start_token)
-    print(s[i:j][:12000])
-'
+          printf '%s\n' "$cron_source" | grep -n -A 140 -B 5 'async function runMetaAdsSync' | head -n 180 || true
+          printf '%s\n' "$cron_source" | grep -n -A 100 -B 5 'async function runGroupSync' | head -n 140 || true
+          printf '%s\n' "$cron_source" | grep -n -A 80 -B 5 'async scheduled(event, env, ctx)' | head -n 120 || true
 
           echo
           echo "=== KV NAMESPACES ==="
