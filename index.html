@@ -1448,6 +1448,75 @@
   .mal-ad-status-review { color:#776f92; background:#ece9f4; border-color:#d8d2e7; }
   .mal-ad-status-unknown { color:#84786c; background:#f1ece6; border-color:#e2d8cd; }
 
+
+  /* Meta API modal checkbox alignment fix */
+  .mal-api-modal .mal-field label.mal-checkbox-row {
+    display:grid !important;
+    grid-template-columns:18px minmax(0,1fr);
+    align-items:start;
+    column-gap:9px;
+    position:relative;
+    padding-left:0 !important;
+    margin:0;
+    min-height:20px;
+    font-weight:400;
+    line-height:1.45;
+  }
+  .mal-api-modal .mal-field label.mal-checkbox-row + label.mal-checkbox-row {
+    margin-top:8px;
+  }
+  .mal-api-modal .mal-checkbox-row input[type="checkbox"] {
+    position:absolute;
+    left:0;
+    top:1px;
+    width:18px;
+    height:18px;
+    margin:0;
+    opacity:0;
+    cursor:pointer;
+    z-index:2;
+  }
+  .mal-api-modal .mal-checkbox-row .mal-checkbox-box {
+    position:relative !important;
+    left:auto !important;
+    top:auto !important;
+    grid-column:1;
+    grid-row:1;
+    width:18px;
+    height:18px;
+    margin-top:1px;
+    pointer-events:none;
+  }
+  .mal-api-modal .mal-checkbox-row > span:last-child {
+    grid-column:2;
+    grid-row:1;
+    min-width:0;
+    display:block;
+    padding:0;
+    margin:0;
+    overflow-wrap:anywhere;
+  }
+  .mal-api-brand-list .mal-checkbox-row {
+    padding-top:7px;
+    padding-bottom:7px;
+  }
+  .mal-api-brand-list .mal-checkbox-row + .mal-checkbox-row {
+    margin-top:0 !important;
+    border-top:1px solid var(--rule-soft);
+  }
+  .mal-api-modal .mal-modal-actions {
+    align-items:center;
+  }
+  @media (max-width:480px) {
+    .mal-api-modal {
+      padding:22px 20px;
+    }
+    .mal-api-modal .mal-modal-actions .mal-btn {
+      min-width:0;
+      flex:1;
+    }
+  }
+
 </style>
 </head>
 <body>
@@ -8501,7 +8570,7 @@ const shopeRealDailyMap = useMemo(() => {
 
       {showApiPanel && (
         <div className="mal-modal-overlay">
-          <div className="mal-modal mal-modal-small">
+          <div className="mal-modal mal-modal-small mal-api-modal">
             <h3>連接 Meta API</h3>
             <p className="mal-modal-sub">
               {rememberToken
@@ -8611,7 +8680,7 @@ const shopeRealDailyMap = useMemo(() => {
                     還沒有存過任何常用品牌。先切到「直接抓整月資料」模式,填一次帳號 ID 並「存為常用」,之後就能在這裡勾選批次抓取。
                   </p>
                 ) : (
-                  <div style={{ border: "1px solid var(--rule)", borderRadius: "5px", padding: "6px 10px", maxHeight: 160, overflowY: "auto" }}>
+                  <div className="mal-api-brand-list" style={{ border: "1px solid var(--rule)", borderRadius: "5px", padding: "6px 10px", maxHeight: 160, overflowY: "auto" }}>
                     {brands.map((b) => (
                       <label key={b.id} className="mal-checkbox-row" style={{ padding: "6px 0", fontSize: 13 }}>
                         <input
