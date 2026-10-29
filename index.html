@@ -907,7 +907,7 @@ const ADPERF_AI_MONTH_PREFIX = "adperf-ai-month:";
 const SHOPLINE_MONTH_PREFIX = "shopline-month:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
-const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-monthly-budgets", "meta-api-product-names"]);
+const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-cpc-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-monthly-budgets", "meta-api-product-names"]);
 const SHARED_PREFIXES = [STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_MONTH_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
@@ -2776,7 +2776,7 @@ function MetaAdsOpenSourceSuite({
   periodType = "month",
   periodLabel = ""
 }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   if (!currentRecord) return null;
   const diag = buildMetaSuiteDiagnostics(currentRecord, previousRecord, roasTarget, cpaTarget, periodType);
   const urgent = diag.findings.filter((x) => x.level === "red" || x.level === "orange").length;
@@ -3545,7 +3545,7 @@ function getCollapsibleAffectedNodes(title) {
 }
 
 function CollapsibleSectionTitle({ children, className = "", style, ...props }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -3625,6 +3625,7 @@ function MetaAdsLedger() {
   const [brands, setBrands] = useState([]);
   const [activeBrandId, setActiveBrandId] = useState("");
   const [cpaThresholds, setCpaThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「CPA 過高」標準
+  const [cpcThresholds, setCpcThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的 CPC 目標
   const [adRatioThresholds, setAdRatioThresholds] = useState({}); // { [brandId]: number } 每個品牌各自的「廣告費佔比過高」標準(百分比數字,例如 30 代表 30%)
   const [roasTargets, setRoasTargets] = useState({}); // { [brandId]: number } 每個品牌各自的「投放成效報告」ROAS 目標倍數,預設 3
   const [monthlyBudgets, setMonthlyBudgets] = useState({}); // { [brandId]: number } 每個品牌各自的月廣告預算上限
@@ -3687,12 +3688,13 @@ function MetaAdsLedger() {
 
   useEffect(() => {
     async function loadInitialConfig() {
-      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes, adRatioRes, roasRes, monthlyBudgetRes, productNamesRes] = await Promise.all([
+      const [accountIdRes, brandsRes, rememberRes, autoSyncRes, cpaRes, cpcRes, adRatioRes, roasRes, monthlyBudgetRes, productNamesRes] = await Promise.all([
         storage.get("meta-api-account-id").catch(() => null),
         storage.get("meta-api-brands").catch(() => null),
         storage.get("meta-api-remember-token").catch(() => null),
         storage.get("meta-api-autosync").catch(() => null),
         storage.get("meta-api-cpa-thresholds").catch(() => null),
+        storage.get("meta-api-cpc-thresholds").catch(() => null),
         storage.get("meta-api-adratio-thresholds").catch(() => null),
         storage.get("meta-api-roas-targets").catch(() => null),
         storage.get("meta-api-monthly-budgets").catch(() => null),
@@ -3703,6 +3705,9 @@ function MetaAdsLedger() {
 
       if (cpaRes && cpaRes.value) {
         try { setCpaThresholds(JSON.parse(cpaRes.value)); } catch { /* ignore malformed data */ }
+      }
+      if (cpcRes && cpcRes.value) {
+        try { setCpcThresholds(JSON.parse(cpcRes.value)); } catch { /* ignore malformed data */ }
       }
       if (adRatioRes && adRatioRes.value) {
         try { setAdRatioThresholds(JSON.parse(adRatioRes.value)); } catch { /* ignore malformed data */ }
@@ -4187,6 +4192,30 @@ function MetaAdsLedger() {
     }
     setCpaThresholds(updated);
     storage.set("meta-api-cpa-thresholds", JSON.stringify(updated)).catch(() => {});
+  }
+
+  function editCpcThreshold(brandId) {
+    const brandName = (brands.find((b) => b.id === brandId) || {}).name || brandId;
+    const current = cpcThresholds[brandId];
+    const input = window.prompt(
+      `設定「${brandName}」的 CPC 目標——Traffic / CPC 類 Campaign 可以用這個目標判斷導流成本。\n留空白可以清除這個品牌的 CPC 目標。`,
+      current != null ? String(current) : ""
+    );
+    if (input === null) return;
+    const trimmed = input.trim().replace(/,/g, "");
+    const updated = { ...cpcThresholds };
+    if (!trimmed) {
+      delete updated[brandId];
+    } else {
+      const num = parseFloat(trimmed);
+      if (!Number.isFinite(num) || num <= 0) {
+        setApiError("CPC 目標請輸入一個大於 0 的數字。");
+        return;
+      }
+      updated[brandId] = num;
+    }
+    setCpcThresholds(updated);
+    storage.set("meta-api-cpc-thresholds", JSON.stringify(updated)).catch(() => {});
   }
 
   // 跟 editCpaThreshold 同一套模式:每個品牌各自的「廣告費佔比過高」標準(百分比),
@@ -5247,7 +5276,7 @@ function MetaAdsLedger() {
     const brandPageId = derivePageIdFromAds(ads);
     // 預設先把每一組收起來(不然「成效好」動輒上百支廣告,頁面會很長),
     // 點卡片跳過去的時候,才把該組展開,同時捲動過去。
-    const [collapsed, setCollapsed] = useState({ good: true, normal: true, poor: true, learning: true });
+    const [collapsed, setCollapsed] = useState({ good: false, normal: false, poor: false, learning: false });
 
     useEffect(() => {
       function handleExpandAll() {
@@ -5846,19 +5875,19 @@ const shopeRealDailyMap = useMemo(() => {
           <div className="mal-threshold-row">
             <span className="mal-threshold-label">CPA 過高標準</span>
             <strong className={`mal-threshold-value${cpaThresholds[activeBrandId] != null ? " mal-threshold-value-set" : ""}`}>
-              {cpaThresholds[activeBrandId] != null ? `$${cpaThresholds[activeBrandId]}` : "尚未設定"}
+              {cpaThresholds[activeBrandId] != null ? `${cpaThresholds[activeBrandId]}` : "尚未設定"}
             </strong>
             <button className="mal-btn mal-threshold-btn" onClick={() => editCpaThreshold(activeBrandId)}>
               {cpaThresholds[activeBrandId] != null ? "修改" : "設定"}
             </button>
           </div>
           <div className="mal-threshold-row">
-            <span className="mal-threshold-label">廣告費佔比過高標準</span>
-            <strong className={`mal-threshold-value${adRatioThresholds[activeBrandId] != null ? " mal-threshold-value-set" : ""}`}>
-              {adRatioThresholds[activeBrandId] != null ? `${adRatioThresholds[activeBrandId]}%` : "尚未設定"}
+            <span className="mal-threshold-label">CPC 目標</span>
+            <strong className={`mal-threshold-value${cpcThresholds[activeBrandId] != null ? " mal-threshold-value-set" : ""}`}>
+              {cpcThresholds[activeBrandId] != null ? `${cpcThresholds[activeBrandId]}` : "尚未設定"}
             </strong>
-            <button className="mal-btn mal-threshold-btn" onClick={() => editAdRatioThreshold(activeBrandId)}>
-              {adRatioThresholds[activeBrandId] != null ? "修改" : "設定"}
+            <button className="mal-btn mal-threshold-btn" onClick={() => editCpcThreshold(activeBrandId)}>
+              {cpcThresholds[activeBrandId] != null ? "修改" : "設定"}
             </button>
           </div>
         </div>
@@ -5880,6 +5909,9 @@ const shopeRealDailyMap = useMemo(() => {
         </button>
         <button className={`mal-viewmode-btn ${viewMode === "sponsor" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("sponsor")}>
           🎤 業配分析
+        </button>
+        <button className={`mal-viewmode-btn ${viewMode === "ads" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setViewMode("ads")}>
+          📊 廣告分析
         </button>
       </div>
 
@@ -6331,7 +6363,10 @@ const shopeRealDailyMap = useMemo(() => {
               <button className={`mal-viewmode-btn ${dailySubMode === "matrix" ? "mal-viewmode-btn-active" : ""}`} onClick={() => setDailySubMode("matrix")}>
                 📊 矩陣總覽
               </button>
-            </div>
+              <button className="mal-viewmode-btn" onClick={() => editAdRatioThreshold(activeBrandId)}>
+            ⚙ 廣告費佔比標準{adRatioThresholds[activeBrandId] != null ? ` ${adRatioThresholds[activeBrandId]}%` : ""}
+          </button>
+        </div>
 
             {dailySubMode === "single" && (
               <>
