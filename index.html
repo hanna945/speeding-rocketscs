@@ -1200,19 +1200,6 @@ function fmtStartDate(isoString) {
 // Meta 後台顯示的「上週」是照廣告帳號本身設定的時區去算的,不是瀏覽器所在的時區——
 // 如果沒有帶入帳號時區,就照舊用瀏覽器當下的時區(維持原本行為,通常也不會有問題)。
 // weeksAgo:要抓「往前第幾個完整週」,1 = 上週(預設,跟原本行為一樣),2 = 上上週,以此類推,用來支援「自動回溯抓取過去幾週」。
-function getLastWeekRange(utcOffsetHours, weeksAgo = 1) {
-  const offsetMs = typeof utcOffsetHours === "number" ? utcOffsetHours * 3600000 : -new Date().getTimezoneOffset() * 60000;
-  const ref = new Date(Date.now() + offsetMs);
-  const day = ref.getUTCDay(); // 0 = Sun ... 6 = Sat
-  const diffToThisMonday = day === 0 ? 6 : day - 1;
-  const thisMonday = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate() - diffToThisMonday));
-  const targetMonday = new Date(thisMonday);
-  targetMonday.setUTCDate(thisMonday.getUTCDate() - 7 * weeksAgo);
-  const targetSunday = new Date(targetMonday);
-  targetSunday.setUTCDate(targetMonday.getUTCDate() + 6);
-  const fmtUtc = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-  return { since: fmtUtc(targetMonday), until: fmtUtc(targetSunday), weekStart: fmtUtc(targetMonday) };
-}
 const LEGACY_DEFAULT_BRAND_IDS = [
   "2157995930925784",
   "436280797192761",
@@ -1779,15 +1766,7 @@ function monthDateRange(monthKey) {
   return { since, until };
 }
 // 週的 key 本身就是那一週的起始日(例如 "2026-06-29"),固定跨 7 天,加 6 天就是週末最後一天。
-function weekDateRange(weekKey) {
-  return { since: weekKey, until: addDaysISO(weekKey, 6) };
-}
 // 用 UTC 運算來加減天數,避免瀏覽器時區造成日期字串位移。
-function addDaysISO(iso, days) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d + days));
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
-}
 function fmtInt(n) { return Math.round(n).toLocaleString("zh-TW"); }
 function fmtMoney(n, currency) {
   try {
@@ -4850,128 +4829,8 @@ function MetaAdsLedger() {
     };
   }
 
-  async function fetchLastWeekData() {
-    if (!apiToken.trim() || !apiAccountId.trim()) {
-      setApiError("請填入存取權杖跟廣告帳號 ID。");
-      return;
-    }
-    setApiError(null);
-    setApiNotice(null);
-    setWeekLoading(true);
-    try {
-      const cleanId = apiAccountId.trim().replace(/^act_/, "");
-      const tzOffset = await fetchAccountUtcOffset(apiToken.trim(), cleanId);
-      const info = getLastWeekRange(tzOffset);
-      const record = await fetchInsightsForRange(apiToken.trim(), cleanId, info.since, info.until, true);
-      const brandIdToUse = await ensureBrandRegistered(cleanId);
-      record.source = "manual";
-      await storage.set(weekKeyFor(brandIdToUse, info.weekStart), JSON.stringify(record));
-      setActiveBrandId(brandIdToUse);
-      setWeekInfo(info);
-      await loadAllWeeks(brandIdToUse);
-      setFocusWeek(info.weekStart);
-      setViewMode("week");
-      setApiNotice(`已抓到上週(${info.since} ~ ${info.until})的資料,共 ${record.ads.length} 支廣告。`);
-      setShowApiPanel(false);
-    } catch (e) {
-      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
-    } finally {
-      setWeekLoading(false);
-    }
-  }
-
   // 自動回溯抓取過去 N 週(週一~週日),依序一週一週抓、中間間隔 4 秒避免觸發 Meta 頻率限制。
   // 每一週都是獨立呼叫 fetchInsightsForRange,所以就算某一週失敗,也不會影響其他週的結果。
-  async function fetchRecentWeeksFromApi(weeksCount) {
-    if (!apiToken.trim() || !apiAccountId.trim()) {
-      setApiError("請填入存取權杖跟廣告帳號 ID。");
-      return;
-    }
-    setApiError(null);
-    setApiNotice(null);
-    setWeekLoading(true);
-    setShowApiPanel(false);
-    try {
-      const cleanId = apiAccountId.trim().replace(/^act_/, "");
-      const brandIdToUse = await ensureBrandRegistered(cleanId);
-      const tzOffset = await fetchAccountUtcOffset(apiToken.trim(), cleanId);
-
-      const progress = [];
-      for (let w = 1; w <= weeksCount; w++) {
-        const info = getLastWeekRange(tzOffset, w);
-        progress.push({ id: "w" + w, name: `${info.since} ~ ${info.until}`, status: "pending", message: "" });
-      }
-      setBatchProgress(progress);
-
-      let lastInfo = null, successCount = 0, errorCount = 0;
-      for (let w = 1; w <= weeksCount; w++) {
-        setBatchProgress((prev) => prev.map((p, idx) => (idx === w - 1 ? { ...p, status: "running" } : p)));
-        try {
-          const info = getLastWeekRange(tzOffset, w);
-          const record = await fetchInsightsForRange(apiToken.trim(), cleanId, info.since, info.until, true);
-          record.source = "manual";
-          await storage.set(weekKeyFor(brandIdToUse, info.weekStart), JSON.stringify(record));
-          lastInfo = info;
-          successCount++;
-          setBatchProgress((prev) =>
-            prev.map((p, idx) => (idx === w - 1 ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
-          );
-        } catch (e) {
-          errorCount++;
-          setBatchProgress((prev) => prev.map((p, idx) => (idx === w - 1 ? { ...p, status: "error", message: e.message } : p)));
-        }
-        if (w < weeksCount) await new Promise((r) => setTimeout(r, 4000));
-      }
-
-      setActiveBrandId(brandIdToUse);
-      if (lastInfo) setWeekInfo(lastInfo);
-      await loadAllWeeks(brandIdToUse);
-      setViewMode("week");
-      setApiNotice(`已抓取過去 ${weeksCount} 週的資料:成功 ${successCount} 週${errorCount > 0 ? `,失敗 ${errorCount} 週(可以之後單獨用「上週報表」模式補抓)` : ""}。`);
-    } catch (e) {
-      setApiError("抓取失敗:" + e.message + apiErrorHint(e));
-    } finally {
-      setWeekLoading(false);
-    }
-  }
-
-  function computeWeekAnalysis(record) {
-    if (!record) return [];
-    const insights = [];
-    const cpa = record.conversions > 0 ? record.spend / record.conversions : null;
-    const roas = record.spend > 0 && record.revenue > 0 ? record.revenue / record.spend : null;
-
-    if (roas !== null) {
-      if (roas >= 3) insights.push(`ROAS ${roas.toFixed(2)}x,表現不錯,廣告花費有換回明顯的營收。`);
-      else if (roas >= 1.5) insights.push(`ROAS ${roas.toFixed(2)}x,表現普通,還有優化空間。`);
-      else insights.push(`ROAS ${roas.toFixed(2)}x,偏低,建議檢視這週表現差的廣告是否該關掉或調整素材。`);
-    } else {
-      insights.push("這週沒有轉換金額資料,無法計算 ROAS。");
-    }
-
-    if (cpa !== null) {
-      insights.push(`平均每筆訂單成本(CPA)是 ${fmtMoney(cpa, record.currency)},轉單數共 ${fmtInt(record.conversions)} 筆。`);
-    } else {
-      insights.push("這週沒有任何轉單,檢查一下廣告是否正常投放中。");
-    }
-
-    const spendyAds = record.ads.filter((a) => a.spend >= 500);
-    if (spendyAds.length) {
-      const bestRoas = spendyAds
-        .map((a) => ({ ...a, roasVal: a.spend > 0 && a.revenue > 0 ? a.revenue / a.spend : null }))
-        .filter((a) => a.roasVal !== null)
-        .sort((a, b) => b.roasVal - a.roasVal)[0];
-      if (bestRoas) insights.push(`這週表現最好的廣告是「${bestRoas.name}」,ROAS 有 ${bestRoas.roasVal.toFixed(2)}x。`);
-
-      const badOnes = spendyAds.filter((a) => a.spend > 0 && (a.revenue <= 0 || a.revenue / a.spend < 1));
-      if (badOnes.length) {
-        insights.push(`有 ${badOnes.length} 支花費超過 500 的廣告 ROAS 低於 1x(等於虧錢),建議優先檢查這些廣告。`);
-      }
-    }
-
-    return insights;
-  }
-
   // ---------- 投放中廣告成效分類(成效好 / 成效正常 / 成效不好 / 學習中) ----------
   const LEARNING_MIN_CONVERSIONS = 10; // 轉單數不足,還看不出真實成效,先歸類為「學習中」
   const PERF_LABELS = { good: "成效好", normal: "成效正常", poor: "成效不好", learning: "學習中" };
@@ -5584,58 +5443,43 @@ function MetaAdsLedger() {
   }
 
   async function fetchBatchFromApi() {
-    if (!apiToken.trim() || (batchGranularity === "month" && !apiMonth)) {
-      setApiError("請填入存取權杖" + (batchGranularity === "month" ? "並選擇月份。" : "。"));
-      return;
-    }
-    const targets = brands.filter((b) => selectedBatchBrandIds.includes(b.id));
-    if (!targets.length) {
-      setApiError("請至少勾選一個品牌。");
-      return;
-    }
-    setApiError(null);
-    setApiNotice(null);
-    setApiLoading(true);
-    const progress = targets.map((b) => ({ id: b.id, name: b.name, status: "pending", message: "" }));
-    setBatchProgress(progress);
-    let lastWeekRangeUsed = null;
-    for (let i = 0; i < targets.length; i++) {
-      const b = targets[i];
-      setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "running" } : p)));
-      try {
-        if (batchGranularity === "week") {
-          // 每個品牌的廣告帳號時區可能不一樣,「上週」要分別依各自帳號的時區去算,
-          // 不能整批共用同一組日期,不然時區跟瀏覽器不同的帳號會抓錯週次、數字對不起來。
-          const tzOffset = await fetchAccountUtcOffset(apiToken.trim(), b.id);
-          const weekRangeForThisBrand = getLastWeekRange(tzOffset);
-          lastWeekRangeUsed = weekRangeForThisBrand;
-          const record = await fetchInsightsForRange(apiToken.trim(), b.id, weekRangeForThisBrand.since, weekRangeForThisBrand.until, true);
-          record.source = "manual";
-          await storage.set(weekKeyFor(b.id, weekRangeForThisBrand.weekStart), JSON.stringify(record));
-          setBatchProgress((prev) =>
-            prev.map((p, idx) => (idx === i ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
-          );
-        } else {
-          const record = await fetchOneBrandMonth(apiToken.trim(), b.id, apiMonth);
-          record.source = "manual";
-          await storage.set(monthKeyFor(b.id, apiMonth), JSON.stringify(record));
-          setBatchProgress((prev) =>
-            prev.map((p, idx) => (idx === i ? { ...p, status: record.ads.length ? "done" : "empty", message: `${record.ads.length} 支廣告` } : p))
-          );
-        }
-      } catch (e) {
-        setBatchProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, status: "error", message: e.message } : p)));
-      }
-      if (i < targets.length - 1) await new Promise((r) => setTimeout(r, 4000));
-    }
-    setApiLoading(false);
-    if (batchGranularity === "week" && lastWeekRangeUsed) setWeekInfo(lastWeekRangeUsed);
-    setApiNotice("批次抓取完成,上方可以切換品牌查看結果。");
-    await loadAll(activeBrandId);
-    await loadAllWeeks(activeBrandId);
+  if (!apiToken.trim() || !apiMonth) {
+    setApiError("請填入存取權杖並選擇月份。");
+    return;
   }
+  const targets = brands.filter((b) => selectedBatchBrandIds.includes(b.id));
+  if (!targets.length) {
+    setApiError("請至少勾選一個品牌。");
+    return;
+  }
+  setApiError(null);
+  setApiNotice(null);
+  setApiLoading(true);
+  const progress = targets.map((b) => ({ id: b.id, name: b.name, status: "pending", message: "" }));
+  setBatchProgress(progress);
+  for (let i = 0; i < targets.length; i++) {
+    const b = targets[i];
+    setBatchProgress((prev) => prev.map((p, idx) => idx === i ? { ...p, status: "running" } : p));
+    try {
+      const record = await fetchOneBrandMonth(apiToken.trim(), b.id, apiMonth);
+      record.source = "manual";
+      await storage.set(monthKeyFor(b.id, apiMonth), JSON.stringify(record));
+      setBatchProgress((prev) => prev.map((p, idx) => idx === i ? {
+        ...p,
+        status: record.ads.length ? "done" : "empty",
+        message: String(record.ads.length) + " 支廣告"
+      } : p));
+    } catch (e) {
+      setBatchProgress((prev) => prev.map((p, idx) => idx === i ? { ...p, status: "error", message: e.message } : p));
+    }
+    if (i < targets.length - 1) await new Promise((resolve) => setTimeout(resolve, 4000));
+  }
+  setApiLoading(false);
+  setApiNotice("批次抓取完成,上方可以切換品牌查看結果。");
+  await loadAll(activeBrandId);
+}
 
-  async function toggleRememberToken(checked) {
+async function toggleRememberToken(checked) {
     setRememberToken(checked);
     if (checked) {
       await storage.set("meta-api-remember-token", "1").catch(() => {});
@@ -5660,89 +5504,56 @@ function MetaAdsLedger() {
   // 開啟網頁時的自動同步:檢查上週(週一~週日)跟上個月的資料是否已經存在,
   // 沒有的話就自動用記住的權杖抓一次,依序抓每個常用品牌(或預設帳號),中間間隔 4 秒避免觸發 Meta 頻率限制。
   async function runAutoSyncWith(token, brandsList, defaultAccountId) {
-    if (!token || !token.trim()) return;
-    const cleanDefaultId = (defaultAccountId || "").trim().replace(/^act_/, "");
-    // 如果呼叫時沒帶品牌清單,先看「目前登入身份自己有沒有帶一份品牌清單」(TEAM_CREDENTIALS 設定的 {id,name} 清單)可以用,
-    // 不要一沒清單就直接拿「畫面上記住的單一帳號 ID」捏造一個假品牌、覆蓋掉真正的品牌清單——
-    // 這是之前造成品牌清單被單一帳號蓋掉的原因,範圍受限的身份尤其容易踩到,因為 meta-api-brands 這份共用清單一開始可能是空的。
-    const effectiveBrandsList = (brandsList && brandsList.length) ? brandsList : (getCredentialBrands() || []);
-    const targets = (effectiveBrandsList && effectiveBrandsList.length)
-      ? effectiveBrandsList.map((b) => ({ apiId: b.id, storageId: b.id, name: b.name }))
-      : cleanDefaultId
-      // 已經拿掉「預設帳本」,所以這裡也不能再把資料存進看不到的地方——
-      // 沒有任何常用品牌、身份也沒有自帶清單時,直接用帳號 ID 本身當作品牌 ID 來存,並登記進品牌清單。
+  if (!token || !token.trim()) return;
+  const cleanDefaultId = (defaultAccountId || "").trim().replace(/^act_/, "");
+  const effectiveBrandsList = (brandsList && brandsList.length) ? brandsList : (getCredentialBrands() || []);
+  const targets = (effectiveBrandsList && effectiveBrandsList.length)
+    ? effectiveBrandsList.map((b) => ({ apiId: b.id, storageId: b.id, name: b.name }))
+    : cleanDefaultId
       ? [{ apiId: cleanDefaultId, storageId: cleanDefaultId, name: cleanDefaultId }]
       : [];
-    if (!targets.length) return;
+  if (!targets.length) return;
 
-    if (!effectiveBrandsList || !effectiveBrandsList.length) {
-      const autoBrand = { name: cleanDefaultId, id: cleanDefaultId };
-      const updatedBrands = [autoBrand];
-      setBrands(updatedBrands);
-      await storage.set("meta-api-brands", JSON.stringify(updatedBrands)).catch(() => {});
-    }
-
-    const now = new Date();
-    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
-
-    const weekListRes = await storage.list(WEEK_STORAGE_PREFIX).catch(() => ({ keys: [] }));
-    const monthListRes = await storage.list(STORAGE_PREFIX).catch(() => ({ keys: [] }));
-    const existingWeekKeys = new Set(weekListRes.keys || []);
-    const existingMonthKeys = new Set(monthListRes.keys || []);
-
-    // 開啟網頁自動同步時,不是只補「上週」一週,而是自動檢查並補齊「最近 4 週」裡缺少的每一週——
-    // 這樣不用手動開「連接 Meta API」選「回溯抓取」,平常自動同步就會自動幫你把最近幾週補齊。
-    // 每個品牌的廣告帳號時區可能不一樣,所以每一週的日期範圍都分別依各自帳號的時區去算。
-    const AUTO_SYNC_WEEKS_BACK = 4;
-    const needsWeek = [];
-    for (const t of targets) {
-      const tzOffset = await fetchAccountUtcOffset(token.trim(), t.apiId);
-      for (let w = 1; w <= AUTO_SYNC_WEEKS_BACK; w++) {
-        const weekRange = getLastWeekRange(tzOffset, w);
-        if (!existingWeekKeys.has(weekKeyFor(t.storageId, weekRange.weekStart))) {
-          needsWeek.push({ apiId: t.apiId, storageId: t.storageId, name: t.name, weekRange });
-        }
-      }
-    }
-    const needsMonth = targets.filter((t) => !existingMonthKeys.has(monthKeyFor(t.storageId, lastMonthKey)));
-    if (!needsWeek.length && !needsMonth.length) return; // 資料都是新的,不用做任何事
-
-    setAutoSyncStatus(`自動同步中… 補齊最近 ${AUTO_SYNC_WEEKS_BACK} 週與 ${monthLabel(lastMonthKey)} 資料`);
-    let successCount = 0, errorCount = 0;
-
-    for (let i = 0; i < needsWeek.length; i++) {
-      const t = needsWeek[i];
-      try {
-        const record = await fetchInsightsForRange(token.trim(), t.apiId, t.weekRange.since, t.weekRange.until, true);
-        record.source = "auto";
-        await storage.set(weekKeyFor(t.storageId, t.weekRange.weekStart), JSON.stringify(record));
-        successCount++;
-      } catch { errorCount++; }
-      if (i < needsWeek.length - 1 || needsMonth.length) await new Promise((r) => setTimeout(r, 4000));
-    }
-    for (let i = 0; i < needsMonth.length; i++) {
-      const t = needsMonth[i];
-      try {
-        const record = await fetchOneBrandMonth(token.trim(), t.apiId, lastMonthKey);
-        record.source = "auto";
-        await storage.set(monthKeyFor(t.storageId, lastMonthKey), JSON.stringify(record));
-        successCount++;
-      } catch { errorCount++; }
-      if (i < needsMonth.length - 1) await new Promise((r) => setTimeout(r, 4000));
-    }
-
-    setAutoSyncStatus(null);
-    await loadAll(activeBrandId);
-    await loadAllWeeks(activeBrandId);
-    if (successCount > 0) {
-      setApiNotice(`已自動同步完成:成功更新 ${successCount} 筆資料${errorCount > 0 ? `,${errorCount} 筆失敗(可能是頻率限制,之後再手動抓一次即可)` : ""}。`);
-    } else if (errorCount > 0) {
-      setApiError("瀏覽器裡存的個人Token可能已過期,這套前端自動同步失敗了——但這不影響報表資料本身,資料主要來源是後端排程(不需要Token),不用緊張。如果不想再看到這個訊息,可以把下面的「記住Token」「自動同步」關掉。");
-    }
+  if (!effectiveBrandsList || !effectiveBrandsList.length) {
+    const autoBrand = { name: cleanDefaultId, id: cleanDefaultId };
+    setBrands([autoBrand]);
+    await storage.set("meta-api-brands", JSON.stringify([autoBrand])).catch(() => {});
   }
 
-  // 手動觸發同步(例如面板裡的「立即同步」按鈕),用目前畫面上的權杖跟品牌清單
+  const now = new Date();
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthKey = lastMonthDate.getFullYear() + "-" + String(lastMonthDate.getMonth() + 1).padStart(2, "0");
+  const monthListRes = await storage.list(STORAGE_PREFIX).catch(() => ({ keys: [] }));
+  const existingMonthKeys = new Set(monthListRes.keys || []);
+  const needsMonth = targets.filter((t) => !existingMonthKeys.has(monthKeyFor(t.storageId, lastMonthKey)));
+  if (!needsMonth.length) return;
+
+  setAutoSyncStatus("自動同步中… 補齊 " + monthLabel(lastMonthKey) + " 資料");
+  let successCount = 0;
+  let errorCount = 0;
+  for (let i = 0; i < needsMonth.length; i++) {
+    const t = needsMonth[i];
+    try {
+      const record = await fetchOneBrandMonth(token.trim(), t.apiId, lastMonthKey);
+      record.source = "auto";
+      await storage.set(monthKeyFor(t.storageId, lastMonthKey), JSON.stringify(record));
+      successCount++;
+    } catch {
+      errorCount++;
+    }
+    if (i < needsMonth.length - 1) await new Promise((resolve) => setTimeout(resolve, 4000));
+  }
+  setAutoSyncStatus(null);
+  await loadAll(activeBrandId);
+  if (successCount > 0) {
+    const errorText = errorCount > 0 ? "," + errorCount + " 筆失敗(可能是頻率限制,之後再手動抓一次即可)" : "";
+    setApiNotice("已自動同步完成:成功更新 " + successCount + " 筆資料" + errorText + "。");
+  } else if (errorCount > 0) {
+    setApiError("瀏覽器裡存的個人Token可能已過期,前端備援同步失敗；這不影響中央 Airbyte 已同步的報表資料。");
+  }
+}
+
+// 手動觸發同步(例如面板裡的「立即同步」按鈕),用目前畫面上的權杖跟品牌清單
   function runAutoSync() {
     return runAutoSyncWith(apiToken, brands, apiAccountId);
   }
