@@ -796,7 +796,7 @@ const PUBLIC_MONTHLY_TOP3_FEED = "https://speedingscs.pages.dev/api/public/month
 const PUBLIC_MAVIS_BRAND_ID = "mavis-public";
 let publicReportCache = null;
 let cloudStatusCache = "unknown";
-let credentialNameCache = "Halo-Mavis國際連線（光速代操）";
+
 let credentialBrandsCache = [{ id: PUBLIC_MAVIS_BRAND_ID, name: "Halo-Mavis國際連線（光速代操）" }];
 
 
@@ -827,7 +827,6 @@ async function probeCloud(force) {
   }
   return cloudStatusCache;
 }
-function getCredentialName() { return credentialNameCache; }
 
 function keyedSetting(value) {
   return value == null ? {} : { [PUBLIC_MAVIS_BRAND_ID]: value };
@@ -3594,7 +3593,7 @@ function MetaAdsLedger() {
   // Worker 網址跟驗證密碼已經固定,直接寫死在程式碼裡。
   const DEFAULT_SHOPLINE_WORKER_URL = "";
   const SHOPLINE_PROXY_SECRET = "";
-  const [shoplineWorkerUrl, setShoplineWorkerUrl] = useState(DEFAULT_SHOPLINE_WORKER_URL);
+  const shoplineWorkerUrl = DEFAULT_SHOPLINE_WORKER_URL;
     const [shoplineMonthsData, setShoplineMonthsData] = useState({}); // Mavis: SHOPLINE disabled
       
   // ---------- 折價券查詢:state(自訂時間範圍,不綁定週/月的固定區間)----------
@@ -3718,27 +3717,6 @@ function MetaAdsLedger() {
     }
   }, [apiToken, rememberToken]);
 
-  // ---------- Shopline 對照:載入既有設定與已抓過的資料 ----------
-  useEffect(() => {
-    async function loadShopline() {
-      try {
-        const urlRes = await storage.get(SHOPLINE_WORKER_URL_KEY).catch(() => null);
-        if (urlRes && urlRes.value) {
-          // 如果之前手動改過、存過不同的網址,以存過的為準;沒存過的話就維持程式碼裡寫死的預設值。
-          setShoplineWorkerUrl(urlRes.value);
-
-        }
-        const monthList = await storage.list(SHOPLINE_MONTH_PREFIX).catch(() => ({ keys: [] }));
-        const monthEntries = {};
-        for (const k of monthList.keys || []) {
-          const res = await storage.get(k).catch(() => null);
-          if (res && res.value) monthEntries[k.slice(SHOPLINE_MONTH_PREFIX.length)] = JSON.parse(res.value);
-        }
-        setShoplineMonthsData(monthEntries);
-      } catch { /* 讀取失敗時維持空白狀態即可,不影響其他功能 */ }
-    }
-    loadShopline();
-  }, []);
 
 
   // 折價券查詢:自訂時間範圍(日曆選的起訖日),不綁定既有的週/月固定區間,查詢結果只放在畫面上,不存進共用/本機儲存空間
