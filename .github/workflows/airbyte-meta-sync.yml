@@ -1,6 +1,14 @@
 name: Airbyte Meta Central Sync
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/airbyte_meta_sync.py"
+      - "functions/api/airbyte/**"
+      - "functions/_shared/auth.js"
+      - ".github/workflows/airbyte-meta-sync.yml"
   schedule:
     - cron: "23 */6 * * *"
   workflow_dispatch:
@@ -26,6 +34,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python for validation
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate central sync source
+        run: |
+          python -m py_compile tools/airbyte_meta_sync.py
+          node --check functions/api/airbyte/brands.js
+
       - name: Check whether central sync secrets are configured
         id: configured
         shell: bash
@@ -39,17 +60,6 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "Airbyte sync is installed but dormant. Add META_SYSTEM_USER_TOKEN and REPORT_TEAM_KEY repository secrets to activate it."
           fi
-
-      - name: Checkout
-        if: steps.configured.outputs.ready == 'true'
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        if: steps.configured.outputs.ready == 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
 
       - name: Install Airbyte Agent SDK
         if: steps.configured.outputs.ready == 'true'
