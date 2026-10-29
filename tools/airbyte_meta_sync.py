@@ -835,6 +835,49 @@ def build_report_record(
 NUMERIC_AD_FIELDS = ("spend", "conversions", "revenue", "impressions", "clicks", "linkClicks", "landingPageViews")
 
 
+def apply_delivery_status_to_record(
+    record: dict[str, Any] | None,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    out = dict(record or {})
+    ads_meta = metadata.get("ads") or {}
+    campaigns_meta = metadata.get("campaigns") or {}
+    raw_ads: list[dict[str, Any]] = []
+
+    for source in out.get("rawAds") or []:
+        if not isinstance(source, dict):
+            continue
+        row = dict(source)
+        ad_id = str(row.get("adId") or "")
+        campaign_id = str(row.get("campaignId") or "")
+        ad_meta = ads_meta.get(ad_id) or {}
+        campaign_meta = campaigns_meta.get(campaign_id) or {}
+
+        effective_status = str(
+            ad_meta.get("effective_status")
+            or row.get("effectiveStatus")
+            or ("ACTIVE" if row.get("active") else "UNKNOWN")
+        )
+        campaign_status = str(
+            campaign_meta.get("effective_status")
+            or row.get("campaignEffectiveStatus")
+            or "UNKNOWN"
+        )
+        row["effectiveStatus"] = effective_status
+        row["active"] = effective_status == "ACTIVE"
+        row["campaignEffectiveStatus"] = campaign_status
+        row["campaignActive"] = campaign_status == "ACTIVE"
+        raw_ads.append(row)
+
+    raw_ads.sort(key=lambda row: as_float(row.get("spend")), reverse=True)
+    ads, sponsor_ads = _group_views(raw_ads)
+    out["rawAds"] = raw_ads
+    out["ads"] = ads
+    out["sponsorAds"] = sponsor_ads
+    out["deliveryStatusSyncedAt"] = metadata.get("statusSyncedAt") or metadata.get("syncedAt")
+    return out
+
+
 def _raw_map(record: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     if not isinstance(record, dict):
