@@ -1,6 +1,6 @@
 import { verifyGitHubActionsOidc } from "../../../../_shared/githubOidc.js";
 
-const DOUBLE_COLON_PREFIXES = ["metaads-month:", "metaads-week:", "airbyte-cache:"];
+const DOUBLE_COLON_PREFIXES = ["metaads-month:", "metaads-week:", "airbyte-cache:", "airbyte-day-baseline:"];
 const DIRECT_PREFIXES = ["airbyte-meta:"];
 
 function brandIdFromKey(key) {
