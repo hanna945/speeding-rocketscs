@@ -473,6 +473,128 @@
   body.mal-exporting .mal-perf-section-chevron {
     display: none !important;
   }
+
+  /* 2026-10 撩撩報表版型優化：只調整視覺層級，不變更品牌配色、資料與功能 */
+  .mal-shell { max-width: 1180px; padding: 0 24px 72px; }
+  .mal-header {
+    align-items: center; margin: 24px 0 18px; padding: 24px 26px;
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 20px;
+    box-shadow: 0 8px 28px rgba(74,63,53,.055);
+  }
+  .mal-title-block { align-items: center; gap: 16px; min-width: 0; }
+  .mal-stamp { width: 52px; height: 52px; border-radius: 14px; }
+  .mal-title { font-size: 30px; font-weight: 600; letter-spacing: .01em; }
+  .mal-eyebrow { margin-bottom: 5px; letter-spacing: .14em; }
+  .mal-subtitle { margin-top: 7px; line-height: 1.65; max-width: 680px; }
+  .mal-header-actions { margin-left: auto; justify-content: flex-end; }
+  .mal-header-actions-secondary { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+  .mal-header .mal-btn { height: 38px; padding: 0 13px; border-radius: 10px; }
+
+  .mal-brand-switch,
+  .mal-threshold-group,
+  .mal-viewmode-switch {
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 16px;
+    box-shadow: 0 4px 18px rgba(74,63,53,.035);
+  }
+  .mal-brand-switch { padding: 13px 15px; margin-bottom: 12px; gap: 8px; }
+  .mal-brand-switch-label { padding: 0 5px; }
+  .mal-brand-chip { border-radius: 9px; padding: 7px 13px; }
+  .mal-brand-adjust-btn { margin-left: auto; border-radius: 10px; }
+
+  .mal-threshold-group {
+    display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0; margin-bottom: 12px; overflow: hidden;
+  }
+  .mal-threshold-row { min-height: 52px; padding: 0 16px; border-bottom: 0; }
+  .mal-threshold-row + .mal-threshold-row { border-left: 1px solid var(--rule-soft); }
+
+  .mal-viewmode-switch { gap: 6px; padding: 6px; margin: 0 0 22px; border-bottom: 1px solid var(--rule); }
+  .mal-viewmode-btn {
+    flex: 0 0 auto; padding: 10px 15px; border: 0; border-radius: 10px; color: var(--ink-secondary);
+  }
+  .mal-viewmode-btn:hover { background: var(--paper); color: var(--ink); }
+  .mal-viewmode-btn-active { background: var(--paper); color: var(--blue-deep); border: 0; box-shadow: inset 0 0 0 1px var(--rule); }
+
+  .mal-tabs { gap: 8px; padding: 6px; margin-bottom: 18px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 14px; }
+  .mal-tab { padding: 8px 13px; border: 0; border-radius: 9px; }
+  .mal-tab-active { background: var(--paper); border: 0; box-shadow: inset 0 0 0 1px var(--rule); }
+
+  .mal-cards { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; margin-bottom: 24px; border: 0; }
+  .mal-card {
+    min-width: 0; padding: 20px 20px 18px; border: 1px solid var(--rule); border-radius: 16px;
+    box-shadow: 0 5px 18px rgba(74,63,53,.035);
+  }
+  .mal-card:last-child { border-right: 1px solid var(--rule); }
+  .mal-card-label { font-size: 11px; letter-spacing: .05em; }
+  .mal-card-value { font-size: 28px; font-weight: 600; margin: 9px 0 7px; }
+
+  .mal-section-title {
+    margin: 36px 0 15px; padding: 0; font-size: 21px; font-weight: 600; line-height: 1.35; gap: 10px;
+  }
+  .mal-section-title::before { display: none; }
+  .mal-section-title::after { content: ""; height: 1px; flex: 1 1 48px; background: var(--rule); }
+  .mal-major-section-title { padding: 0 38px 0 0; }
+  .mal-major-section-toggle { width: 28px; height: 28px; border-radius: 9px; }
+
+  .mal-chart-box,
+  .mal-week-box,
+  .mal-perf-section,
+  .mal-sponsor-month {
+    border-radius: 16px; box-shadow: 0 5px 20px rgba(74,63,53,.035);
+  }
+  .mal-chart-box { padding: 22px 20px; }
+
+  .mal-trend-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0,1fr));
+    grid-template-rows: auto minmax(260px,auto); gap: 12px 18px; margin: 30px 0 30px;
+  }
+  .mal-trend-grid-anchor { display: none; }
+  .mal-trend-title { margin: 0; align-self: end; }
+  .mal-trend-title-a { grid-column: 1; grid-row: 1; }
+  .mal-trend-title-b { grid-column: 2; grid-row: 1; }
+  .mal-trend-chart { margin: 0; min-width: 0; height: 100%; }
+  .mal-trend-chart-a { grid-column: 1; grid-row: 2; }
+  .mal-trend-chart-b { grid-column: 2; grid-row: 2; }
+
+  .mal-insight-box { border-radius: 14px; padding: 16px 18px; }
+  .mal-perf-section-header { padding: 16px 18px; }
+  .mal-perf-section-body { padding: 6px 18px 18px; }
+
+  .mal-scroll-wrap { border: 1px solid var(--rule-soft); border-radius: 14px; background: var(--paper-raised); }
+  .mal-table th { padding-top: 13px; background: rgba(232,224,211,.42); }
+  .mal-table td { padding-top: 14px; padding-bottom: 14px; }
+  .mal-ad-row { border-radius: 14px; padding: 14px 16px; box-shadow: 0 3px 14px rgba(74,63,53,.025); }
+  .mal-ad-header-row { align-items: center; margin-top: 24px; padding-bottom: 4px; }
+  .mal-ad-sort-select { border-radius: 10px; }
+
+  @media (max-width: 860px) {
+    .mal-shell { padding: 0 16px 56px; }
+    .mal-header { margin-top: 16px; padding: 20px; border-radius: 16px; }
+    .mal-header-actions { width: 100%; margin-left: 0; }
+    .mal-header-actions-secondary { justify-content: flex-start; }
+    .mal-title { font-size: 26px; }
+    .mal-cards { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+    .mal-threshold-group { grid-template-columns: 1fr; }
+    .mal-threshold-row + .mal-threshold-row { border-left: 0; border-top: 1px solid var(--rule-soft); }
+    .mal-trend-grid { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; gap: 10px; }
+    .mal-trend-title-a { grid-column: 1; grid-row: 1; }
+    .mal-trend-chart-a { grid-column: 1; grid-row: 2; }
+    .mal-trend-title-b { grid-column: 1; grid-row: 3; margin-top: 10px; }
+    .mal-trend-chart-b { grid-column: 1; grid-row: 4; }
+  }
+  @media (max-width: 560px) {
+    .mal-header { padding: 18px 16px; }
+    .mal-title-block { align-items: flex-start; }
+    .mal-stamp { width: 46px; height: 46px; border-radius: 12px; }
+    .mal-title { font-size: 23px; }
+    .mal-eyebrow { font-size: 11px; }
+    .mal-subtitle { font-size: 12px; }
+    .mal-cards { grid-template-columns: 1fr 1fr; }
+    .mal-card { padding: 16px 14px; border-radius: 13px; }
+    .mal-card-value { font-size: 23px; }
+    .mal-viewmode-switch { overflow-x: auto; flex-wrap: nowrap; }
+    .mal-viewmode-btn { padding: 9px 12px; }
+    .mal-section-title { font-size: 18px; margin-top: 30px; }
+  }
 </style>
 </head>
 <body>
@@ -6122,18 +6244,19 @@ function MetaAdsLedger() {
           )}
 
           {sortedKeys.length > 1 && (
-            <>
-              <CollapsibleSectionTitle className="mal-section-title">廣告費 / 轉單 趨勢</CollapsibleSectionTitle>
-              <div className="mal-chart-box">
+            <div className="mal-trend-grid">
+              <span className="mal-trend-grid-anchor" aria-hidden="true"></span>
+              <CollapsibleSectionTitle className="mal-section-title mal-trend-title mal-trend-title-a">廣告費 / 轉單 趨勢</CollapsibleSectionTitle>
+              <div className="mal-chart-box mal-trend-chart mal-trend-chart-a">
                 <SimpleBarChart data={chartData} seriesA="廣告費" seriesB="轉單" colorA="#6E8577" colorB="#BFA054"
                   labelA="廣告費" labelB="轉單" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v} />
               </div>
-              <CollapsibleSectionTitle className="mal-section-title">CPA / ROAS 趨勢</CollapsibleSectionTitle>
-              <div className="mal-chart-box">
+              <CollapsibleSectionTitle className="mal-section-title mal-trend-title mal-trend-title-b">CPA / ROAS 趨勢</CollapsibleSectionTitle>
+              <div className="mal-chart-box mal-trend-chart mal-trend-chart-b">
                 <SimpleLineChart data={chartData} seriesA="CPA" seriesB="ROAS" colorA="#A8607A" colorB="#7C8B54"
                   labelA={`CPA (${currency})`} labelB="ROAS (x)" fmtA={(v) => fmtMoney(v, currency)} fmtB={(v) => v + "x"} />
               </div>
-            </>
+            </div>
           )}
 
           {focusData && (
