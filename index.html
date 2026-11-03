@@ -7123,11 +7123,12 @@ function MetaAdsLedger() {
             <SpreadsheetRevenueNote />
           </div>
           <div className="mal-card">
-            <div className="mal-card-label">Meta 回報營收</div>
+            <div className="mal-card-label">Meta 歸因金額</div>
             <div className="mal-card-value">{fmtMoney(totalMetaRevenue, currencyCode)}</div>
+            <SpreadsheetRevenueNote text="僅供 Meta 廣告歸因比較，非營收主口徑" />
           </div>
           <div className="mal-card">
-            <div className="mal-card-label">營收落差</div>
+            <div className="mal-card-label">歸因差額</div>
             <div className="mal-card-value">{fmtMoney(totalRevGap, currencyCode)}</div>
             {totalRevGapPct !== null && <DeltaBadge value={totalRevGapPct} />}
           </div>
@@ -7153,16 +7154,16 @@ function MetaAdsLedger() {
               <tr>
                 <th rowSpan={2} style={{ verticalAlign: "bottom" }}>產品代號</th>
                 <th colSpan={3} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🟩 試算表實際業績</th>
-                <th colSpan={2} className="mal-ledger-group-meta mal-ledger-group-label-meta" style={{ textAlign: "center" }}>🟧 Meta 回報業績</th>
+                <th colSpan={2} className="mal-ledger-group-meta mal-ledger-group-label-meta" style={{ textAlign: "center" }}>🟧 Meta 歸因參考</th>
                 <th colSpan={2} className="mal-ledger-group-gap" style={{ textAlign: "center" }}>落差</th>
               </tr>
               <tr>
                 <th className="mal-ledger-group-backend">營收</th>
                 <th className="mal-ledger-group-backend">廣告費</th>
                 <th className="mal-ledger-group-backend">廣告費佔比</th>
-                <th className="mal-ledger-group-meta">營收</th>
+                <th className="mal-ledger-group-meta">歸因金額</th>
                 <th className="mal-ledger-group-meta">廣告費</th>
-                <th className="mal-ledger-group-gap">營收落差%</th>
+                <th className="mal-ledger-group-gap">歸因差異%</th>
                 <th className="mal-ledger-group-gap">廣告費落差%</th>
               </tr>
             </thead>
@@ -7171,7 +7172,7 @@ function MetaAdsLedger() {
                 <tr key={r.code}>
                   <td>
                     {r.code}
-                    {r.onlyBackend && <span style={{ fontSize: 10, color: "var(--red)", marginLeft: 4 }}>僅後台</span>}
+                    {r.onlyBackend && <span style={{ fontSize: 10, color: "var(--red)", marginLeft: 4 }}>僅試算表</span>}
                     {r.onlyMeta && <span style={{ fontSize: 10, color: "var(--red)", marginLeft: 4 }}>僅Meta</span>}
                   </td>
                   <td className="mal-ledger-group-backend">{fmtMoney(r.backendRevenue, currencyCode)}</td>
@@ -7197,20 +7198,20 @@ function MetaAdsLedger() {
           </table>
         </div>
         <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "8px 0 0" }}>
-          🟩 試算表實際業績 = 每日收益試算表(以下單日期為準,已扣退換貨);🟧 Meta 回報業績 = Meta 廣告後台回報的歸因轉換金額。落差% = (Meta − 試算表) ÷ 試算表。
+          🟩 試算表實際業績 = 唯一營收主口徑，取自每日收益試算表(以下單日期為準,已扣退換貨)；🟧 Meta 歸因參考 = Meta 廣告後台回報的歸因轉換金額，只用來分析廣告歸因，不視為實際營收。歸因差異% = (Meta 歸因金額 − 試算表營收) ÷ 試算表營收。
         </p>
         <div className="mal-analysis">
           <div className="mal-analysis-title">基礎分析:為什麼會有落差</div>
           <ul>
             <li>歸因時間差:Meta 依廣告帳戶時區、點擊或瀏覽後 1~7 天內成立的轉換計算,後台則依「實際下單日期」計算,同一筆訂單可能被算進不同天,尤其影響跨月邊界。</li>
-            <li>非 Meta 廣告帶來的訂單:自然流量、Google、社團、業配連結等其他渠道的訂單只會出現在後台,不會算進 Meta 回報的營收。</li>
-            <li>退換貨與訂單取消:後台營收通常已扣除退貨/取消,Meta 的轉換數字多半不會事後修正,會讓 Meta 端顯示比實際偏高。</li>
+            <li>非 Meta 廣告帶來的訂單:自然流量、Google、社團、業配連結等其他渠道的訂單會出現在試算表實際營收，但不會算進 Meta 歸因金額。</li>
+            <li>退換貨與訂單取消:試算表實際營收通常已扣除退貨/取消，Meta 歸因數字多半不會事後修正，因此 Meta 歸因金額可能高於實際營收。</li>
             <li>轉換去重估算方式不同:Meta 用像素/CAPI 綜合估算轉換金額,與後台實際成立訂單金額本來就存在估算誤差。</li>
             {onlyBackendCodes.length > 0 && (
-              <li>「{onlyBackendCodes.join("、")}」只有後台資料、Meta 端找不到對應代號,可能是這些商品目前沒有投放 Meta 廣告,或廣告活動命名沒有加上一致的產品代號。</li>
+              <li>「{onlyBackendCodes.join("、")}」只有試算表資料、Meta 端找不到對應代號，可能是這些商品目前沒有投放 Meta 廣告，或廣告活動命名沒有加上一致的產品代號。</li>
             )}
             {onlyMetaCodes.length > 0 && (
-              <li>「{onlyMetaCodes.join("、")}」只有 Meta 資料、後台找不到對應,請確認是否已匯入這個{periodLabel}的後台報表,或後台的產品代號拼法是否一致。</li>
+              <li>「{onlyMetaCodes.join("、")}」只有 Meta 歸因資料、試算表找不到對應，請確認這個{periodLabel}的每日收益試算表是否已同步，或產品代號拼法是否一致。</li>
             )}
             {metaBreak.unresolved > 0 && (
               <li>Meta 端另有 {metaBreak.unresolved} 支廣告的行銷活動名稱沒有加上「【產品代號】」,沒有被算進上表,可能讓 Meta 端的營收被低估。</li>
@@ -8338,7 +8339,7 @@ const shopeRealDailyMap = useMemo(() => {
                 </div>
 
                 <StaticSectionTitle className="mal-section-title">
-                  {monthLabel(focusMonth)} 一頁式正確業績(試算表實際 vs Meta 回報)
+                  {monthLabel(focusMonth)} 一頁式正確業績(試算表實際營收 vs Meta 歸因參考)
                 </StaticSectionTitle>
                 <LedgerVsMetaComparison
                   ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
