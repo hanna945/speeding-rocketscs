@@ -3870,7 +3870,9 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
   }
   // 總計卡片用 ledgerAgg.overall(帳本裡「整體」那一列),不是逐代號加總——這樣才會跟後台看到的
   // 整體數字一致,不會因為某些收入沒被歸類到任何產品代號底下,加總起來反而對不上。
-  const totalRevenue = rows.reduce((s, r) => s + (r.revenue || 0), 0);
+  const totalRevenue = ledgerAgg && ledgerAgg.overall
+    ? Number(ledgerAgg.overall.revenue || 0)
+    : rows.reduce((s, r) => s + (r.revenue || 0), 0);
   const totalSpend = rows.reduce((s, r) => s + (r.spend || 0), 0);
   const totalProfit = rows.reduce((s, r) => s + (r.profit || 0), 0);
   const totalConversions = rows.reduce((s, r) => s + r.conversions, 0);
@@ -4017,6 +4019,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         <div className="mal-card">
           <div className="mal-card-label">總業績</div>
           <div className="mal-card-value">{fmtMoney(totalRevenue, currencyCode)}</div>
+          <SpreadsheetRevenueNote text="資料來源：每日收益試算表（全店總營收）" />
         </div>
         <div className="mal-card">
           <div className="mal-card-label">總花費</div>
@@ -4050,7 +4053,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
         <table className="mal-table">
           <thead>
             <tr>
-              <th>系列</th><th>業績</th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>平均CPA</th><th>成交數</th><th>帳面利潤</th><th>客單價</th><th>判斷</th>
+              <th>系列</th><th><SpreadsheetRevenueHeader label="業績" /></th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>平均CPA</th><th>成交數</th><th>帳面利潤</th><th>客單價</th><th>判斷</th>
             </tr>
           </thead>
           <tbody>
@@ -4104,7 +4107,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
             <table className="mal-table">
               <thead>
                 <tr>
-                  <th>網站</th><th>業績</th><th>花費</th><th>帳面利潤</th><th>客單價</th>
+                  <th>網站</th><th><SpreadsheetRevenueHeader label="業績" /></th><th>花費</th><th>帳面利潤</th><th>客單價</th>
                 </tr>
               </thead>
               <tbody>
@@ -4130,7 +4133,7 @@ const AdPerformanceReport = React.forwardRef(function AdPerformanceReport(
             <table className="mal-table">
               <thead>
                 <tr>
-                  <th>通路</th><th>業績</th><th>花費</th><th>帳面利潤</th><th>客單價</th>
+                  <th>通路</th><th><SpreadsheetRevenueHeader label="業績" /></th><th>花費</th><th>帳面利潤</th><th>客單價</th>
                 </tr>
               </thead>
               <tbody>
@@ -4539,7 +4542,9 @@ function MonthlyPresentation({
 
   const perf = useMemo(() => performanceTotals(ledgerRows), [ledgerRows]);
   const prevPerf = useMemo(() => performanceTotals(previousLedgerRows), [previousLedgerRows]);
-  const revenueDelta = previousLedgerRows.length ? metricPctDelta(perf.revenue, prevPerf.revenue) : null;
+  const actualRevenue = ledgerAgg && ledgerAgg.overall ? Number(ledgerAgg.overall.revenue || 0) : perf.revenue;
+  const previousActualRevenue = previousLedgerAgg && previousLedgerAgg.overall ? Number(previousLedgerAgg.overall.revenue || 0) : prevPerf.revenue;
+  const revenueDelta = previousLedgerAgg ? metricPctDelta(actualRevenue, previousActualRevenue) : null;
   const spendDelta = previousLedgerRows.length ? metricPctDelta(perf.spend, prevPerf.spend) : null;
   const profitDelta = previousLedgerRows.length ? metricPctDelta(perf.profit, prevPerf.profit) : null;
   const conversionDelta = previousLedgerRows.length ? metricPctDelta(perf.conversions, prevPerf.conversions) : null;
@@ -4759,8 +4764,8 @@ function MonthlyPresentation({
 
   const historyRows = useMemo(() => (history || []).filter((r)=>r&&r.monthKey).slice(-6), [history]);
 
-  function metricCard(label,value,delta,inverse){
-    return <div className="mal-presentation-card"><div className="mal-presentation-card-label">{label}</div><div className="mal-presentation-card-value">{value}</div><PresentationDelta value={delta} inverse={inverse}/></div>;
+  function metricCard(label,value,delta,inverse,sourceNote){
+    return <div className="mal-presentation-card"><div className="mal-presentation-card-label">{label}</div><div className="mal-presentation-card-value">{value}</div>{sourceNote?<div style={{fontSize:9.5,color:"var(--ink-soft)",marginTop:3,lineHeight:1.2}}>{sourceNote}</div>:null}<PresentationDelta value={delta} inverse={inverse}/></div>;
   }
 
   function displaySeriesName(code){ return productNames && productNames[code] ? code+"("+productNames[code]+")" : code; }
@@ -4770,7 +4775,7 @@ function MonthlyPresentation({
     return (
       <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + densityClass}>
         <table className="mal-presentation-table mal-presentation-series-table-v3">
-          <thead><tr><th>系列</th><th>業績</th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>CPA</th><th>成交</th><th>帳面利潤</th><th>客單價</th><th>判斷</th></tr></thead>
+          <thead><tr><th>系列</th><th><SpreadsheetRevenueHeader label="業績" /></th><th>花費</th><th>ROAS</th><th>廣告佔比</th><th>CPA</th><th>成交</th><th>帳面利潤</th><th>客單價</th><th>判斷</th></tr></thead>
           <tbody>{chunk.map((r)=>{
             const j=ledgerJudgments[r.code]||{icon:"⚪",label:"無資料"};
             const meterCls=r.roas===null?"":r.roas>=(roasTarget||3)?"":r.roas>=(roasTarget||3)*.75?"warn":"bad";
@@ -4851,7 +4856,7 @@ function MonthlyPresentation({
       <div className="mal-presentation-slide">
         <PresentationSectionHead title={(brandName||"品牌")+"｜"+(monthKey?monthLabel(monthKey):"")+" 月報"} subtitle="Executive Summary｜先看結果、問題與下月優先順序。" />
         <div className="mal-presentation-kpi-5" style={{marginBottom:16}}>
-          {metricCard("營業額",fmtMoney(perf.revenue,currencyCode),revenueDelta)}
+          {metricCard("營業額",fmtMoney(actualRevenue,currencyCode),revenueDelta,false,"資料來源：每日收益試算表")}
           {metricCard("總花費",fmtMoney(perf.spend,currencyCode),spendDelta,true)}
           {metricCard("帳面利潤",fmtMoney(perf.profit,currencyCode),profitDelta)}
           {metricCard("成交筆數",fmtInt(perf.conversions),conversionDelta)}
@@ -4882,7 +4887,7 @@ function MonthlyPresentation({
         <div className={"mal-presentation-channel-layout " + presentationDensityClass(channelRows.length)}>
           <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(channelRows.length)}>
             <table className="mal-presentation-table compact">
-              <thead><tr><th>來源</th><th>類型</th><th>營收</th><th>花費</th><th>帳面利潤</th><th>ROAS</th></tr></thead>
+              <thead><tr><th>來源</th><th>類型</th><th><SpreadsheetRevenueHeader /></th><th>花費</th><th>帳面利潤</th><th>ROAS</th></tr></thead>
               <tbody>{channelRows.map((r)=><tr key={r.code}><td><strong>{r.code}</strong></td><td>{r.type||"通路"}</td><td className="num">{fmtMoney(r.revenue||0,currencyCode)}</td><td className="num">{Number(r.spend||0)>0?fmtMoney(r.spend,currencyCode):"—"}</td><td className="num">{r.profit!==null&&r.profit!==undefined?fmtMoney(r.profit,currencyCode):"—"}</td><td className="num">{r.roas!==null&&r.roas!==undefined?r.roas.toFixed(2)+"x":"—"}</td></tr>)}</tbody>
             </table>
           </div>
@@ -4996,13 +5001,13 @@ function MonthlyPresentation({
           />
           {idx===0?<div className="mal-sponsor-kpis">
             <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配支出</div><div className="mal-presentation-mini-stat-value">{fmtMoney(sponsor?sponsor.spend:0,currencyCode)}</div></div>
-            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配營收</div><div className="mal-presentation-mini-stat-value">{fmtMoney(sponsor?sponsor.revenue:0,currencyCode)}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">Meta 歸因營收</div><div className="mal-presentation-mini-stat-value">{fmtMoney(sponsor?sponsor.revenue:0,currencyCode)}</div></div>
             <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配 ROAS</div><div className="mal-presentation-mini-stat-value">{sponsor&&sponsor.roas!==null?Number(sponsor.roas).toFixed(2)+"x":"—"}</div></div>
             <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">業配轉單</div><div className="mal-presentation-mini-stat-value">{fmtInt(sponsor?sponsor.conversions:0)}</div></div>
           </div>:null}
           <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(chunk.length)}>
             <table className="mal-presentation-table">
-              <thead><tr><th>業配廣告</th><th>狀態</th><th>花費</th><th>營收</th><th>轉單</th><th>ROAS</th><th>判斷</th></tr></thead>
+              <thead><tr><th>業配廣告</th><th>狀態</th><th>花費</th><th>Meta 歸因營收</th><th>轉單</th><th>ROAS</th><th>判斷</th></tr></thead>
               <tbody>{chunk.map((ad,i)=>{
                 const url=presentationAdUrl(accountId,ad);
                 const roas=Number(ad.spend||0)>0?Number(ad.revenue||0)/Number(ad.spend||0):null;
@@ -5091,7 +5096,7 @@ function MonthlyPresentation({
             <div className="mal-presentation-next-group-title">近月趨勢</div>
             <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(historyRows.length)}>
               <table className="mal-presentation-table">
-                <thead><tr><th>月份</th><th>Meta 廣告費</th><th>Meta 轉單</th><th>Meta 營收</th><th>CPA</th><th>ROAS</th></tr></thead>
+                <thead><tr><th>月份</th><th>Meta 廣告費</th><th>Meta 轉單</th><th>Meta 歸因營收</th><th>CPA</th><th>ROAS</th></tr></thead>
                 <tbody>{historyRows.slice().reverse().map((r)=>{
                   const cpa=Number(r.conversions||0)>0?Number(r.spend||0)/Number(r.conversions||0):null;
                   const roas=Number(r.spend||0)>0?Number(r.revenue||0)/Number(r.spend||0):null;
@@ -5217,20 +5222,39 @@ function MonthlyPresentation({
 
 function StaticSectionTitle({ children, className = "", style, ...props }) { return (<h2 {...props} className={className} style={style}>{children}</h2>); }
 
+function SpreadsheetRevenueNote({ text = "資料來源：每日收益試算表", style = {} }) {
+  return (
+    <div style={{ fontSize: 10.5, color: "var(--ink-soft)", marginTop: 3, fontWeight: 400, lineHeight: 1.35, ...style }}>
+      {text}
+    </div>
+  );
+}
+
+function SpreadsheetRevenueHeader({ label = "營收" }) {
+  return (
+    <>
+      {label}
+      <span style={{ display: "block", fontSize: 9.5, color: "var(--ink-soft)", fontWeight: 400, lineHeight: 1.2 }}>試算表</span>
+    </>
+  );
+}
+
 function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel, prevPeriodLabel, roasTarget = 3, currencyCode, minSpend = 500, collapsible = true }) {
   const meta = buildProductBreakdown(ads || [], minSpend);
   const merged = mergeChannelBreakdown(meta.rows, meta.totalRevenue, meta.totalSpend, ledgerAgg);
-  const { grandTotalRevenue, grandTotalSpend, channelRevenueOnlyRows, rows } = merged;
+  const { grandTotalSpend } = merged;
+  // 「總營收」一律只認每日收益試算表，不再把 Meta 歸因營收混進營運營收。
+  const grandTotalRevenue = ledgerAgg && ledgerAgg.overall ? Number(ledgerAgg.overall.revenue || 0) : 0;
 
   if (grandTotalRevenue === 0 && grandTotalSpend === 0) return null; // 這期完全沒資料,不顯示整個區塊
 
   const netProfit = grandTotalRevenue - grandTotalSpend;
 
   let prevGrandTotalRevenue = null;
-  if (prevAds || prevLedgerAgg) {
-    const prevMeta = buildProductBreakdown(prevAds || [], minSpend);
-    const prevMerged = mergeChannelBreakdown(prevMeta.rows, prevMeta.totalRevenue, prevMeta.totalSpend, prevLedgerAgg);
-    if (prevMerged.grandTotalRevenue > 0 || prevMerged.grandTotalSpend > 0) prevGrandTotalRevenue = prevMerged.grandTotalRevenue;
+  if (prevLedgerAgg && prevLedgerAgg.overall) {
+    const prevRevenue = Number(prevLedgerAgg.overall.revenue || 0);
+    const prevSpend = Number(prevLedgerAgg.overall.adSpend || 0);
+    if (prevRevenue > 0 || prevSpend > 0) prevGrandTotalRevenue = prevRevenue;
   }
   const growthAmount = prevGrandTotalRevenue !== null ? grandTotalRevenue - prevGrandTotalRevenue : null;
   const growthPct = prevGrandTotalRevenue !== null && prevGrandTotalRevenue > 0 ? (growthAmount / prevGrandTotalRevenue) * 100 : null;
@@ -5242,10 +5266,13 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
   const statusColor = { 超標: "var(--blue)", 優於目標: "var(--green)", 未達標: "var(--red)" };
   const allTags = ["超出預算", "超標", "未達標", "優於目標"];
 
-  // 平台/通路清單:Meta對不到代號的所有通路(有花費的+沒花費的合在一起),依營收排序。
+  // 平台/通路營收也統一只取每日收益試算表，避免同一張表混入 Meta 歸因營收。
+  const ledgerChannelBreakdown = ledgerAgg
+    ? buildLedgerProductBreakdown(ledgerAgg)
+    : { officialSiteRows: [], externalChannelRows: [] };
   const allChannelRows = [
-    ...rows.filter((r) => r.isChannel),
-    ...channelRevenueOnlyRows,
+    ...(ledgerChannelBreakdown.officialSiteRows || []),
+    ...(ledgerChannelBreakdown.externalChannelRows || []),
   ].sort((a, b) => b.revenue - a.revenue);
   const [channelsCollapsed, setChannelsCollapsed] = useState(false);
 
@@ -5277,11 +5304,13 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
         <div className="mal-card">
           <div className="mal-card-label">總營收{periodLabel ? `(${periodLabel})` : ""}</div>
           <div className="mal-card-value">{fmtMoney(grandTotalRevenue, currencyCode)}</div>
+          <SpreadsheetRevenueNote />
         </div>
         {prevGrandTotalRevenue !== null && (
           <div className="mal-card">
             <div className="mal-card-label">上期總營收{prevPeriodLabel ? `(${prevPeriodLabel})` : ""}</div>
             <div className="mal-card-value">{fmtMoney(prevGrandTotalRevenue, currencyCode)}</div>
+            <SpreadsheetRevenueNote />
             {growthPct !== null && (
               <div style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 4 }}>
                 較上期{growthPct >= 0 ? "成長約" : "下降約"}{" "}
@@ -5324,7 +5353,7 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
             <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
               <table className="mal-table">
                 <thead>
-                  <tr><th>平台/通路</th><th>營收</th><th>廣告費</th><th>帳面利潤</th></tr>
+                  <tr><th>平台/通路</th><th><SpreadsheetRevenueHeader /></th><th>廣告費</th><th>帳面利潤</th></tr>
                 </thead>
                 <tbody>
                   {allChannelRows.map((r) => (
@@ -7089,8 +7118,9 @@ function MetaAdsLedger() {
       <>
         <div className="mal-cards" style={{ marginBottom: 18 }}>
           <div className="mal-card">
-            <div className="mal-card-label">後台實際營收</div>
+            <div className="mal-card-label">試算表實際營收</div>
             <div className="mal-card-value">{fmtMoney(totalBackendRevenue, currencyCode)}</div>
+            <SpreadsheetRevenueNote />
           </div>
           <div className="mal-card">
             <div className="mal-card-label">Meta 回報營收</div>
@@ -7122,7 +7152,7 @@ function MetaAdsLedger() {
             <thead>
               <tr>
                 <th rowSpan={2} style={{ verticalAlign: "bottom" }}>產品代號</th>
-                <th colSpan={3} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🟩 後台實際業績</th>
+                <th colSpan={3} className="mal-ledger-group-backend mal-ledger-group-label-backend" style={{ textAlign: "center" }}>🟩 試算表實際業績</th>
                 <th colSpan={2} className="mal-ledger-group-meta mal-ledger-group-label-meta" style={{ textAlign: "center" }}>🟧 Meta 回報業績</th>
                 <th colSpan={2} className="mal-ledger-group-gap" style={{ textAlign: "center" }}>落差</th>
               </tr>
@@ -7167,7 +7197,7 @@ function MetaAdsLedger() {
           </table>
         </div>
         <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "8px 0 0" }}>
-          🟩 後台實際業績 = 匯入的每日收益表(以下單日期為準,已扣退換貨);🟧 Meta 回報業績 = Meta 廣告後台回報的轉換金額(以歸因時間為準)。落差% = (Meta − 後台) ÷ 後台。
+          🟩 試算表實際業績 = 每日收益試算表(以下單日期為準,已扣退換貨);🟧 Meta 回報業績 = Meta 廣告後台回報的歸因轉換金額。落差% = (Meta − 試算表) ÷ 試算表。
         </p>
         <div className="mal-analysis">
           <div className="mal-analysis-title">基礎分析:為什麼會有落差</div>
@@ -7277,7 +7307,7 @@ function PerformanceBreakdown({ ads, currencyCode, accountId }) {
                         <div className="mal-ad-stats">
                           <div><span>廣告費</span>{fmtMoney(ad.spend, currencyCode)}</div>
                           <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
-                          <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, currencyCode) : "—"}</div>
+                          <div><span>Meta 歸因金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, currencyCode) : "—"}</div>
                           <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, currencyCode) : "—"}</div>
                           <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
                         </div>
@@ -7312,7 +7342,7 @@ function PerformanceBreakdown({ ads, currencyCode, accountId }) {
         </div>
         <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
           <table className="mal-table">
-            <thead><tr><th>行銷活動</th><th>投放中廣告數</th><th>廣告費</th><th>轉單</th><th>轉單金額</th><th>CPA</th><th>ROAS</th></tr></thead>
+            <thead><tr><th>行銷活動</th><th>投放中廣告數</th><th>廣告費</th><th>轉單</th><th>Meta 歸因金額</th><th>CPA</th><th>ROAS</th></tr></thead>
             <tbody>
               {campaignStats.map((c) => (
                 <tr key={c.name}>
@@ -8102,7 +8132,7 @@ const shopeRealDailyMap = useMemo(() => {
                             <div className="mal-ad-stats">
                               <div><span>廣告費</span>{fmtMoney(ad.spend, focusData.currency)}</div>
                               <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
-                              <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, focusData.currency) : "—"}</div>
+                              <div><span>Meta 歸因金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, focusData.currency) : "—"}</div>
                               <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, focusData.currency) : "—"}</div>
                               <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
                             </div>
@@ -8262,7 +8292,7 @@ const shopeRealDailyMap = useMemo(() => {
 
             {focusData && (
               <>
-                <p className="mal-source-note">📌 業績是一頁式的業績(以後台實際數據為準)</p>
+                <p className="mal-source-note">📌 營收／業績統一取自每日收益試算表；只有明確標示「Meta 歸因」的欄位才使用 Meta 回報金額。</p>
                 <div className="mal-combined-ai-row">
                   <button className="mal-btn mal-btn-primary" onClick={() => triggerCombinedAi(monthlyAdReportRef, monthlyPlanRef)}>
                     ⚙️ 一次自動判斷(投放成效＋月報告)
@@ -8308,7 +8338,7 @@ const shopeRealDailyMap = useMemo(() => {
                 </div>
 
                 <StaticSectionTitle className="mal-section-title">
-                  {monthLabel(focusMonth)} 一頁式正確業績(後台實際 vs Meta 回報)
+                  {monthLabel(focusMonth)} 一頁式正確業績(試算表實際 vs Meta 回報)
                 </StaticSectionTitle>
                 <LedgerVsMetaComparison
                   ads={filterAdsByStatus(focusData.ads, adStatusFilter, adSearchKeyword)}
@@ -8321,18 +8351,21 @@ const shopeRealDailyMap = useMemo(() => {
             )}
 
             <StaticSectionTitle className="mal-section-title">每月明細</StaticSectionTitle>
+            <p className="mal-source-note">營收資料來源：每日收益試算表；廣告費、轉單、CPA、ROAS 為 Meta 廣告資料。</p>
             <div className="mal-scroll-wrap" style={{ overflowX: "auto" }}>
               <table className="mal-table">
-                <thead><tr><th>月份</th><th>廣告費</th><th>轉單</th><th>轉單金額</th><th>CPA</th><th>ROAS</th><th></th></tr></thead>
+                <thead><tr><th>月份</th><th>Meta 廣告費</th><th>Meta 轉單</th><th><SpreadsheetRevenueHeader label="實際營收" /></th><th>Meta CPA</th><th>Meta ROAS</th><th></th></tr></thead>
                 <tbody>
                   {sortedKeys.slice().reverse().map((mk) => {
                     const d = enriched[mk];
+                    const ledgerMonthAgg = aggregateLedgerRange(ledgerByMonth, monthDateRange(mk).since, monthDateRange(mk).until);
+                    const spreadsheetRevenue = ledgerMonthAgg && ledgerMonthAgg.overall ? Number(ledgerMonthAgg.overall.revenue || 0) : null;
                     return (
                       <tr key={mk}>
                         <td className="mal-row-month">{monthLabel(mk)}</td>
                         <td>{fmtMoney(d.spend, d.currency)}</td>
                         <td>{fmtInt(d.conversions)}</td>
-                        <td>{d.revenue > 0 ? fmtMoney(d.revenue, d.currency) : "—"}</td>
+                        <td>{spreadsheetRevenue !== null ? fmtMoney(spreadsheetRevenue, d.currency) : "—"}</td>
                         <td>{d.cpa !== null ? fmtMoney(d.cpa, d.currency) : "—"}</td>
                         <td>{d.roas !== null ? `${d.roas.toFixed(2)}x` : "—"}</td>
                         <td><button className="mal-icon-btn" onClick={() => setConfirmDelete(mk)} title="刪除此月資料">🗑</button></td>
@@ -8440,7 +8473,7 @@ const shopeRealDailyMap = useMemo(() => {
                           {fbLibLink && <a className="mal-ad-fblink" href={fbLibLink} target="_blank" rel="noopener noreferrer">↗ 前往 FB 前台</a>}
                           {!fbLibLink && fbAdLibraryFallbackLink(derivePageIdFromAds(m.ads)) && <a className="mal-ad-fblink" href={fbAdLibraryFallbackLink(derivePageIdFromAds(m.ads))} target="_blank" rel="noopener noreferrer" title="沒有找到對應貼文,改連到廣告檔案庫查詢,不一定查得到">↗ 前往廣告檔案庫查看(備用)</a>}
                           <div><span>轉單</span>{fmtInt(ad.conversions)}</div>
-                          <div><span>轉單金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, currency) : "—"}</div>
+                          <div><span>Meta 歸因金額</span>{ad.revenue > 0 ? fmtMoney(ad.revenue, currency) : "—"}</div>
                           <div><span>CPA</span>{adCpa !== null ? fmtMoney(adCpa, currency) : "—"}</div>
                           <div><span>ROAS</span>{adRoas !== null ? `${adRoas.toFixed(2)}x` : "—"}</div>
                         </div>
@@ -8508,6 +8541,7 @@ const shopeRealDailyMap = useMemo(() => {
                       <div className="mal-card">
                         <div className="mal-card-label">🏬 全店營收</div>
                         <div className="mal-card-value">{fmtMoney(focusDayRecord.overall.revenue)}</div>
+                        <SpreadsheetRevenueNote />
                       </div>
                       <div className="mal-card">
                         <div className="mal-card-label">🏬 全店廣告費</div>
