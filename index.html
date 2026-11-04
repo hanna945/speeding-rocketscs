@@ -2379,6 +2379,26 @@ function parseLedgerSheet(matrix, year) {
   }
   const days = [];
   let totalRow = null;
+
+  const findProjectedNetProfit = (row) => {
+    const limit = Math.min(row.length, firstBlockCol);
+    let labelIndex = -1;
+    for (let k = 0; k < limit; k++) {
+      const label = (row[k] == null ? "" : String(row[k])).replace(/\s+/g, " ").trim();
+      if (label.includes("預估淨利")) { labelIndex = k; break; }
+    }
+    if (labelIndex < 0) return null;
+    let value = null;
+    for (let k = labelIndex + 1; k < limit; k++) {
+      const raw = row[k];
+      const text = raw == null ? "" : String(raw).replace(/\s+/g, " ").trim();
+      if (!text || text.includes("%")) continue;
+      const n = typeof raw === "number" ? raw : Number(text.replace(/,/g, ""));
+      if (Number.isFinite(n)) value = n;
+    }
+    return value;
+  };
+
   for (let r = 2; r < matrix.length; r++) {
     const row = matrix[r] || [];
     const dateCell = row[0];
@@ -2415,7 +2435,13 @@ function parseLedgerSheet(matrix, year) {
         };
       });
       totalRow = { overall, byCode };
-      break; // 「總結」之後是代言費、預估獲利等其他彙總列,不屬於逐日資料,停止解析
+      continue;
+    } else if (totalRow) {
+      const projectedNetProfit = findProjectedNetProfit(row);
+      if (projectedNetProfit !== null) {
+        totalRow.overall.netProfit = projectedNetProfit;
+        totalRow.overall.netProfitSource = "預估淨利";
+      }
     }
   }
   if (!days.length) return null;
@@ -2468,6 +2494,22 @@ function aggregateLedgerRange(ledgerByMonth, sinceISO, untilISO) {
       else byCode[code].hasOrderEst = false;
     });
   });
+  // 完整整月範圍改用試算表「總結」月總計；週報、單日、跨月仍維持逐日加總。
+  const monthKey = sinceISO && untilISO && sinceISO.slice(0, 7) === untilISO.slice(0, 7) ? sinceISO.slice(0, 7) : "";
+  if (monthKey) {
+    const parts = sinceISO.split("-").map(Number);
+    const lastDay = parts.length === 3 ? new Date(Date.UTC(parts[0], parts[1], 0)).getUTCDate() : 0;
+    const expectedEnd = lastDay ? `${monthKey}-${String(lastDay).padStart(2, "0")}` : "";
+    const monthRecord = parts[2] === 1 && untilISO === expectedEnd ? (ledgerByMonth || {})[monthKey] : null;
+    if (monthRecord && monthRecord.monthTotal && monthRecord.monthTotal.overall) {
+      const sourceOverall = monthRecord.monthTotal.overall;
+      overall.revenue = Number(sourceOverall.revenue || 0);
+      overall.adSpend = Number(sourceOverall.adSpend || 0);
+      overall.profit = Number(sourceOverall.profit || 0);
+      overall.netProfit = Number(sourceOverall.netProfit || 0);
+    }
+  }
+
   Object.values(byCode).forEach((v) => { v.aov = v.hasOrderEst && v.orderEst > 0 ? v.revenue / v.orderEst : null; });
   const hasAnyData = overall.revenue > 0 || overall.adSpend > 0 || Object.values(byCode).some((v) => v.revenue > 0 || v.spend > 0);
   if (!hasAnyData) return null;
@@ -5242,13 +5284,15 @@ function SpreadsheetRevenueHeader({ label = "營收" }) {
 function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel, prevPeriodLabel, roasTarget = 3, currencyCode, minSpend = 500, collapsible = true }) {
   const meta = buildProductBreakdown(ads || [], minSpend);
   const merged = mergeChannelBreakdown(meta.rows, meta.totalRevenue, meta.totalSpend, ledgerAgg);
-  const { grandTotalSpend } = merged;
-  // 「總營收」一律只認每日收益試算表，不再把 Meta 歸因營收混進營運營收。
-  const grandTotalRevenue = ledgerAgg && ledgerAgg.overall ? Number(ledgerAgg.overall.revenue || 0) : 0;
+  const { channelRevenueOnlyRows = [], rows = [] } = merged;
+  const ledgerOverall = ledgerAgg && ledgerAgg.overall ? ledgerAgg.overall : null;
+  // 營收、廣告費、淨利統一以每日收益試算表為準；沒有帳本資料才退回舊估算。
+  const grandTotalRevenue = ledgerOverall ? Number(ledgerOverall.revenue || 0) : Number(merged.grandTotalRevenue || 0);
+  const grandTotalSpend = ledgerOverall ? Number(ledgerOverall.adSpend || 0) : Number(merged.grandTotalSpend || 0);
 
   if (grandTotalRevenue === 0 && grandTotalSpend === 0) return null; // 這期完全沒資料,不顯示整個區塊
 
-  const netProfit = grandTotalRevenue - grandTotalSpend;
+  const netProfit = ledgerOverall ? Number(ledgerOverall.netProfit || 0) : grandTotalRevenue - grandTotalSpend;
 
   let prevGrandTotalRevenue = null;
   if (prevLedgerAgg && prevLedgerAgg.overall) {
@@ -5325,7 +5369,7 @@ function OverallOpsSummary({ ads, ledgerAgg, prevAds, prevLedgerAgg, periodLabel
           <div className="mal-card-value">{fmtMoney(grandTotalSpend, currencyCode)}</div>
         </div>
         <div className={`mal-card ${netProfit >= 0 ? "mal-card-highlight-good" : ""}`}>
-          <div className="mal-card-label">總淨利(扣除廣告費後)</div>
+          <div className="mal-card-label">總淨利</div>
           <div className="mal-card-value">{fmtMoney(netProfit, currencyCode)}</div>
         </div>
       </div>
