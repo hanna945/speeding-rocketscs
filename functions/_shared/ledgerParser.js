@@ -310,6 +310,26 @@ export function parseLedgerSheet(matrix, year, context = {}) {
   const adjustments = [];
   let totalRow = null;
 
+  // 「總結」後的「預估淨利」才是各品牌月報應顯示的最終淨利。
+  // 取全店區塊內、標籤右側最右邊的數字，兼容 H&J 同列有原/改兩個金額的格式。
+  const findProjectedNetProfit = (row) => {
+    const limit = Math.min(row.length, overallEnd);
+    let labelIndex = -1;
+    for (let k = overallStart; k < limit; k += 1) {
+      if (cleanText(row[k]).includes("預估淨利")) { labelIndex = k; break; }
+    }
+    if (labelIndex < 0) return null;
+    let value = null;
+    for (let k = labelIndex + 1; k < limit; k += 1) {
+      const raw = row[k];
+      const text = cleanText(raw);
+      if (!text || text.includes("%")) continue;
+      const n = typeof raw === "number" ? raw : Number(text.replace(/,/g, ""));
+      if (Number.isFinite(n)) value = n;
+    }
+    return value;
+  };
+
   const buildOverall = (row) => ({
     revenue: safeCellNumber(row, overallRevenueCol),
     adSpend: safeCellNumber(row, overallAdSpendCol),
@@ -407,7 +427,15 @@ export function parseLedgerSheet(matrix, year, context = {}) {
     }
     if (typeof dateCell === "string" && cleanText(dateCell) === "總結") {
       totalRow = { overall: buildOverall(row), byCode: buildByCode(row, false), adSources: buildAdSources(row) };
-      break;
+      continue;
+    }
+    if (totalRow) {
+      const projectedNetProfit = findProjectedNetProfit(row);
+      if (projectedNetProfit !== null) {
+        totalRow.overall.netProfit = projectedNetProfit;
+        totalRow.overall.netProfitSource = "預估淨利";
+      }
+      continue;
     }
     if (days.length) mergeAdjustmentIntoLastDay(row, dateCell);
   }
