@@ -370,10 +370,15 @@ async def refresh_metadata(
     max_age_hours: int,
 ) -> dict[str, Any]:
     old_meta = old_meta if isinstance(old_meta, dict) else {}
-    synced_at = old_meta.get("syncedAt")
-    if synced_at:
+
+    # Delivery status is refreshed several times a day and updates syncedAt. Creative image
+    # URLs are different: Meta's fbcdn thumbnail_url/image_url values are short-lived, so
+    # they need their own freshness clock. Using syncedAt here made creative metadata look
+    # "fresh forever" even while the actual CDN URLs had already expired.
+    creative_synced_at = old_meta.get("creativeSyncedAt") or old_meta.get("thumbnailBackfillAt")
+    if creative_synced_at:
         try:
-            age = datetime.now(timezone.utc) - datetime.fromisoformat(str(synced_at).replace("Z", "+00:00"))
+            age = datetime.now(timezone.utc) - datetime.fromisoformat(str(creative_synced_at).replace("Z", "+00:00"))
             if age.total_seconds() < max_age_hours * 3600:
                 return old_meta
         except Exception:
@@ -404,8 +409,11 @@ async def refresh_metadata(
         limit=500,
     )
 
+    now = datetime.now(timezone.utc).isoformat()
     return {
-        "syncedAt": datetime.now(timezone.utc).isoformat(),
+        "syncedAt": now,
+        "statusSyncedAt": now,
+        "creativeSyncedAt": now,
         "campaigns": {str(x.get("id")): x for x in campaigns if x.get("id")},
         "adsets": {str(x.get("id")): x for x in adsets if x.get("id")},
         "ads": {str(x.get("id")): x for x in ads if x.get("id")},
@@ -933,6 +941,75 @@ def apply_delivery_status_to_record(
     return out
 
 
+def apply_creative_metadata_to_record(
+    record: dict[str, Any] | None,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Replace stored short-lived Meta thumbnail URLs with the latest creative URLs."""
+    out = dict(record or {})
+    ads_meta = metadata.get("ads") or {}
+    creatives = metadata.get("creatives") or {}
+    raw_ads: list[dict[str, Any]] = []
+
+    for source in out.get("rawAds") or []:
+        if not isinstance(source, dict):
+            continue
+        row = dict(source)
+        ad_id = str(row.get("adId") or "")
+        ad_meta = ads_meta.get(ad_id) or {}
+        creative_obj = ad_meta.get("creative") if isinstance(ad_meta.get("creative"), dict) else {}
+        creative_id = str((creative_obj or {}).get("id") or row.get("creativeId") or "")
+        creative = creatives.get(creative_id) or {}
+
+        fresh_image = creative.get("thumbnail_url") or creative.get("image_url")
+        if fresh_image:
+            row["image"] = fresh_image
+        if creative_id:
+            row["creativeId"] = creative_id
+        raw_ads.append(row)
+
+    if not raw_ads:
+        return out
+
+    raw_ads.sort(key=lambda row: as_float(row.get("spend")), reverse=True)
+    ads, sponsor_ads = _group_views(raw_ads)
+    out["rawAds"] = raw_ads
+    out["ads"] = ads
+    out["sponsorAds"] = sponsor_ads
+    out["thumbnailMetadataSyncedAt"] = metadata.get("creativeSyncedAt") or metadata.get("syncedAt")
+    return out
+
+
+def _month_key_months_back(day: date, months_back: int) -> str:
+    year = day.year
+    month = day.month - months_back
+    while month <= 0:
+        month += 12
+        year -= 1
+    return f"{year:04d}-{month:02d}"
+
+
+def refresh_recent_report_thumbnails(
+    base_url: str,
+    account_id: str,
+    local_today: date,
+    metadata: dict[str, Any],
+    months: int = 6,
+) -> int:
+    """Refresh image URLs inside recent persisted month reports after creative metadata refresh."""
+    updated = 0
+    for offset in range(max(1, months)):
+        mk = _month_key_months_back(local_today, offset)
+        key = month_report_key(account_id, mk)
+        record = kv_get(base_url, key)
+        if not isinstance(record, dict):
+            continue
+        patched = apply_creative_metadata_to_record(record, metadata)
+        kv_put(base_url, key, patched)
+        updated += 1
+    return updated
+
+
 def _raw_map(record: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     if not isinstance(record, dict):
@@ -1441,12 +1518,33 @@ async def sync_brand(
     if force_backfill_days <= 0 and engine == "airbyte":
         if connector is None:
             raise RuntimeError("Airbyte connector is required for delivery-status refresh.")
+        previous_creative_synced_at = status_metadata.get("creativeSyncedAt") or status_metadata.get("thumbnailBackfillAt")
         status_metadata = await refresh_delivery_status_metadata(connector, account_id, status_metadata)
+        status_metadata = await refresh_metadata(
+            connector,
+            account_id,
+            status_metadata,
+            metadata_max_age_hours,
+        )
         status_metadata["campaigns"] = {
             **(status_metadata.get("campaigns") or {}),
             **active_campaigns,
         }
         kv_put(base_url, meta_key(account_id), status_metadata)
+
+        # When creatives were refreshed, propagate the new short-lived fbcdn URLs into the
+        # persisted month records too. Otherwise opening last month's report keeps pointing
+        # at an expired URL even though metadata already has a fresh one.
+        current_creative_synced_at = status_metadata.get("creativeSyncedAt")
+        if current_creative_synced_at and current_creative_synced_at != previous_creative_synced_at:
+            refreshed_months = refresh_recent_report_thumbnails(
+                base_url,
+                account_id,
+                local_today,
+                status_metadata,
+                months=6,
+            )
+            print(f"[{brand['name']}] refreshed thumbnail URLs in {refreshed_months} recent month report(s)")
     elif force_backfill_days <= 0:
         status_metadata = dict(status_metadata)
         status_metadata["campaigns"] = {
@@ -1512,6 +1610,7 @@ async def sync_brand(
         baseline = existing_month if isinstance(existing_month, dict) else {}
         kv_put(base_url, baseline_key, baseline)
     baseline = apply_delivery_status_to_record(baseline, status_metadata)
+    baseline = apply_creative_metadata_to_record(baseline, status_metadata)
 
     print(
         f"[{brand['name']}] TODAY ONLY {local_today}, engine={engine}, "
