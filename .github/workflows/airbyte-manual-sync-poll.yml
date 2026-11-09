@@ -1,4 +1,5 @@
 name: Airbyte Manual Sync Poll
+# queue-kick: thumbnail-repair
 
 on:
   push:
