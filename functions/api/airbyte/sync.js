@@ -1,7 +1,14 @@
 import { resolveCredential } from "../../_shared/auth.js";
 import { verifyGitHubActionsOidc } from "../../_shared/githubOidc.js";
 
-const PENDING_KEY = "airbyte-manual-sync-pending";
+const PENDING_KEYS = {
+  full: "airbyte-manual-sync-pending",
+  thumbnails: "meta-thumbnail-repair-pending",
+};
+
+function pendingKey(mode) {
+  return mode === "thumbnails" ? PENDING_KEYS.thumbnails : PENDING_KEYS.full;
+}
 const STATUS_PREFIX = "airbyte-manual-sync-status:";
 const STATUS_TTL_SECONDS = 24 * 60 * 60;
 const PENDING_TTL_SECONDS = 2 * 60 * 60;
@@ -64,16 +71,28 @@ export async function onRequestPost({ request, env }) {
     if (!requestId) return json({ ok: false, error: "missing_request_id" }, 400);
 
     if (action === "claim") {
-      const pending = await readJson(env, PENDING_KEY);
-      if (!pending || pending.requestId !== requestId) {
+      let pending = null;
+      let mode = "full";
+      for (const candidateMode of ["thumbnails", "full"]) {
+        const candidate = await readJson(env, pendingKey(candidateMode));
+        if (candidate && candidate.requestId === requestId) {
+          pending = candidate;
+          mode = candidateMode;
+          break;
+        }
+      }
+      if (!pending) {
         return json({ ok: false, error: "request_not_pending" }, 409);
       }
       const status = await writeStatus(env, requestId, {
         status: "running",
         conclusion: null,
+        mode,
         startedAt: new Date().toISOString(),
         htmlUrl: body.htmlUrl || null,
-        message: "GitHub Actions 已接手，Airbyte 準備同步",
+        message: mode === "thumbnails"
+          ? "GitHub Actions 已接手，準備修復素材縮圖"
+          : "GitHub Actions 已接手，Airbyte 準備同步",
       });
       return json({ ok: true, ...status });
     }
@@ -117,9 +136,12 @@ export async function onRequestPost({ request, env }) {
         htmlUrl: body.htmlUrl || null,
         message: body.message || (conclusion === "success" ? "全部品牌同步完成" : "同步失敗"),
       });
-      const pending = await readJson(env, PENDING_KEY);
-      if (pending && pending.requestId === requestId) {
-        await env.REPORT_KV.delete(PENDING_KEY);
+      for (const candidateMode of ["thumbnails", "full"]) {
+        const key = pendingKey(candidateMode);
+        const pending = await readJson(env, key);
+        if (pending && pending.requestId === requestId) {
+          await env.REPORT_KV.delete(key);
+        }
       }
       return json({ ok: true, ...status });
     }
@@ -137,7 +159,8 @@ export async function onRequestPost({ request, env }) {
   const requestId = normalizeRequestId(body.requestId) || ("manual-" + Date.now());
   const mode = body.mode === "thumbnails" ? "thumbnails" : "full";
 
-  const existingPending = await readJson(env, PENDING_KEY);
+  const queueKey = pendingKey(mode);
+  const existingPending = await readJson(env, queueKey);
   if (existingPending && existingPending.requestId) {
     const existingStatus = await readJson(env, statusKey(existingPending.requestId));
     const stillActive = existingStatus && existingStatus.status !== "completed";
@@ -163,7 +186,7 @@ export async function onRequestPost({ request, env }) {
     requestedBy: credential.name || "",
     mode,
   };
-  await env.REPORT_KV.put(PENDING_KEY, JSON.stringify(pending), { expirationTtl: PENDING_TTL_SECONDS });
+  await env.REPORT_KV.put(queueKey, JSON.stringify(pending), { expirationTtl: PENDING_TTL_SECONDS });
   await writeStatus(env, requestId, {
     status: "queued",
     conclusion: null,
@@ -192,33 +215,32 @@ export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
 
   if (claims && url.searchParams.get("machine") === "pending") {
-    const pending = await readJson(env, PENDING_KEY);
-    if (!pending || !pending.requestId) {
-      return json({ ok: true, pending: false });
-    }
-    const status = await readJson(env, statusKey(pending.requestId));
-    if (status && status.status === "completed") {
-      await env.REPORT_KV.delete(PENDING_KEY);
-      return json({ ok: true, pending: false });
-    }
-    if (status && status.status === "running") {
+    // Thumbnail repair is intentionally checked first so it never waits behind a full
+    // Airbyte sync request. The two modes have independent queue keys.
+    for (const mode of ["thumbnails", "full"]) {
+      const key = pendingKey(mode);
+      const pending = await readJson(env, key);
+      if (!pending || !pending.requestId) continue;
+
+      const status = await readJson(env, statusKey(pending.requestId));
+      if (status && status.status === "completed") {
+        await env.REPORT_KV.delete(key);
+        continue;
+      }
+      if (status && status.status === "running") {
+        continue;
+      }
       return json({
         ok: true,
-        pending: false,
-        active: true,
+        pending: true,
         requestId: pending.requestId,
-        status: "running",
+        requestedAt: pending.requestedAt || null,
+        requestedBy: pending.requestedBy || "",
+        status: status && status.status || "queued",
+        mode,
       });
     }
-    return json({
-      ok: true,
-      pending: true,
-      requestId: pending.requestId,
-      requestedAt: pending.requestedAt || null,
-      requestedBy: pending.requestedBy || "",
-      status: status && status.status || "queued",
-      mode: pending.mode || "full",
-    });
+    return json({ ok: true, pending: false });
   }
 
   const credential = browserCredential(request, env);
