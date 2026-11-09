@@ -941,6 +941,96 @@ def apply_delivery_status_to_record(
     return out
 
 
+def _recent_report_ad_ids(
+    base_url: str,
+    account_id: str,
+    local_today: date,
+    months: int = 6,
+) -> list[str]:
+    ids: list[str] = []
+    seen: set[str] = set()
+    for offset in range(max(1, months)):
+        mk = _month_key_months_back(local_today, offset)
+        record = kv_get(base_url, month_report_key(account_id, mk))
+        if not isinstance(record, dict):
+            continue
+        for row in record.get("rawAds") or []:
+            if not isinstance(row, dict) or not row.get("adId"):
+                continue
+            ad_id = str(row["adId"])
+            if ad_id not in seen:
+                seen.add(ad_id)
+                ids.append(ad_id)
+    return ids
+
+
+def refresh_targeted_creative_metadata(
+    account_id: str,
+    ad_ids: list[str],
+    metadata: dict[str, Any],
+    max_age_hours: int,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Refresh thumbnails only for ads actually used by recent reports.
+
+    Meta creative CDN URLs are short-lived. Querying every creative in the account made
+    central syncs unnecessarily slow, so this uses the Ads edge with an ID filter and asks
+    only for each matched ad's creative thumbnail/image URL.
+    """
+    out = dict(metadata or {})
+    wanted = list(dict.fromkeys(str(x) for x in ad_ids if x))
+    if not wanted:
+        return out
+
+    if not force:
+        synced_at = out.get("creativeSyncedAt")
+        if synced_at:
+            try:
+                age = datetime.now(timezone.utc) - datetime.fromisoformat(str(synced_at).replace("Z", "+00:00"))
+                if age.total_seconds() < max_age_hours * 3600:
+                    return out
+            except Exception:
+                pass
+
+    token = env_required("META_SYSTEM_USER_TOKEN")
+    ads_meta = dict(out.get("ads") or {})
+    creatives = dict(out.get("creatives") or {})
+    base = "https://graph.facebook.com/v19.0/act_" + account_id.removeprefix("act_") + "/ads"
+
+    for i in range(0, len(wanted), 50):
+        chunk = wanted[i:i + 50]
+        params = {
+            "fields": "id,creative{id,thumbnail_url,image_url}",
+            "filtering": json.dumps([{"field": "id", "operator": "IN", "value": chunk}], separators=(",", ":")),
+            "limit": "500",
+            "access_token": token,
+        }
+        url = base + "?" + urllib.parse.urlencode(params)
+        page = 0
+        while url and page < 3:
+            req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "speedingscs-thumbnail-refresh/1.0"})
+            with urllib.request.urlopen(req, timeout=45) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            for row in payload.get("data") or []:
+                ad_id = str(row.get("id") or "")
+                if not ad_id:
+                    continue
+                creative = row.get("creative") if isinstance(row.get("creative"), dict) else {}
+                ads_meta[ad_id] = {**(ads_meta.get(ad_id) or {}), "creative": creative}
+                creative_id = str(creative.get("id") or "")
+                if creative_id:
+                    creatives[creative_id] = {**(creatives.get(creative_id) or {}), **creative}
+            url = ((payload.get("paging") or {}).get("next")) or ""
+            page += 1
+
+    now = datetime.now(timezone.utc).isoformat()
+    out["ads"] = ads_meta
+    out["creatives"] = creatives
+    out["creativeSyncedAt"] = now
+    out["thumbnailRefreshMode"] = "targeted_recent_report_ads"
+    return out
+
+
 def apply_creative_metadata_to_record(
     record: dict[str, Any] | None,
     metadata: dict[str, Any],
@@ -1520,9 +1610,11 @@ async def sync_brand(
             raise RuntimeError("Airbyte connector is required for delivery-status refresh.")
         previous_creative_synced_at = status_metadata.get("creativeSyncedAt") or status_metadata.get("thumbnailBackfillAt")
         status_metadata = await refresh_delivery_status_metadata(connector, account_id, status_metadata)
-        status_metadata = await refresh_metadata(
-            connector,
+
+        recent_ad_ids = _recent_report_ad_ids(base_url, account_id, local_today, months=6)
+        status_metadata = refresh_targeted_creative_metadata(
             account_id,
+            recent_ad_ids,
             status_metadata,
             metadata_max_age_hours,
         )
@@ -1532,9 +1624,6 @@ async def sync_brand(
         }
         kv_put(base_url, meta_key(account_id), status_metadata)
 
-        # When creatives were refreshed, propagate the new short-lived fbcdn URLs into the
-        # persisted month records too. Otherwise opening last month's report keeps pointing
-        # at an expired URL even though metadata already has a fresh one.
         current_creative_synced_at = status_metadata.get("creativeSyncedAt")
         if current_creative_synced_at and current_creative_synced_at != previous_creative_synced_at:
             refreshed_months = refresh_recent_report_thumbnails(
@@ -1544,7 +1633,10 @@ async def sync_brand(
                 status_metadata,
                 months=6,
             )
-            print(f"[{brand['name']}] refreshed thumbnail URLs in {refreshed_months} recent month report(s)")
+            print(
+                f"[{brand['name']}] targeted thumbnail refresh: ads={len(recent_ad_ids)}, "
+                f"months={refreshed_months}"
+            )
     elif force_backfill_days <= 0:
         status_metadata = dict(status_metadata)
         status_metadata["campaigns"] = {
@@ -1628,6 +1720,29 @@ async def sync_brand(
             local_today,
             active_campaign_ids,
         )
+
+    # New ads can appear today before they exist in any persisted month report. Refresh only
+    # those IDs that still have no usable creative image in metadata.
+    if engine == "airbyte":
+        today_ad_ids = [str(row.get("ad_id")) for row in today_rows if row.get("ad_id")]
+        ads_meta = status_metadata.get("ads") or {}
+        creatives_meta = status_metadata.get("creatives") or {}
+        missing_today_ids = []
+        for ad_id in dict.fromkeys(today_ad_ids):
+            ad_meta = ads_meta.get(ad_id) or {}
+            creative_obj = ad_meta.get("creative") if isinstance(ad_meta.get("creative"), dict) else {}
+            creative_id = str((creative_obj or {}).get("id") or "")
+            creative = creatives_meta.get(creative_id) or {}
+            if not (creative.get("thumbnail_url") or creative.get("image_url")):
+                missing_today_ids.append(ad_id)
+        if missing_today_ids:
+            status_metadata = refresh_targeted_creative_metadata(
+                account_id,
+                missing_today_ids,
+                status_metadata,
+                metadata_max_age_hours,
+                force=True,
+            )
 
     # Keep only today's rows in the incremental cache. Historical days are not re-read.
     current_cache = kv_get(base_url, cache_key(account_id, month_key(local_today)))
