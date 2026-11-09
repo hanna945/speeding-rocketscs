@@ -54,7 +54,8 @@ jobs:
             }
             core.setOutput('pending', 'true');
             core.setOutput('request_id', body.requestId);
-            core.info('Pending request: ' + body.requestId);
+            core.setOutput('mode', body.mode || 'full');
+            core.info('Pending request: ' + body.requestId + ' mode=' + (body.mode || 'full'));
 
       - name: Claim request and dispatch central sync
         if: steps.pending.outputs.pending == 'true'
@@ -62,33 +63,36 @@ jobs:
         env:
           REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
           REQUEST_ID: ${{ steps.pending.outputs.request_id }}
+          REQUEST_MODE: ${{ steps.pending.outputs.mode }}
         with:
           github-token: ${{ github.token }}
           script: |
             const requestId = process.env.REQUEST_ID;
+            const mode = process.env.REQUEST_MODE === 'thumbnails' ? 'thumbnails' : 'full';
             const base = process.env.REPORT_BASE_URL.replace(/\/$/, '');
             const oidc = await core.getIDToken('speedingscs-airbyte');
 
-            // Do not claim the request until the central sync lane is actually free.
-            // Otherwise the UI says "同步中" while the dispatched workflow is merely queued
-            // behind a scheduled/push run.
-            const running = await github.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'airbyte-meta-sync.yml',
-              status: 'in_progress',
-              per_page: 1,
-            });
-            const queued = await github.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'airbyte-meta-sync.yml',
-              status: 'queued',
-              per_page: 1,
-            });
-            if ((running.data.workflow_runs || []).length || (queued.data.workflow_runs || []).length) {
-              core.info('Central Airbyte sync is busy; keep manual request queued for the next poll.');
-              return;
+            if (mode === 'full') {
+              // Full Meta sync shares one central lane. Thumbnail repair is deliberately
+              // independent and never waits for the Airbyte lane.
+              const running = await github.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'airbyte-meta-sync.yml',
+                status: 'in_progress',
+                per_page: 1,
+              });
+              const queued = await github.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'airbyte-meta-sync.yml',
+                status: 'queued',
+                per_page: 1,
+              });
+              if ((running.data.workflow_runs || []).length || (queued.data.workflow_runs || []).length) {
+                core.info('Central Airbyte sync is busy; keep full sync request queued for the next poll.');
+                return;
+              }
             }
 
             const claim = await fetch(base + '/api/airbyte/sync', {
@@ -110,19 +114,18 @@ jobs:
             }
 
             try {
+              const workflowId = mode === 'thumbnails' ? 'meta-thumbnail-repair.yml' : 'airbyte-meta-sync.yml';
+              const inputs = mode === 'thumbnails'
+                ? { request_id: requestId, brand_id: '', months: '6' }
+                : { brand_id: '', backfill_days: '0', engine: 'airbyte', request_id: requestId };
               await github.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                workflow_id: 'airbyte-meta-sync.yml',
+                workflow_id: workflowId,
                 ref: 'main',
-                inputs: {
-                  brand_id: '',
-                  backfill_days: '0',
-                  engine: 'airbyte',
-                  request_id: requestId,
-                },
+                inputs,
               });
-              core.info('Dispatched Airbyte central sync for ' + requestId);
+              core.info('Dispatched ' + workflowId + ' for ' + requestId);
             } catch (error) {
               await fetch(base + '/api/airbyte/sync', {
                 method: 'POST',
