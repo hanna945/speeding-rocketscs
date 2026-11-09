@@ -1820,16 +1820,22 @@ function renderBoldText(text) {
 // ⚠️ 這段跟 speedingscs/index.html 的 AdThumb 完全一致,兩邊要同步改。
 const IMG_PROXY_BASE = "https://shopline-proxy.hanna-104.workers.dev";
 function proxiedImg(src) {
-  if (!src) return src;
-  if (src.startsWith("data:") || src.includes("/api/img?u=")) return src;
-  if (!/fbcdn\.net|facebook\.com/.test(src)) return src;
-  return IMG_PROXY_BASE + "/api/img?u=" + encodeURIComponent(src);
+  const value = src == null ? "" : String(src).trim();
+  if (!value) return null;
+  // 舊資料偶爾會把 placeholder 字串 "img" 當成圖片網址寫進報表，先擋掉避免瀏覽器送出錯誤請求。
+  if (["img", "image", "素材"].includes(value.toLowerCase())) return null;
+  if (value.startsWith("data:") || value.includes("/api/img?u=")) return value;
+  if (!/^https?:\/\//i.test(value)) return null;
+  if (!/fbcdn\.net|facebook\.com/.test(value)) return value;
+  return IMG_PROXY_BASE + "/api/img?u=" + encodeURIComponent(value);
 }
 function AdThumb({ src, alt }) {
-  const [errored, setErrored] = useState(false);
+  // 記住「哪一個網址」失敗，而不是永久把整個元件標成失敗。
+  // 同步拿到新的 Meta thumbnail_url 後，finalSrc 改變就會自動重新嘗試載入，不必整頁重開。
+  const [erroredSrc, setErroredSrc] = useState("");
   const finalSrc = proxiedImg(src);
-  if (!finalSrc || errored) return <div className="mal-thumb mal-thumb-fallback">素材</div>;
-  return <img src={finalSrc} alt={alt || "廣告預覽"} className="mal-thumb" onError={() => setErrored(true)} />;
+  if (!finalSrc || erroredSrc === finalSrc) return <div className="mal-thumb mal-thumb-fallback">素材</div>;
+  return <img src={finalSrc} alt={alt || "廣告預覽"} className="mal-thumb" onError={() => setErroredSrc(finalSrc)} />;
 }
 
 // 統一顯示「投放中 / 已停止」狀態,若沒有這個資訊(active 是 undefined),就完全不顯示,
