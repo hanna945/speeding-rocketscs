@@ -6,6 +6,7 @@ const EXPECTED_REF = "refs/heads/main";
 const ALLOWED_WORKFLOWS = new Set([
   ".github/workflows/airbyte-meta-sync.yml",
   ".github/workflows/airbyte-manual-sync-poll.yml",
+  ".github/workflows/meta-thumbnail-repair.yml",
 ]);
 
 function decodeBase64Url(input) {
