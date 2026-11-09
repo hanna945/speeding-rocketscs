@@ -135,6 +135,7 @@ export async function onRequestPost({ request, env }) {
   let body = {};
   try { body = await request.json(); } catch {}
   const requestId = normalizeRequestId(body.requestId) || ("manual-" + Date.now());
+  const mode = body.mode === "thumbnails" ? "thumbnails" : "full";
 
   const existingPending = await readJson(env, PENDING_KEY);
   if (existingPending && existingPending.requestId) {
@@ -147,7 +148,10 @@ export async function onRequestPost({ request, env }) {
         status: existingStatus.status || "queued",
         requestId: existingPending.requestId,
         reused: true,
-        message: "已有一筆全品牌同步正在排隊或執行中",
+        mode: existingPending.mode || "full",
+        message: existingPending.mode === "thumbnails"
+          ? "已有一筆素材縮圖修復正在排隊或執行中"
+          : "已有一筆全品牌同步正在排隊或執行中",
       }, 202);
     }
   }
@@ -157,6 +161,7 @@ export async function onRequestPost({ request, env }) {
     requestId,
     requestedAt,
     requestedBy: credential.name || "",
+    mode,
   };
   await env.REPORT_KV.put(PENDING_KEY, JSON.stringify(pending), { expirationTtl: PENDING_TTL_SECONDS });
   await writeStatus(env, requestId, {
@@ -165,14 +170,20 @@ export async function onRequestPost({ request, env }) {
     requestedAt,
     requestedBy: credential.name || "",
     htmlUrl: null,
-    message: "已送出，等待 GitHub Actions 接手",
+    mode,
+    message: mode === "thumbnails"
+      ? "已送出素材縮圖修復，等待 GitHub Actions 接手"
+      : "已送出，等待 GitHub Actions 接手",
   });
 
   return json({
     ok: true,
     status: "queued",
     requestId,
-    message: "Airbyte 全品牌同步已排隊，通常會在幾分鐘內開始",
+    mode,
+    message: mode === "thumbnails"
+      ? "素材縮圖修復已排隊"
+      : "Airbyte 全品牌同步已排隊，通常會在幾分鐘內開始",
   }, 202);
 }
 
@@ -206,6 +217,7 @@ export async function onRequestGet({ request, env }) {
       requestedAt: pending.requestedAt || null,
       requestedBy: pending.requestedBy || "",
       status: status && status.status || "queued",
+      mode: pending.mode || "full",
     });
   }
 
