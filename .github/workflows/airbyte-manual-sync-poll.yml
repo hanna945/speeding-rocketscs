@@ -69,6 +69,28 @@ jobs:
             const base = process.env.REPORT_BASE_URL.replace(/\/$/, '');
             const oidc = await core.getIDToken('speedingscs-airbyte');
 
+            // Do not claim the request until the central sync lane is actually free.
+            // Otherwise the UI says "同步中" while the dispatched workflow is merely queued
+            // behind a scheduled/push run.
+            const running = await github.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'airbyte-meta-sync.yml',
+              status: 'in_progress',
+              per_page: 1,
+            });
+            const queued = await github.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'airbyte-meta-sync.yml',
+              status: 'queued',
+              per_page: 1,
+            });
+            if ((running.data.workflow_runs || []).length || (queued.data.workflow_runs || []).length) {
+              core.info('Central Airbyte sync is busy; keep manual request queued for the next poll.');
+              return;
+            }
+
             const claim = await fetch(base + '/api/airbyte/sync', {
               method: 'POST',
               headers: {
