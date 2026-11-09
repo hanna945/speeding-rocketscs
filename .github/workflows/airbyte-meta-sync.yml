@@ -78,8 +78,12 @@ jobs:
             echo "Airbyte sync is installed but dormant. Add META_SYSTEM_USER_TOKEN to activate it."
           fi
 
+      - name: Note push validation-only mode
+        if: github.event_name == 'push'
+        run: echo "Push event validates code only; Meta data sync is reserved for schedule/manual runs."
+
       - name: Install Airbyte Facebook Marketing SDK
-        if: steps.configured.outputs.ready == 'true'
+        if: steps.configured.outputs.ready == 'true' && github.event_name != 'push'
         run: python -m pip install --upgrade airbyte-agent-sdk
 
       - name: Install Meta Business SDK only for emergency fallback
@@ -88,7 +92,7 @@ jobs:
 
       - name: Sync Meta through Airbyte into existing report KV
         id: sync_meta
-        if: steps.configured.outputs.ready == 'true'
+        if: steps.configured.outputs.ready == 'true' && github.event_name != 'push'
         env:
           META_SYSTEM_USER_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
           REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
