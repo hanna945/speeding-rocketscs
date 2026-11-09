@@ -1,0 +1,86 @@
+name: Meta Thumbnail Repair
+run-name: Meta Thumbnail Repair · ${{ github.event.inputs.request_id || 'manual' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: "Request ID used by report UI"
+        required: false
+        default: ""
+      brand_id:
+        description: "Optional single Meta ad account ID"
+        required: false
+        default: ""
+      months:
+        description: "Recent months to repair"
+        required: false
+        default: "6"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: meta-thumbnail-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate thumbnail repair source
+        run: python -m py_compile tools/refresh_meta_thumbnails.py
+
+      - name: Repair Meta creative thumbnails only
+        id: repair
+        env:
+          META_SYSTEM_USER_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
+          REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
+        run: |
+          python tools/refresh_meta_thumbnails.py \
+            --request-id "${{ github.event.inputs.request_id || '' }}" \
+            --brand-id "${{ github.event.inputs.brand_id || '' }}" \
+            --months "${{ github.event.inputs.months || '6' }}"
+
+      - name: Update request status
+        if: always() && github.event.inputs.request_id != ''
+        uses: actions/github-script@v7
+        env:
+          REPORT_BASE_URL: ${{ vars.REPORT_BASE_URL || 'https://speedingscs.pages.dev' }}
+          REQUEST_ID: ${{ github.event.inputs.request_id }}
+          REPAIR_OUTCOME: ${{ steps.repair.outcome || 'skipped' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const requestId = process.env.REQUEST_ID;
+            const success = process.env.REPAIR_OUTCOME === 'success';
+            const token = await core.getIDToken('speedingscs-airbyte');
+            const base = process.env.REPORT_BASE_URL.replace(/\/$/, '');
+            const response = await fetch(base + '/api/airbyte/sync', {
+              method: 'POST',
+              headers: {
+                Authorization: 'Bearer ' + token,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                action: 'complete',
+                requestId,
+                conclusion: success ? 'success' : 'failure',
+                htmlUrl: process.env.RUN_URL,
+                message: success ? '素材縮圖修復完成' : '素材縮圖修復失敗',
+              }),
+            });
+            const body = await response.json();
+            if (!response.ok || !body.ok) {
+              core.warning('Unable to update thumbnail repair status: ' + JSON.stringify(body));
+            }
