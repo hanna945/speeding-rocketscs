@@ -5457,6 +5457,7 @@ function MetaAdsLedger() {
   const [centralTopProductsByMonth, setCentralTopProductsByMonth] = useState({});
   const [centralTopProductsLoading, setCentralTopProductsLoading] = useState(false);
   const [showApiPanel, setShowApiPanel] = useState(false);
+  const [showThumbnailPanel, setShowThumbnailPanel] = useState(false);
   // 全域節流用:記錄「最後一次真正打到 Meta Graph API」的時間戳。
   // 不管是月報表、批次、自動同步或縮圖抓取,只要是打 Meta 的請求都共用同一個時間戳,
   // 確保任兩次呼叫之間至少間隔 MIN_API_GAP_MS——即使使用者手動連續觸發抓取也一樣受限,
@@ -7667,6 +7668,96 @@ async function toggleRememberToken(checked) {
     }
   }
 
+  async function runThumbnailRepair() {
+    setApiError(null);
+    setApiNotice(null);
+    setApiLoading(true);
+    setCentralSyncRunUrl("");
+    let requestId = "thumb-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    setBatchProgress([{ id: "thumbnail-all", name: "素材縮圖修復", status: "running", message: "正在送出修復要求…" }]);
+
+    try {
+      const startRes = await fetch("/api/airbyte/sync", {
+        method: "POST",
+        headers: { ...teamKeyHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId, mode: "thumbnails" }),
+      });
+      const startJson = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startJson.ok) {
+        if (startRes.status === 401) throw new Error("部門登入已失效，請先重新登入");
+        throw new Error(startJson.message || startJson.error || ("HTTP " + startRes.status));
+      }
+
+      requestId = startJson.requestId || requestId;
+      setBatchProgress([{
+        id: "thumbnail-all",
+        name: "素材縮圖修復",
+        status: "running",
+        message: startJson.reused ? "已有縮圖修復任務進行中，接續查看…" : "已排入縮圖修復佇列…",
+      }]);
+
+      const deadline = Date.now() + 15 * 60 * 1000;
+      let found = false;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const statusRes = await fetch("/api/airbyte/sync?request_id=" + encodeURIComponent(requestId), {
+          headers: teamKeyHeaders(),
+          cache: "no-store",
+        });
+        const statusJson = await statusRes.json().catch(() => ({}));
+        if (!statusRes.ok || !statusJson.ok) continue;
+
+        if (!statusJson.found) {
+          setBatchProgress([{ id: "thumbnail-all", name: "素材縮圖修復", status: "running", message: "等待 GitHub Actions 接手…" }]);
+          continue;
+        }
+
+        found = true;
+        if (statusJson.htmlUrl) setCentralSyncRunUrl(statusJson.htmlUrl);
+        const detailedRows = airbyteProgressRows(statusJson);
+        if (statusJson.status !== "completed") {
+          setBatchProgress(detailedRows || [{
+            id: "thumbnail-all",
+            name: "素材縮圖修復",
+            status: "running",
+            message: statusJson.status === "queued" ? "排隊中…" : "只修復縮圖中…",
+          }]);
+          continue;
+        }
+
+        if (statusJson.conclusion === "success") {
+          setBatchProgress(airbyteProgressRows(statusJson, "done") || [{
+            id: "thumbnail-all",
+            name: "素材縮圖修復",
+            status: "done",
+            message: "全部品牌縮圖修復完成",
+          }]);
+          setApiNotice("素材縮圖修復完成。沒有重抓廣告成效，也沒有重算 CPA / ROAS。");
+          await loadAll(activeBrandId);
+        } else {
+          setBatchProgress(airbyteProgressRows(statusJson, "error") || [{
+            id: "thumbnail-all",
+            name: "素材縮圖修復",
+            status: "error",
+            message: "縮圖修復失敗",
+          }]);
+          setApiError("素材縮圖修復失敗，請查看 GitHub 執行紀錄。");
+        }
+        setApiLoading(false);
+        return;
+      }
+
+      setApiLoading(false);
+      setApiNotice(found
+        ? "縮圖修復仍在執行；可先關閉視窗，完成後重新整理即可。"
+        : "縮圖修復要求已送出，等待 GitHub Actions 接手。");
+    } catch (e) {
+      setApiLoading(false);
+      setBatchProgress([{ id: "thumbnail-all", name: "素材縮圖修復", status: "error", message: e.message || String(e) }]);
+      setApiError("無法啟動縮圖修復：" + (e.message || String(e)));
+    }
+  }
+
   const sortedKeys = useMemo(() => Object.keys(months).sort(), [months]);
   const enriched = useMemo(() => { const out = {}; for (const mk of sortedKeys) out[mk] = deriveMetrics(months[mk]); return out; }, [months, sortedKeys]);
   const chartData = useMemo(() => sortedKeys.map((mk) => ({
@@ -7856,6 +7947,7 @@ const shopeRealDailyMap = useMemo(() => {
         <div className="mal-header-actions">
           <div className="mal-header-actions-primary">
             <button className="mal-btn mal-btn-primary" onClick={() => setShowApiPanel(true)}><span className="mal-btn-emoji">🔄</span> 立即同步 Meta</button>
+            <button className="mal-btn" onClick={() => setShowThumbnailPanel(true)}><span className="mal-btn-emoji">🖼</span> 修復素材縮圖</button>
             {!HAS_SHARED_STORAGE && (
               <button type="button" className="mal-btn" onClick={openDepartmentSwitcher} title="切換登入部門">
                 {cloudStatus === "connected"
@@ -8927,6 +9019,59 @@ const shopeRealDailyMap = useMemo(() => {
                 onClick={runCentralAirbyteSync}
               >
                 {apiLoading ? "同步中…" : "開始全品牌同步"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showThumbnailPanel && (
+        <div className="mal-modal-overlay">
+          <div className="mal-modal mal-modal-small">
+            <h3>🖼 修復素材縮圖</h3>
+            <p className="mal-modal-sub">
+              只重新取得報表裡既有廣告的 Meta 素材縮圖，不會重新同步廣告成效，也不會重算 CPA、ROAS、營收或歸因。
+            </p>
+
+            <div style={{ border:"1px solid var(--rule)", borderRadius:14, padding:"14px 16px", background:"var(--paper-soft)", marginBottom:14 }}>
+              <div style={{ fontSize:13.5, fontWeight:700, marginBottom:7 }}>輕量修復模式</div>
+              <div style={{ fontSize:12.5, lineHeight:1.7, color:"var(--ink-secondary)" }}>
+                只抓最近 6 個月報表中實際出現的廣告 creative 圖片網址。<br/>
+                這條流程有自己的佇列，不需要等待完整 Airbyte 同步完成。
+              </div>
+            </div>
+
+            {batchProgress && (
+              <div className="mal-field">
+                <label>修復狀態</label>
+                <div style={{ border:"1px solid var(--rule)", borderRadius:10, padding:"8px 12px", maxHeight:280, overflowY:"auto" }}>
+                  {batchProgress.map((p) => (
+                    <div key={p.id} style={{ display:"flex", justifyContent:"space-between", gap:12, fontSize:p.summary ? 13 : 12.5, fontWeight:p.summary ? 700 : 400, padding:"7px 0" }}>
+                      <span style={{ minWidth:0 }}>{p.name}</span>
+                      <span style={{ textAlign:"right", maxWidth:"62%", color:p.status === "error" ? "var(--red)" : p.status === "done" ? "var(--green)" : "var(--ink-soft)" }}>
+                        {p.status === "waiting" && "○ " + (p.message || "等待中")}
+                        {p.status === "running" && "⏳ " + (p.message || "修復中…")}
+                        {p.status === "done" && "✓ " + (p.message || "已完成")}
+                        {p.status === "error" && "✗ " + (p.message || "失敗")}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {apiError && <div className="mal-error">⚠ {apiError}</div>}
+            {apiNotice && <div className="mal-notice">✓ {apiNotice}</div>}
+            {centralSyncRunUrl && (
+              <p style={{ fontSize:11.5, color:"var(--ink-soft)", lineHeight:1.5, marginTop:8 }}>
+                <a href={centralSyncRunUrl} target="_blank" rel="noopener noreferrer" style={{ color:"var(--brown)", fontWeight:700 }}>↗ 查看縮圖修復執行紀錄</a>
+              </p>
+            )}
+
+            <div className="mal-modal-actions">
+              <button className="mal-btn" onClick={() => setShowThumbnailPanel(false)}>關閉</button>
+              <button className="mal-btn mal-btn-primary" disabled={apiLoading} onClick={runThumbnailRepair}>
+                {apiLoading ? "修復中…" : "開始修復縮圖"}
               </button>
             </div>
           </div>
