@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>CLIP self test</title></head>
+<body>
+<pre id="out">starting</pre>
+<script type="module">
+const out=document.getElementById('out');
+const log=(x)=>{out.textContent += "\n"+x;};
+try{
+  log("importing");
+  const { pipeline } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2");
+  log("import ok");
+  const classifier = await pipeline("zero-shot-image-classification","Xenova/clip-vit-base-patch32");
+  log("model ok");
+  const image="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/tiger.jpg";
+  const result=await classifier(image,["tiger","horse","dog"]);
+  log("result="+JSON.stringify(result));
+  if(result && result[0] && result[0].label==="tiger") {
+    document.body.dataset.status="pass";
+    log("PASS");
+  } else {
+    document.body.dataset.status="fail";
+    log("FAIL_WRONG_RESULT");
+  }
+}catch(e){
+  document.body.dataset.status="fail";
+  log("ERROR="+(e&&e.stack?e.stack:String(e)));
+}
+</script>
+</body>
+</html>
