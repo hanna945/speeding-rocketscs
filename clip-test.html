@@ -12,7 +12,7 @@ try{
   log("import ok");
   const classifier = await pipeline("zero-shot-image-classification","Xenova/clip-vit-base-patch32");
   log("model ok");
-  const image="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/tiger.jpg";
+  const raw="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/tiger.jpg";\n  const image="/api/material-image?u="+encodeURIComponent(raw);
   const result=await classifier(image,["tiger","horse","dog"]);
   log("result="+JSON.stringify(result));
   if(result && result[0] && result[0].label==="tiger") {
