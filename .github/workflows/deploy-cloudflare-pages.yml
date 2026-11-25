@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "index.html"
+      - "index.html"\n      - "clip-test.html"
       - "manifest.json"
       - "_routes.json"
       - "wrangler.toml"
