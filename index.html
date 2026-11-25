@@ -2788,6 +2788,84 @@ function proxiedImg(src) {
   if (!/fbcdn\.net|facebook\.com/.test(value)) return value;
   return IMG_PROXY_BASE + "/api/img?u=" + encodeURIComponent(value);
 }
+
+const MATERIAL_CLIP_MODEL = "Xenova/clip-vit-base-patch32";
+const MATERIAL_CLIP_LABELS = [
+  { label:"a fashion portrait with a person as the main subject", category:"人像素材" },
+  { label:"a lifestyle scene showing a person using or wearing a product in a real setting", category:"情境素材" },
+  { label:"a product-only photo or close-up showing the product or material details", category:"產品素材" },
+  { label:"a person demonstrating, testing, comparing, or explaining a product", category:"口播／實測" },
+  { label:"an influencer testimonial or user-generated social media style product post", category:"UGC／KOC／業配" },
+  { label:"a promotional banner with large text, price, discount, sale, or special offer", category:"圖文／促銷" },
+];
+let materialClipPipelinePromise = null;
+
+async function getMaterialClipPipeline() {
+  if (!materialClipPipelinePromise) {
+    materialClipPipelinePromise = (async () => {
+      const mod = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm");
+      if (mod.env) {
+        mod.env.allowLocalModels = false;
+        mod.env.useBrowserCache = true;
+      }
+      const options = navigator.gpu ? { device:"webgpu" } : {};
+      try {
+        return await mod.pipeline("zero-shot-image-classification", MATERIAL_CLIP_MODEL, options);
+      } catch (e) {
+        if (!navigator.gpu) throw e;
+        return await mod.pipeline("zero-shot-image-classification", MATERIAL_CLIP_MODEL);
+      }
+    })();
+  }
+  return materialClipPipelinePromise;
+}
+
+function materialNameFallback(ad) {
+  const text = [ad && ad.name, ad && ad.campaign, ad && ad.adSet].filter(Boolean).join(" ").toLowerCase();
+  const rules = [
+    { re:/(業配|koc|kol|ugc|網紅|團媽|開箱分享|合作)/i, category:"UGC／KOC／業配", reason:"名稱含業配／UGC關鍵字" },
+    { re:/(實測|測試|防水|吸水|保暖測試|耐磨|拉扯|剪開|比較|挑戰|口播|直播精華|講解)/i, category:"口播／實測", reason:"名稱含實測／口播關鍵字" },
+    { re:/(雙11|雙十一|雙12|雙十二|618|優惠|特價|限時|折扣|滿額|組合|買一送|bn|banner|促銷|活動)/i, category:"圖文／促銷", reason:"名稱含促銷關鍵字" },
+    { re:/(情境|生活感|戶外|旅遊|居家|雨天|通勤|上班|出遊|穿搭場景|日常)/i, category:"情境素材", reason:"名稱含情境關鍵字" },
+    { re:/(產品照|商品照|細節|材質|特寫|平拍|靜物)/i, category:"產品素材", reason:"名稱含產品特寫關鍵字" },
+    { re:/(模特|model|人像|穿搭|實穿|上身)/i, category:"人像素材", reason:"名稱含人像／穿搭關鍵字" },
+  ];
+  const hit = rules.find((r)=>r.re.test(text));
+  return hit ? { category:hit.category, confidence:0.58, reason:hit.reason, source:"name_rule_v1" } : null;
+}
+
+async function classifyMaterialLocally(ad, classifier) {
+  const strongName = materialNameFallback(ad);
+  if (strongName && strongName.category === "UGC／KOC／業配") return strongName;
+
+  const image = proxiedImg(ad && ad.image);
+  if (image && classifier) {
+    try {
+      const labels = MATERIAL_CLIP_LABELS.map((x)=>x.label);
+      const output = await classifier(image, labels);
+      const rows = Array.isArray(output) ? output : [];
+      const scored = rows.map((row)=>({
+        category:(MATERIAL_CLIP_LABELS.find((x)=>x.label===row.label)||{}).category || "無法判斷",
+        score:Number(row.score || 0),
+      })).sort((a,b)=>b.score-a.score);
+      const top = scored[0];
+      const second = scored[1];
+      const margin = top ? top.score - Number(second && second.score || 0) : 0;
+      if (top && (top.score >= 0.28 || margin >= 0.055)) {
+        return {
+          category:top.category,
+          confidence:top.score,
+          reason:"本機CLIP依縮圖判斷",
+          source:"local_clip_v1",
+        };
+      }
+    } catch {}
+  }
+
+  if (strongName) return strongName;
+  return { category:"無法判斷", confidence:0, reason:image ? "縮圖判斷信心不足" : "沒有可用縮圖", source:"fallback_v1" };
+}
+
 function AdThumb({ src, alt }) {
   // 記住「哪一個網址」失敗，而不是永久把整個元件標成失敗。
   // 同步拿到新的 Meta thumbnail_url 後，finalSrc 改變就會自動重新嘗試載入，不必整頁重開。
@@ -4638,13 +4716,13 @@ function MonthlyPresentation({
   const rawAds = Array.isArray(safeRecord.rawAds) ? safeRecord.rawAds : [];
   const accountId = safeRecord.accountId || "";
   const nextMonthKey = presentationNextMonthKey(monthKey);
-  const [materialClassState, setMaterialClassState] = useState({ loading:false, byAd:{}, error:"" });
+  const [materialClassState, setMaterialClassState] = useState({ loading:false, byAd:{}, error:"", progress:"" });
 
   useEffect(() => {
     let cancelled = false;
     async function loadMaterialClasses() {
       if (!brandId || !monthKey || !rawAds.length) {
-        if (!cancelled) setMaterialClassState({ loading:false, byAd:{}, error:"" });
+        if (!cancelled) setMaterialClassState({ loading:false, byAd:{}, error:"", progress:"" });
         return;
       }
       const key = MATERIAL_CLASS_PREFIX + brandId + "::" + monthKey;
@@ -4658,46 +4736,63 @@ function MonthlyPresentation({
       } catch {}
 
       const eligible = rawAds.filter((ad) => ad && ad.adId && (Number(ad.spend||0) > 0 || Number(ad.revenue||0) > 0));
-      const missing = eligible.filter((ad) => !byAd[String(ad.adId)]);
+      const missing = eligible.filter((ad) => {
+        const row = byAd[String(ad.adId)];
+        return !row || !row.category || row.category === "無法判斷";
+      });
       if (!missing.length) {
-        if (!cancelled) setMaterialClassState({ loading:false, byAd, error:"" });
+        if (!cancelled) setMaterialClassState({ loading:false, byAd, error:"", progress:"" });
         return;
       }
 
-      if (!cancelled) setMaterialClassState({ loading:true, byAd, error:"" });
+      if (!cancelled) setMaterialClassState({ loading:true, byAd:{...byAd}, error:"", progress:"載入免費本機 CLIP 模型…" });
+
+      let classifier = null;
+      let modelError = "";
       try {
-        const res = await fetch("/api/ai/material-classify", {
-          method:"POST",
-          headers:{ "Content-Type":"application/json", ...teamKeyHeaders() },
-          body:JSON.stringify({
-            items:missing.map((ad)=>({
-              adId:String(ad.adId),
-              name:ad.name || "",
-              campaign:ad.campaign || "",
-              image:ad.image || "",
-            }))
-          })
-        });
-        const payload = await res.json().catch(()=>null);
-        if (!res.ok || !payload) throw new Error((payload && payload.error) || ("HTTP " + res.status));
-        (payload.results || []).forEach((row) => {
-          if (!row || !row.adId) return;
-          byAd[String(row.adId)] = {
-            category:row.category || "無法判斷",
-            confidence:Number(row.confidence || 0),
-            reason:row.reason || "",
-          };
-        });
-        if (!cancelled) setMaterialClassState({ loading:false, byAd:{...byAd}, error:"" });
-        try {
-          await storage.set(key, JSON.stringify({
-            version:1,
-            updatedAt:new Date().toISOString(),
-            byAd,
-          }));
-        } catch {}
+        classifier = await getMaterialClipPipeline();
       } catch (e) {
-        if (!cancelled) setMaterialClassState({ loading:false, byAd:{...byAd}, error:e.message || "素材分類失敗" });
+        modelError = e && e.message ? e.message : "本機模型載入失敗";
+      }
+
+      for (let idx=0; idx<missing.length; idx++) {
+        if (cancelled) return;
+        const ad = missing[idx];
+        if (!cancelled) {
+          setMaterialClassState({
+            loading:true,
+            byAd:{...byAd},
+            error:modelError,
+            progress:"辨識縮圖 " + (idx+1) + " / " + missing.length,
+          });
+        }
+
+        let result;
+        if (classifier) result = await classifyMaterialLocally(ad, classifier);
+        else result = materialNameFallback(ad) || { category:"無法判斷", confidence:0, reason:"本機模型暫時無法載入", source:"fallback_v1" };
+
+        byAd[String(ad.adId)] = result;
+
+        if ((idx + 1) % 5 === 0 || idx === missing.length - 1) {
+          try {
+            await storage.set(key, JSON.stringify({
+              version:2,
+              engine:"transformersjs_clip",
+              model:MATERIAL_CLIP_MODEL,
+              updatedAt:new Date().toISOString(),
+              byAd,
+            }));
+          } catch {}
+        }
+      }
+
+      if (!cancelled) {
+        setMaterialClassState({
+          loading:false,
+          byAd:{...byAd},
+          error:modelError,
+          progress:"",
+        });
       }
     }
     loadMaterialClasses();
@@ -5247,7 +5342,7 @@ function MonthlyPresentation({
           <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">納入素材</div><div className="mal-presentation-mini-stat-value">{materialTotals.ads}</div></div>
           <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">素材總花費</div><div className="mal-presentation-mini-stat-value">{fmtMoney(materialTotals.spend,currencyCode)}</div></div>
           <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">素材轉單</div><div className="mal-presentation-mini-stat-value">{fmtInt(materialTotals.conversions)}</div></div>
-          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">分類狀態</div><div className="mal-presentation-mini-stat-value" style={{fontSize:18}}>{materialClassState.loading?"辨識中":materialClassState.error?"部分待判斷":"已完成"}</div></div>
+          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">分類狀態</div><div className="mal-presentation-mini-stat-value" style={{fontSize:18}}>{materialClassState.loading?(materialClassState.progress || "辨識中"):(materialClassState.error?"本機備援":"已完成")}</div></div>
         </div>
         <div className="mal-material-mix-layout">
           <div className="mal-material-pie-panel">
@@ -5288,10 +5383,10 @@ function MonthlyPresentation({
         </div>
         <p className="mal-presentation-section-note" style={{marginTop:12}}>
           {materialClassState.loading
-            ? "正在依縮圖辨識素材類型；尚未完成的素材暫列「無法判斷」。"
+            ? "正在瀏覽器本機用免費 CLIP 模型依縮圖辨識；第一次使用會先下載並快取模型。"
             : materialClassState.error
-            ? "部分素材辨識失敗，已保留既有分類，其餘暫列「無法判斷」："+materialClassState.error
-            : "素材分類會快取到該品牌／月份，不會因每日 Meta 同步而重新洗掉歷史分類。"}
+            ? "本機 CLIP 暫時無法載入的素材已改用廣告名稱／Campaign 規則備援，不會再呼叫付費 OpenAI API。"
+            : "素材分類由瀏覽器本機 CLIP 完成並快取到品牌／月份，不需要 OpenAI API credits。"}
         </p>
       </div>
     )
