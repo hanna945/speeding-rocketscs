@@ -409,15 +409,29 @@ async def refresh_metadata(
         limit=500,
     )
 
+    def merge_rows(old_rows: Any, fresh_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        current = old_rows if isinstance(old_rows, dict) else {}
+        out = {str(key): dict(value) for key, value in current.items() if isinstance(value, dict)}
+        for row in fresh_rows:
+            row_id = str(row.get("id") or "")
+            if not row_id:
+                continue
+            out[row_id] = {**out.get(row_id, {}), **row}
+        return out
+
     now = datetime.now(timezone.utc).isoformat()
     return {
+        **old_meta,
         "syncedAt": now,
         "statusSyncedAt": now,
         "creativeSyncedAt": now,
-        "campaigns": {str(x.get("id")): x for x in campaigns if x.get("id")},
-        "adsets": {str(x.get("id")): x for x in adsets if x.get("id")},
-        "ads": {str(x.get("id")): x for x in ads if x.get("id")},
-        "creatives": {str(x.get("id")): x for x in creatives if x.get("id")},
+        # Never replace historical metadata with Meta's current visible list.
+        # Ads/campaigns that have been deleted, archived or are temporarily absent
+        # must stay available to old month reports.
+        "campaigns": merge_rows(old_meta.get("campaigns"), campaigns),
+        "adsets": merge_rows(old_meta.get("adsets"), adsets),
+        "ads": merge_rows(old_meta.get("ads"), ads),
+        "creatives": merge_rows(old_meta.get("creatives"), creatives),
     }
 
 
@@ -1647,9 +1661,12 @@ async def sync_brand(
     if force_backfill_days > 0:
         # Manual recovery mode: explicitly requested historical backfill.
         query_since = max(current_month_start, local_today - timedelta(days=force_backfill_days - 1))
-        print(f"[{brand['name']}] MANUAL BACKFILL {query_since} -> {local_today}, active campaigns only")
+        print(f"[{brand['name']}] MANUAL BACKFILL {query_since} -> {local_today}, all historical ads with insights")
+        # Historical recovery must NOT be filtered by today's ACTIVE campaigns.
+        # A paused/archived/deleted ad can still have valid spend/conversions in the
+        # requested dates and must remain in the month report forever.
         rows = await fetch_daily_insights(
-            connector, account_id, query_since, local_today, active_campaign_ids
+            connector, account_id, query_since, local_today, None
         )
         caches = {
             month_key(local_today): kv_get(base_url, cache_key(account_id, month_key(local_today)))
@@ -1670,7 +1687,8 @@ async def sync_brand(
             current_month_start, local_today, relax_threshold=False,
         )
         record["activeCampaigns"] = len(active_campaign_ids)
-        record["syncMode"] = "manual_backfill_active_only"
+        record["syncMode"] = "manual_backfill_all_historical_ads"
+        record["historyRetentionPolicy"] = "append_or_update_never_delete_missing_ads"
         kv_put(base_url, month_report_key(account_id, month_key(local_today)), record)
         print(f"[{brand['name']}] backfill done: active campaigns={len(active_campaign_ids)}, spend={record['spend']:.2f}")
         return
@@ -1791,6 +1809,7 @@ async def sync_brand(
     month_record["source"] = "airbyte" if engine == "airbyte" else "meta_sdk_fallback"
     month_record["syncEngine"] = engine
     month_record["syncMode"] = f"today_active_only_{engine}"
+    month_record["historyRetentionPolicy"] = "append_or_update_never_delete_missing_ads"
     kv_put(base_url, month_key_value, month_record)
 
     print(
