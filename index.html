@@ -5057,6 +5057,33 @@ function MonthlyPresentation({
     conversions:materialRows.reduce((sum,r)=>sum+Number(r.conversions||0),0),
   }), [materialRows]);
 
+  const materialDetailGroups = useMemo(() => {
+    const order = ["UGC／KOC／業配","產品素材","口播／實測","圖文／促銷","情境素材","人像素材","無法判斷"];
+    const groups = {};
+    rawAds
+      .filter((ad)=>ad && ad.adId && (Number(ad.spend||0)>0 || Number(ad.revenue||0)>0))
+      .forEach((ad)=>{
+        const cls = materialClassState.byAd[String(ad.adId)];
+        const category = cls && cls.category ? cls.category : "無法判斷";
+        if (!groups[category]) groups[category] = [];
+        groups[category].push({
+          ...ad,
+          materialCategory:category,
+          materialConfidence:cls ? Number(cls.confidence||0) : 0,
+          materialReason:cls ? String(cls.reason||"") : "",
+          roasCalc:Number(ad.spend||0)>0 ? Number(ad.revenue||0)/Number(ad.spend||0) : null,
+          cpaCalc:Number(ad.conversions||0)>0 ? Number(ad.spend||0)/Number(ad.conversions||0) : null,
+        });
+      });
+    return order
+      .filter((category)=>groups[category] && groups[category].length)
+      .map((category)=>({
+        category,
+        label:category==="無法判斷" ? "待分類素材" : category,
+        ads:groups[category].sort((a,b)=>Number(b.spend||0)-Number(a.spend||0)),
+      }));
+  }, [rawAds, materialClassState.byAd]);
+
   const materialPalette = ["#2F6BFF","#16A085","#F59E0B","#8B5CF6","#EC4899","#64748B","#CBD5E1"];
   const materialChartRows = useMemo(
     () => materialRows.map((r,i)=>({ ...r, color:materialPalette[i % materialPalette.length] })),
@@ -5332,6 +5359,23 @@ function MonthlyPresentation({
     return out;
   }, [sponsorAds]);
 
+  const materialDetailPages = useMemo(() => {
+    const pages=[];
+    materialDetailGroups.forEach((group)=>{
+      const chunks=[];
+      for(let i=0;i<group.ads.length;i+=8) chunks.push(group.ads.slice(i,i+8));
+      chunks.forEach((ads,idx)=>pages.push({
+        category:group.category,
+        label:group.label,
+        pageIndex:idx,
+        pageCount:chunks.length,
+        totalCount:group.ads.length,
+        ads,
+      }));
+    });
+    return pages;
+  }, [materialDetailGroups]);
+
 
   const slides=[];
 
@@ -5505,6 +5549,55 @@ function MonthlyPresentation({
         </p>
       </div>
     )
+  });
+
+  materialDetailPages.forEach((page,pageIdx)=>{
+    const categoryTotal = materialDetailGroups.find((g)=>g.category===page.category);
+    const totalSpend = categoryTotal ? categoryTotal.ads.reduce((sum,ad)=>sum+Number(ad.spend||0),0) : 0;
+    const totalRevenue = categoryTotal ? categoryTotal.ads.reduce((sum,ad)=>sum+Number(ad.revenue||0),0) : 0;
+    const totalConversions = categoryTotal ? categoryTotal.ads.reduce((sum,ad)=>sum+Number(ad.conversions||0),0) : 0;
+    const categoryRoas = totalSpend>0 ? totalRevenue/totalSpend : null;
+    slides.push({
+      key:"material-detail-"+page.category+"-"+page.pageIndex,
+      node:(
+        <div className="mal-presentation-slide">
+          <PresentationSectionHead
+            title={page.label+"成效"+(page.pageCount>1?" "+(page.pageIndex+1)+"/"+page.pageCount:"")}
+            subtitle={page.pageIndex===0
+              ? "同一素材分類內依花費由高到低排序，直接比較每支素材的花費、轉單、CPA 與 ROAS。"
+              : page.label+"續頁｜沿用同一分類與同一月份資料口徑。"}
+          />
+          {page.pageIndex===0?<div className="mal-sponsor-kpis">
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">分類素材數</div><div className="mal-presentation-mini-stat-value">{page.totalCount}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">分類花費</div><div className="mal-presentation-mini-stat-value">{fmtMoney(totalSpend,currencyCode)}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">分類轉單</div><div className="mal-presentation-mini-stat-value">{fmtInt(totalConversions)}</div></div>
+            <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">分類 ROAS</div><div className="mal-presentation-mini-stat-value">{categoryRoas!==null?categoryRoas.toFixed(2)+"x":"—"}</div></div>
+          </div>:null}
+          <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(page.ads.length)}>
+            <table className="mal-presentation-table">
+              <thead><tr><th>素材</th><th>狀態</th><th>花費</th><th>Meta 歸因營收</th><th>轉單</th><th>CPA</th><th>ROAS</th><th>判斷</th></tr></thead>
+              <tbody>{page.ads.map((ad,i)=>{
+                const url=presentationAdUrl(accountId,ad);
+                const j=sponsorDecision(ad);
+                return <tr key={ad.adId||ad.name||i}>
+                  <td>{url?<a className="mal-presentation-ad-link" href={url} target="_blank" rel="noopener noreferrer">{ad.name||ad.campaign||page.label} ↗</a>:(ad.name||ad.campaign||page.label)}</td>
+                  <td><PresentationAdStatusBadge ad={ad} /></td>
+                  <td className="num">{fmtMoney(ad.spend||0,currencyCode)}</td>
+                  <td className="num">{fmtMoney(ad.revenue||0,currencyCode)}</td>
+                  <td className="num">{fmtInt(ad.conversions||0)}</td>
+                  <td className="num">{ad.cpaCalc!==null?fmtMoney(ad.cpaCalc,currencyCode):"—"}</td>
+                  <td className="num">{ad.roasCalc!==null?ad.roasCalc.toFixed(2)+"x":"—"}</td>
+                  <td className="mal-sponsor-row-judgment"><span className={"mal-campaign-spend-verdict "+j.tone}>{j.text}</span></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+          {page.category==="無法判斷" && page.pageIndex===0
+            ? <p className="mal-presentation-section-note" style={{marginTop:10}}>這些素材尚未完成縮圖分類，因此先獨立保留，不會混入其他類型的成效。</p>
+            : null}
+        </div>
+      )
+    });
   });
 
   slides.push({
