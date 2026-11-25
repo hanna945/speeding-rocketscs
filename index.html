@@ -2803,7 +2803,7 @@ let materialClipPipelinePromise = null;
 async function getMaterialClipPipeline() {
   if (!materialClipPipelinePromise) {
     materialClipPipelinePromise = (async () => {
-      const mod = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm");
+      const mod = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2");
       if (mod.env) {
         mod.env.allowLocalModels = false;
         mod.env.useBrowserCache = true;
@@ -2839,10 +2839,14 @@ async function classifyMaterialLocally(ad, classifier) {
   if (strongName && strongName.category === "UGC／KOC／業配") return strongName;
 
   const image = proxiedImg(ad && ad.image);
+  let clipError = "";
   if (image && classifier) {
     try {
+      const clipImage = image.startsWith("data:")
+        ? image
+        : "/api/material-image?u=" + encodeURIComponent(image);
       const labels = MATERIAL_CLIP_LABELS.map((x)=>x.label);
-      const output = await classifier(image, labels);
+      const output = await classifier(clipImage, labels);
       const rows = Array.isArray(output) ? output : [];
       const scored = rows.map((row)=>({
         category:(MATERIAL_CLIP_LABELS.find((x)=>x.label===row.label)||{}).category || "無法判斷",
@@ -2851,19 +2855,27 @@ async function classifyMaterialLocally(ad, classifier) {
       const top = scored[0];
       const second = scored[1];
       const margin = top ? top.score - Number(second && second.score || 0) : 0;
-      if (top && (top.score >= 0.28 || margin >= 0.055)) {
+      if (top && (top.score >= 0.22 || margin >= 0.04)) {
         return {
           category:top.category,
           confidence:top.score,
           reason:"本機CLIP依縮圖判斷",
-          source:"local_clip_v1",
+          source:"local_clip_v2",
         };
       }
-    } catch {}
+      clipError = "CLIP信心不足";
+    } catch (e) {
+      clipError = e && e.message ? e.message : String(e);
+    }
   }
 
-  if (strongName) return strongName;
-  return { category:"無法判斷", confidence:0, reason:image ? "縮圖判斷信心不足" : "沒有可用縮圖", source:"fallback_v1" };
+  if (strongName) return { ...strongName, reason:strongName.reason + (clipError ? "；CLIP：" + clipError.slice(0,80) : "") };
+  return {
+    category:"無法判斷",
+    confidence:0,
+    reason:image ? (clipError || "縮圖判斷信心不足") : "沒有可用縮圖",
+    source:"fallback_v2"
+  };
 }
 
 function AdThumb({ src, alt }) {
@@ -4773,6 +4785,10 @@ function MonthlyPresentation({
 
         byAd[String(ad.adId)] = result;
 
+        if (result && result.category === "無法判斷") {
+          console.warn("[material-classify]", ad.adId, result.reason || "unknown");
+        }
+
         if ((idx + 1) % 5 === 0 || idx === missing.length - 1) {
           try {
             await storage.set(key, JSON.stringify({
@@ -4787,10 +4803,12 @@ function MonthlyPresentation({
       }
 
       if (!cancelled) {
+        const unresolved = Object.values(byAd).filter((x)=>x && x.category==="無法判斷");
+        const firstReason = unresolved[0] && unresolved[0].reason ? String(unresolved[0].reason) : "";
         setMaterialClassState({
           loading:false,
           byAd:{...byAd},
-          error:modelError,
+          error:modelError || (unresolved.length ? ("仍有 " + unresolved.length + " 支無法判斷" + (firstReason ? "：" + firstReason.slice(0,120) : "")) : ""),
           progress:"",
         });
       }
