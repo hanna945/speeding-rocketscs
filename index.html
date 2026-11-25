@@ -4560,7 +4560,7 @@ function MonthlyPresentation({
       try {
         const res = await fetch("/api/ai/material-classify", {
           method:"POST",
-          headers:{ "Content-Type":"application/json" },
+          headers:{ "Content-Type":"application/json", ...teamKeyHeaders() },
           body:JSON.stringify({
             items:missing.map((ad)=>({
               adId:String(ad.adId),
