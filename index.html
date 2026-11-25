@@ -1611,10 +1611,11 @@ const ADPERF_AI_MONTH_PREFIX = "adperf-ai-month:";
 // key格式完全一致,speedingscs這裡只要讀,不用自己另外抓——H&J一頁業績透過speedingscs看矩陣總覽時,
 // 就能顯示跟H-J同一套「真實Shopline訂單」欄位,不用speedingscs自己重新建一套API呼叫/同步邏輯。
 const SHOPLINE_MONTH_PREFIX = "shopline-month:";
+const MATERIAL_CLASS_PREFIX = "metaads-material-class:";
 // 以下這些 key 存的是「報表資料/品牌設定」,大家看到的要是同一份,所以存到共用空間(shared: true)。
 // Meta API 金鑰、帳號ID、記住金鑰的開關、自動同步設定——這些是個人的登入憑證,絕對不能共用,只存在自己瀏覽器(shared: false)。
 const SHARED_EXACT_KEYS = new Set(["meta-api-brands", "meta-api-cpa-thresholds", "meta-api-cpc-thresholds", "meta-api-adratio-thresholds", "meta-api-roas-targets", "meta-api-monthly-budgets", "meta-api-product-names"]);
-const SHARED_PREFIXES = [STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_MONTH_PREFIX];
+const SHARED_PREFIXES = [STORAGE_PREFIX, LEDGER_STORAGE_PREFIX, MONTHLY_PLAN_PREFIX, ADPERF_AI_MONTH_PREFIX, SHOPLINE_MONTH_PREFIX, MATERIAL_CLASS_PREFIX];
 function isSharedKey(key) {
   if (SHARED_EXACT_KEYS.has(key)) return true;
   return SHARED_PREFIXES.some((p) => key.startsWith(p));
@@ -4538,7 +4539,7 @@ function MonthlyPresentation({
         if (!cancelled) setMaterialClassState({ loading:false, byAd:{}, error:"" });
         return;
       }
-      const key = "metaads-material-class:" + brandId + "::" + monthKey;
+      const key = MATERIAL_CLASS_PREFIX + brandId + "::" + monthKey;
       let byAd = {};
       try {
         const cached = await storage.get(key);
