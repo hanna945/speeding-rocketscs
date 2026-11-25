@@ -4526,8 +4526,74 @@ function MonthlyPresentation({
   const safeRecord = currentRecord || { ads: [], spend: 0, revenue: 0, conversions: 0, currency: "TWD" };
   const currencyCode = safeRecord.currency || "TWD";
   const ads = Array.isArray(safeRecord.ads) ? safeRecord.ads : [];
+  const rawAds = Array.isArray(safeRecord.rawAds) ? safeRecord.rawAds : [];
   const accountId = safeRecord.accountId || "";
   const nextMonthKey = presentationNextMonthKey(monthKey);
+  const [materialClassState, setMaterialClassState] = useState({ loading:false, byAd:{}, error:"" });
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMaterialClasses() {
+      if (!brandId || !monthKey || !rawAds.length) {
+        if (!cancelled) setMaterialClassState({ loading:false, byAd:{}, error:"" });
+        return;
+      }
+      const key = "metaads-material-class:" + brandId + "::" + monthKey;
+      let byAd = {};
+      try {
+        const cached = await storage.get(key);
+        if (cached && cached.value) {
+          const parsed = JSON.parse(cached.value);
+          if (parsed && parsed.byAd && typeof parsed.byAd === "object") byAd = parsed.byAd;
+        }
+      } catch {}
+
+      const eligible = rawAds.filter((ad) => ad && ad.adId && (Number(ad.spend||0) > 0 || Number(ad.revenue||0) > 0));
+      const missing = eligible.filter((ad) => !byAd[String(ad.adId)]);
+      if (!missing.length) {
+        if (!cancelled) setMaterialClassState({ loading:false, byAd, error:"" });
+        return;
+      }
+
+      if (!cancelled) setMaterialClassState({ loading:true, byAd, error:"" });
+      try {
+        const res = await fetch("/api/ai/material-classify", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body:JSON.stringify({
+            items:missing.map((ad)=>({
+              adId:String(ad.adId),
+              name:ad.name || "",
+              campaign:ad.campaign || "",
+              image:ad.image || "",
+            }))
+          })
+        });
+        const payload = await res.json().catch(()=>null);
+        if (!res.ok || !payload) throw new Error((payload && payload.error) || ("HTTP " + res.status));
+        (payload.results || []).forEach((row) => {
+          if (!row || !row.adId) return;
+          byAd[String(row.adId)] = {
+            category:row.category || "無法判斷",
+            confidence:Number(row.confidence || 0),
+            reason:row.reason || "",
+          };
+        });
+        if (!cancelled) setMaterialClassState({ loading:false, byAd:{...byAd}, error:"" });
+        try {
+          await storage.set(key, JSON.stringify({
+            version:1,
+            updatedAt:new Date().toISOString(),
+            byAd,
+          }));
+        } catch {}
+      } catch (e) {
+        if (!cancelled) setMaterialClassState({ loading:false, byAd:{...byAd}, error:e.message || "素材分類失敗" });
+      }
+    }
+    loadMaterialClasses();
+    return () => { cancelled = true; };
+  }, [brandId, monthKey, safeRecord.syncedAt, rawAds.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4636,6 +4702,41 @@ function MonthlyPresentation({
     return [onePage, ...others].sort((a,b)=>Number(b.revenue||0)-Number(a.revenue||0));
   }, [ledgerBreakdown, perf]);
 
+
+  const materialRows = useMemo(() => {
+    const order = ["人像素材","情境素材","產品素材","口播／實測","UGC／KOC／業配","圖文／促銷","無法判斷"];
+    const map = {};
+    rawAds
+      .filter((ad) => ad && ad.adId && (Number(ad.spend||0) > 0 || Number(ad.revenue||0) > 0))
+      .forEach((ad) => {
+        const cls = materialClassState.byAd[String(ad.adId)];
+        const category = cls && cls.category ? cls.category : "無法判斷";
+        if (!map[category]) map[category] = { category, adCount:0, spend:0, conversions:0, revenue:0 };
+        const row = map[category];
+        row.adCount += 1;
+        row.spend += Number(ad.spend || 0);
+        row.conversions += Number(ad.conversions || 0);
+        row.revenue += Number(ad.revenue || 0);
+      });
+    const rows = order.filter((key)=>map[key]).map((key)=>map[key]);
+    const totalAds = rows.reduce((sum,r)=>sum+Number(r.adCount||0),0);
+    const totalSpend = rows.reduce((sum,r)=>sum+Number(r.spend||0),0);
+    const totalConversions = rows.reduce((sum,r)=>sum+Number(r.conversions||0),0);
+    return rows.map((r)=>({
+      ...r,
+      adShare:totalAds > 0 ? (r.adCount/totalAds)*100 : 0,
+      spendShare:totalSpend > 0 ? (r.spend/totalSpend)*100 : 0,
+      conversionShare:totalConversions > 0 ? (r.conversions/totalConversions)*100 : 0,
+      cpa:r.conversions > 0 ? r.spend/r.conversions : null,
+      roas:r.spend > 0 ? r.revenue/r.spend : null,
+    })).sort((a,b)=>b.spend-a.spend);
+  }, [rawAds, materialClassState.byAd]);
+
+  const materialTotals = useMemo(() => ({
+    ads:materialRows.reduce((sum,r)=>sum+Number(r.adCount||0),0),
+    spend:materialRows.reduce((sum,r)=>sum+Number(r.spend||0),0),
+    conversions:materialRows.reduce((sum,r)=>sum+Number(r.conversions||0),0),
+  }), [materialRows]);
 
   const generalAds = useMemo(
     () => ads.filter((ad) => !String(ad.name || "").includes("業配") && !String(ad.campaign || "").includes("業配")),
@@ -5004,6 +5105,47 @@ function MonthlyPresentation({
             {renderCampaignRankList(campaignAnalysis.watch,"目前沒有需要列入待觀察的 Campaign。")}
           </div>
         </div>
+      </div>
+    )
+  });
+
+  slides.push({
+    key:"material-mix",
+    node:(
+      <div className="mal-presentation-slide">
+        <PresentationSectionHead
+          title="素材比例分配與轉單效率"
+          subtitle="以廣告素材縮圖為主要判斷依據，廣告名稱／活動名稱只做輔助；每支廣告只歸一個主素材類型。"
+        />
+        <div className="mal-presentation-marketing-kpis">
+          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">納入素材</div><div className="mal-presentation-mini-stat-value">{materialTotals.ads}</div></div>
+          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">素材總花費</div><div className="mal-presentation-mini-stat-value">{fmtMoney(materialTotals.spend,currencyCode)}</div></div>
+          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">素材轉單</div><div className="mal-presentation-mini-stat-value">{fmtInt(materialTotals.conversions)}</div></div>
+          <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">分類狀態</div><div className="mal-presentation-mini-stat-value" style={{fontSize:18}}>{materialClassState.loading?"辨識中":materialClassState.error?"部分待判斷":"已完成"}</div></div>
+        </div>
+        <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(materialRows.length)}>
+          <table className="mal-presentation-table">
+            <thead><tr><th>素材類型</th><th>素材數</th><th>素材佔比</th><th>花費</th><th>花費佔比</th><th>轉單</th><th>轉單佔比</th><th>CPA</th><th>ROAS</th></tr></thead>
+            <tbody>{materialRows.length ? materialRows.map((r)=><tr key={r.category}>
+              <td><strong>{r.category}</strong></td>
+              <td className="num">{fmtInt(r.adCount)}</td>
+              <td className="num">{r.adShare.toFixed(1)}%</td>
+              <td className="num">{fmtMoney(r.spend,currencyCode)}</td>
+              <td className="num">{r.spendShare.toFixed(1)}%</td>
+              <td className="num">{fmtInt(r.conversions)}</td>
+              <td className="num">{r.conversionShare.toFixed(1)}%</td>
+              <td className="num">{r.cpa!==null?fmtMoney(r.cpa,currencyCode):"—"}</td>
+              <td className="num">{r.roas!==null?r.roas.toFixed(2)+"x":"—"}</td>
+            </tr>) : <tr><td colSpan="9">目前沒有可分析的素材資料。</td></tr>}</tbody>
+          </table>
+        </div>
+        <p className="mal-presentation-section-note" style={{marginTop:12}}>
+          {materialClassState.loading
+            ? "正在依縮圖辨識素材類型；尚未完成的素材暫列「無法判斷」。"
+            : materialClassState.error
+            ? "部分素材辨識失敗，已保留既有分類，其餘暫列「無法判斷」："+materialClassState.error
+            : "素材分類會快取到該品牌／月份，不會因每日 Meta 同步而重新洗掉歷史分類。"}
+        </p>
       </div>
     )
   });
