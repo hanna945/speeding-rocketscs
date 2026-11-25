@@ -1568,6 +1568,114 @@
     min-width:132px;
   }
 
+  .mal-material-mix-layout {
+    display:grid;
+    grid-template-columns:260px minmax(0,1fr);
+    gap:22px;
+    align-items:center;
+    margin:4px 0 14px;
+    min-height:220px;
+  }
+  .mal-material-pie-panel {
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+  }
+  .mal-material-pie {
+    width:188px;
+    height:188px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:inset 0 0 0 1px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.08);
+  }
+  .mal-material-pie-hole {
+    width:104px;
+    height:104px;
+    border-radius:50%;
+    background:#fff;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 0 0 1px rgba(15,23,42,.05);
+  }
+  .mal-material-pie-hole strong {
+    font-size:30px;
+    line-height:1;
+    color:#1f2937;
+  }
+  .mal-material-pie-hole span {
+    margin-top:7px;
+    font-size:12px;
+    color:#7c6f64;
+  }
+  .mal-material-pie-caption {
+    margin-top:10px;
+    font-size:12px;
+    font-weight:700;
+    color:#6b5e54;
+  }
+  .mal-material-legend {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:9px 12px;
+    align-content:center;
+  }
+  .mal-material-legend-row {
+    display:grid;
+    grid-template-columns:12px minmax(82px,1fr) auto;
+    grid-template-areas:
+      "dot name share"
+      ". meta meta";
+    column-gap:8px;
+    row-gap:2px;
+    padding:8px 10px;
+    border:1px solid rgba(15,23,42,.07);
+    border-radius:10px;
+    background:rgba(255,255,255,.72);
+  }
+  .mal-material-legend-dot {
+    grid-area:dot;
+    width:10px;
+    height:10px;
+    border-radius:999px;
+    margin-top:4px;
+  }
+  .mal-material-legend-row strong {
+    grid-area:name;
+    font-size:12.5px;
+    color:#332b25;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .mal-material-legend-share {
+    grid-area:share;
+    font-size:13px;
+    font-weight:800;
+    font-family:"IBM Plex Mono", monospace;
+  }
+  .mal-material-legend-meta {
+    grid-area:meta;
+    font-size:10.5px;
+    color:#817468;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .mal-material-table {
+    max-height:245px;
+  }
+  .mal-material-legend-empty {
+    grid-column:1/-1;
+    padding:18px;
+    text-align:center;
+    color:#8a7c70;
+  }
+
 </style>
 </head>
 <body>
@@ -4739,6 +4847,23 @@ function MonthlyPresentation({
     conversions:materialRows.reduce((sum,r)=>sum+Number(r.conversions||0),0),
   }), [materialRows]);
 
+  const materialPalette = ["#2F6BFF","#16A085","#F59E0B","#8B5CF6","#EC4899","#64748B","#CBD5E1"];
+  const materialChartRows = useMemo(
+    () => materialRows.map((r,i)=>({ ...r, color:materialPalette[i % materialPalette.length] })),
+    [materialRows]
+  );
+  const materialPieGradient = useMemo(() => {
+    if (!materialChartRows.length) return "conic-gradient(#E5E7EB 0 100%)";
+    let cursor = 0;
+    const parts = materialChartRows.map((r) => {
+      const start = cursor;
+      cursor += Number(r.adShare || 0);
+      return r.color + " " + start.toFixed(3) + "% " + cursor.toFixed(3) + "%";
+    });
+    if (cursor < 100) parts.push("#E5E7EB " + cursor.toFixed(3) + "% 100%");
+    return "conic-gradient(" + parts.join(",") + ")";
+  }, [materialChartRows]);
+
   const generalAds = useMemo(
     () => ads.filter((ad) => !String(ad.name || "").includes("業配") && !String(ad.campaign || "").includes("業配")),
     [ads]
@@ -5124,7 +5249,28 @@ function MonthlyPresentation({
           <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">素材轉單</div><div className="mal-presentation-mini-stat-value">{fmtInt(materialTotals.conversions)}</div></div>
           <div className="mal-presentation-mini-stat"><div className="mal-presentation-mini-stat-label">分類狀態</div><div className="mal-presentation-mini-stat-value" style={{fontSize:18}}>{materialClassState.loading?"辨識中":materialClassState.error?"部分待判斷":"已完成"}</div></div>
         </div>
-        <div className={"mal-presentation-table-wrap mal-presentation-fill-table " + presentationDensityClass(materialRows.length)}>
+        <div className="mal-material-mix-layout">
+          <div className="mal-material-pie-panel">
+            <div className="mal-material-pie" style={{background:materialPieGradient}}>
+              <div className="mal-material-pie-hole">
+                <strong>{materialTotals.ads}</strong>
+                <span>支素材</span>
+              </div>
+            </div>
+            <div className="mal-material-pie-caption">素材數量佔比</div>
+          </div>
+          <div className="mal-material-legend">
+            {materialChartRows.length ? materialChartRows.map((r)=>(
+              <div className="mal-material-legend-row" key={r.category}>
+                <span className="mal-material-legend-dot" style={{background:r.color}}></span>
+                <strong>{r.category}</strong>
+                <span className="mal-material-legend-share">{r.adShare.toFixed(1)}%</span>
+                <span className="mal-material-legend-meta">花費 {fmtMoney(r.spend,currencyCode)} · 轉單 {fmtInt(r.conversions)}</span>
+              </div>
+            )) : <div className="mal-material-legend-empty">目前沒有可分析的素材資料。</div>}
+          </div>
+        </div>
+        <div className={"mal-presentation-table-wrap mal-presentation-fill-table mal-material-table " + presentationDensityClass(materialRows.length)}>
           <table className="mal-presentation-table">
             <thead><tr><th>素材類型</th><th>素材數</th><th>素材佔比</th><th>花費</th><th>花費佔比</th><th>轉單</th><th>轉單佔比</th><th>CPA</th><th>ROAS</th></tr></thead>
             <tbody>{materialRows.length ? materialRows.map((r)=><tr key={r.category}>
